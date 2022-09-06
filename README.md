@@ -1,6 +1,6 @@
 # Reimplementation of speech decoding paper by MetaAI
 
-**Please let me know if you think I shouldn't make this repo public because MetaAI hasn't provided the official implementation.**
+**Should I make this repo private...? Please let me know if you think so.**
 
 Paper: https://arxiv.org/pdf/2208.12266.pdf
 
@@ -22,7 +22,7 @@ Under development. CLIP loss seems not working properly.
 
 You will need `S01.mat` to `S49.mat` placed under `data/Brennan2018/raw/` to run the code.
 
-I provide merged version of the audio files [here](https://drive.google.com/file/d/1qXyDFHhIKw7e-llEklLh02D6DuSTTqFg/view?usp=sharing).
+I provide merged version of the audio files [here](https://drive.google.com/file/d/1qXyDFHhIKw7e-llEklLh02D6DuSTTqFg/view?usp=sharing). Place it under `data/Brennan2018/`.
 
 ## wav2vec 2.0
 
