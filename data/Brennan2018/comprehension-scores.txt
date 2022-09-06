@@ -1,0 +1,50 @@
+SID   Score   Notes
+S01   6/8   use
+S02   6/8   exclude: noise
+S03   6/8   use
+S04   7/8   use
+S05   7/8   use
+S06   5/8   use
+S07   4/8   exclude: low score
+S08   6/8   use
+S09   2/8   exclude: low score
+S10   5/8   use
+S11   6/8   use
+S12   6/8   use
+S13   8/8   use
+S14   4/4   use
+S15   4/4   use
+S16   6/8   use
+S17   6/8   use
+S18   7/8   use
+S19   8/8   use
+S20   5/8   use
+S21         use
+S22   6/8   use
+S23   3/8   exclude: low score
+S24   4/8   exclude: low score
+S25   5/8   use
+S26   6/8   use
+S27   4/8   exclude: low score
+S28   7/8   exclude: noise
+S29   6/8   exclude: noise
+S30   4/8   exclude: low score
+S31   3/4   exclude: noise
+S32   4/8   exclude: low score
+S33   8/8   exclude: noise
+S34   5/8   use
+S35   5/8   use
+S36   6/8   use
+S37   8/8   use
+S38   8/8   use
+S39   3/8   use
+S40   6/8   use
+S41   7/8   use
+S42   7/8   use
+S43   2/8   exclude: low score
+S44   7/8   use
+S45   5/8   use
+S46   3/8   exclude: low score & noise
+S47   4/8   exclude: low score & noise
+S48   7/8   use
+S49   6/8   exclude: noise
