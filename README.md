@@ -10,6 +10,11 @@ Paper: https://arxiv.org/pdf/2208.12266.pdf
 
 Under development. CLIP loss seems not working properly.
 
+[ ] Perfectly align speech and EEG
+[ ] Encode 3s chunks of speech every iteration, not doing it beforehand
+
+[ ] Make subject layer each for subject
+
 ## Dataset
 
 4 datasets were used in the paper (2 EEG and 2 MEG). Because speech audio was not available for Broderick2019, I'm only using Brennan2019. I haven't checked for two MEG datasets.
