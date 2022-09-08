@@ -12,17 +12,17 @@ Under development. CLIP loss seems not working properly.
 
 ## ToDos
 
-- [ ] Correct CLIP Loss
-
-Perfectly align speech and EEG  
+* Perfectly align speech and EEG  
   - [ ] Encode 3s chunks of speech every iteration, not doing it beforehand
   - [ ] Solve the problem of EEG recording having slightly different lengths (find how they correspond each other)
 
-Make subject layer each for subject
+* Make subject layer each for subject
   - [x] Basic implementation
   - [ ] Optimize above (unuse for-loop)
 
 - [x] Exclude excluded subjects in the paper
+
+- [ ] Correct CLIP Loss
 
 - [ ] The paper says "1x1 convolution" but how do we apply 1x1 convolution to sequences?
 
