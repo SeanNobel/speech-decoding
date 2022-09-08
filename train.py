@@ -41,8 +41,8 @@ train_loader = torch.utils.data.DataLoader(
 # TODO: test loader
 
 
-loss_func = CLIPLoss("sum").cuda()
-# loss_func = nn.MSELoss(reduction="sum").cuda()
+# loss_func = CLIPLoss("sum").cuda()
+loss_func = nn.MSELoss(reduction="sum").cuda()
 
 
 brain_encoder.train()
@@ -51,12 +51,12 @@ for epoch in range(args.epochs):
 
     # weight_prev = brain_encoder.subject_block.spatial_attention.z_re.clone()
 
-    for i, (X, Y) in enumerate(tqdm(train_loader)):
+    for i, (X, Y, subject_idxs) in enumerate(tqdm(train_loader)):
         brain_encoder.zero_grad()
 
         X, Y = X.cuda(), Y.cuda()
 
-        Z = brain_encoder(X)
+        Z = brain_encoder(X, subject_idxs)
 
         loss = loss_func(Y, Z)
         losses.append(loss.item())

@@ -132,7 +132,7 @@ class SpatialAttention(nn.Module):
 
 
 class SubjectBlock(nn.Module):
-    def __init__(self, num_subjects=19, D1=270):
+    def __init__(self, num_subjects=49, D1=270):
         super(SubjectBlock, self).__init__()
 
         self.num_subjects = num_subjects
@@ -146,13 +146,24 @@ class SubjectBlock(nn.Module):
         self.subject_matrix = nn.Parameter(
             torch.rand(self.num_subjects, self.D1, self.D1)
         )
+        self.subject_layer = [nn.Conv1d(
+            in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1, device='cuda'
+            ) for _ in range(self.num_subjects)]
 
-    def forward(self, X, s=0):
+    def forward(self, X, subject_idxs):
         X = self.spatial_attention(X) # ( B, 270, 256 )
         X = self.conv(X) # ( B, 270, 256 )
-        X = self.subject_matrix[s] @ X # ( B, 270, 256 )
 
-        return X
+        # X = self.subject_matrix[s] @ X # ( 270, 270 ) @ ( B , 270, 256 ) -> ( B, 270, 256 )
+        # TODO make this more efficient
+        _X = []
+        for i, x in enumerate(X): # x: ( 270, 256 )
+            x = self.subject_layer[subject_idxs[i]](x.unsqueeze(0)) # ( 1, 270, 256 )
+            _X.append(x.squeeze())
+
+        X = torch.stack(_X)
+
+        return X # ( B, 270, 256 )
 
 
 class ConvBlock(nn.Module):
@@ -214,11 +225,13 @@ class BrainEncoder(nn.Module):
             in_channels=2*self.D2, out_channels=self.F, kernel_size=1,
         )
 
-    def forward(self, X):
-        X = self.subject_block(X)
+    def forward(self, X, subject_idxs):
+        X = self.subject_block(X, subject_idxs)
         X = self.conv_blocks(X)
-        X = self.conv_final1(X)
-        X = self.conv_final2(X)
+        # print(X.shape)
+        X = nn.GELU()(self.conv_final1(X))
+        # print(X.shape)
+        X = nn.GELU()(self.conv_final2(X))
 
         return X
 
@@ -234,9 +247,11 @@ if __name__ == '__main__':
     # ).cuda()
     
     X = torch.rand(128, 60, 256).cuda()
-    # X.requires_grad = True
+    X.requires_grad = True
 
-    Z = brain_encoder(X) # ( 512, 270, 256 )
+    subject_idxs = torch.randint(19, size=(128,))
+
+    Z = brain_encoder(X, subject_idxs) # ( 512, 270, 256 )
 
     # Z_ = brain_encoder_(X)
 
@@ -245,9 +260,9 @@ if __name__ == '__main__':
     # print((Z - Z_).sum())
 
 
-    # stime = time()
-    # grad = torch.autograd.grad(
-    #     outputs=Z, inputs=X, grad_outputs=torch.ones_like(Z),
-    #     create_graph=True, retain_graph=True, only_inputs=True
-    # )[0]
-    # print(f"grad {time() - stime}")
+    stime = time()
+    grad = torch.autograd.grad(
+        outputs=Z, inputs=X, grad_outputs=torch.ones_like(Z),
+        create_graph=True, retain_graph=True, only_inputs=True
+    )[0]
+    print(f"grad {time() - stime}")

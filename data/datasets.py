@@ -36,14 +36,14 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
 
         # X: ( 49, 60, 99712 ) -> ( B, 60, 256 )
         # Y: ( 512, 99712 ) -> ( B, 512, 256 )
-        self.X, self.Y = self.batchfy(self.X, self.Y, self.seq_len)
+        self.X, self.Y, self.subject_idxs = self.batchfy(self.X, self.Y, self.seq_len)
 
     def __len__(self):
         return len(self.X)
         # return 4096
 
-    def __getitem__(self, idx):
-        return self.X[idx], self.Y[idx]
+    def __getitem__(self, i):
+        return self.X[i], self.Y[i], self.subject_idxs[i]
 
     # def __getitem__(self, i):
     #     X = self.X[np.random.randint(self.subj_num)] # ( 60, 99712 )
@@ -71,10 +71,13 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         X = X.permute(0,2,1,3) # ( 49, 389, 60, 256 )
         Y = Y.permute(0,2,1,3) # ( 49, 389, 512, 256 )
 
+        subject_idxs = torch.arange(X.shape[0]).unsqueeze(1).expand(-1, X.shape[1]) # ( 49, 389 )
+        subject_idxs = subject_idxs.flatten() # ( 19061, )
+
         X = X.reshape(-1, X.shape[-2], X.shape[-1]) # ( 19061, 60, 256 )
         Y = Y.reshape(-1, Y.shape[-2], Y.shape[-1]) # ( 19061, 512, 256 )
 
-        return X, Y
+        return X, Y, subject_idxs
 
     @staticmethod
     def audio_preproc(wav2vec_model: str):
