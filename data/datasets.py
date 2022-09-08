@@ -34,6 +34,7 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
 
         self.subj_num = self.X.shape[0]
 
+        print(f"X: {self.X.shape}, Y: {self.Y.shape}")
         # X: ( 49, 60, 99712 ) -> ( B, 60, 256 )
         # Y: ( 512, 99712 ) -> ( B, 512, 256 )
         self.X, self.Y, self.subject_idxs = self.batchfy(self.X, self.Y, self.seq_len)
@@ -105,7 +106,11 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
 
     @staticmethod
     def brain_preproc(audio_embd_len):
+        # NOTE: look at comprehension-scores.txt
+        excluded_subjects = [1, 6, 8, 22, 23, 26, 27, 28, 29, 30, 31, 32, 42, 45, 46, 48]
+
         matfile_paths = natsorted(glob.glob("data/Brennan2018/raw/*.mat"))
+        matfile_paths = np.delete(matfile_paths, excluded_subjects)
 
         X = []
         for matfile_path in matfile_paths:
