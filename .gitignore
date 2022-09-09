@@ -12,8 +12,6 @@ data/Brennan2018/_processed_X.pt
 
 data/Broderick2018/
 
-tmp/.ipynb_checkpoints/
-tmp/brain_encoder_.py
-tmp/test.wav
+tmp/
 
 weights/*.pt

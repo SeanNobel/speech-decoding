@@ -15,12 +15,15 @@ Under development. CLIP loss seems not working properly.
 * Perfectly align speech and EEG  
   - [ ] Encode 3s chunks of speech every iteration, not doing it beforehand
   - [ ] Solve the problem of EEG recording having slightly different lengths (find how they correspond each other)
+  - [x] Shift EEG 150ms to the future
 
 * Make subject layer each for subject
   - [x] Basic implementation
   - [ ] Optimize above (unuse for-loop)
 
 - [x] Exclude excluded subjects in the paper
+
+- [x] Robust scaling for EEG
 
 - [ ] Correct CLIP Loss
 

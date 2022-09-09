@@ -7,7 +7,27 @@ from natsort import natsorted
 import scipy.io
 import mne
 import numpy as np
+from sklearn.preprocessing import RobustScaler
 from omegaconf import DictConfig, open_dict
+
+def baseline_correction(X):
+    """Assumes that X (M/EEG) is already resampled to 120Hz"""
+    return X
+
+def shift_brain_signal(X, Y, resampled_rate=135, shift=150):
+    """
+    - X: ( 33, 60, 99712 ) Y: ( 512, 99712 )
+    - resampled_rate (Hz): rates of M/EEG after resampling and speech after wav2vec2.0 encoding
+    - shift (ms): how much to shift M/EEG forward
+    """
+    # TODO: find actual resampled_rate (need to fix resampling amount for subjects)
+
+    shift = int(resampled_rate * (shift / 1000)) # 19
+
+    X = X[:, :, shift:] # ( 33, 60, 99692 )
+    Y = Y[:, :-shift] # ( 512, 99692 )
+
+    return X, Y
 
 class Brennan2018Dataset(torch.utils.data.Dataset):
     def __init__(self, seq_len, wav2vec_model):
@@ -27,16 +47,21 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         X_path = "data/Brennan2018/processed_X.pt"
 
         if os.path.exists(X_path):
-            self.X = torch.load(X_path) # ( 49, 60, 99712 )
+            self.X = torch.load(X_path) # ( 33, 60, 99712 )
         else:
             self.X = self.brain_preproc(audio_embd_len=self.Y.shape[-1])
             torch.save(self.X, X_path)
 
+        # NOTE: trying scaling X becauase it looks roughly 10 times larger than Y
+        # self.X /= 10
+
         self.subj_num = self.X.shape[0]
 
+        self.X, self.Y = shift_brain_signal(self.X, self.Y)
+
         print(f"X: {self.X.shape}, Y: {self.Y.shape}")
-        # X: ( 49, 60, 99712 ) -> ( B, 60, 256 )
-        # Y: ( 512, 99712 ) -> ( B, 512, 256 )
+        # X: ( 33, 60, 99692 ) -> ( B, 60, 256 )
+        # Y: ( 512, 99692 ) -> ( B, 512, 256 )
         self.X, self.Y, self.subject_idxs = self.batchfy(self.X, self.Y, self.seq_len)
 
     def __len__(self):
@@ -61,18 +86,18 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         assert X.shape[-1] == Y.shape[-1]
         trim_len = X.shape[-1] - X.shape[-1] % seq_len
 
-        X = X[:, :, :trim_len] # ( 49, 60, 99584 )
+        X = X[:, :, :trim_len] # ( 33, 60, 99584 )
         Y = Y[:, :trim_len] # ( 512, 99584 )
 
-        X = X.reshape(X.shape[0], X.shape[1], -1, seq_len) # ( 49, 60, 389, 256 )
+        X = X.reshape(X.shape[0], X.shape[1], -1, seq_len) # ( 33, 60, 389, 256 )
         Y = Y.reshape(Y.shape[0], -1, seq_len) # ( 512, 389, 256 )
 
-        Y = Y.unsqueeze(0).expand(X.shape[0], *Y.shape) # ( 49, 512, 389, 256 )
+        Y = Y.unsqueeze(0).expand(X.shape[0], *Y.shape) # ( 33, 512, 389, 256 )
         
-        X = X.permute(0,2,1,3) # ( 49, 389, 60, 256 )
-        Y = Y.permute(0,2,1,3) # ( 49, 389, 512, 256 )
+        X = X.permute(0,2,1,3) # ( 33, 389, 60, 256 )
+        Y = Y.permute(0,2,1,3) # ( 33, 389, 512, 256 )
 
-        subject_idxs = torch.arange(X.shape[0]).unsqueeze(1).expand(-1, X.shape[1]) # ( 49, 389 )
+        subject_idxs = torch.arange(X.shape[0]).unsqueeze(1).expand(-1, X.shape[1]) # ( 33, 389 )
         subject_idxs = subject_idxs.flatten() # ( 19061, )
 
         X = X.reshape(-1, X.shape[-2], X.shape[-1]) # ( 19061, 60, 256 )
@@ -82,7 +107,7 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
 
     @staticmethod
     def audio_preproc(wav2vec_model: str):
-        # waveform: ( 1, 31908132 )
+        # waveform: ( 1, 31908132 ), sample_rate: 44100
         waveform, sample_rate = torchaudio.load("data/Brennan2018/merged_audio.wav")
 
         cp_path = f"weights/{wav2vec_model}.pt"
@@ -102,6 +127,7 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         model = model[0]
         model.eval()
 
+        # FIXME: in the paper, activations of the last four transformer layers were averaged
         return model.feature_extractor(waveform).squeeze() # ( 512, 99712 )
 
     @staticmethod
@@ -123,13 +149,17 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
                 eeg_raw, sfreq=fsample, l_freq=1.0, h_freq=None
             )
 
+            # NOTE: This resamples EEG from 500Hz down to around 135Hz
             eeg_resampled = mne.filter.resample(
                 eeg_filtered, down=eeg_filtered.shape[-1]/audio_embd_len,
             )
 
-            X.append(eeg_resampled)
+            scaler = RobustScaler().fit(eeg_resampled)
+            eeg_scaled = scaler.transform(eeg_resampled)
 
-        X = np.stack(X) # ( 49, 60, 99712 )
+            X.append(eeg_scaled)
+
+        X = np.stack(X) # ( 33, 60, 99712 )
         
         return torch.from_numpy(X.astype(np.float32))
 

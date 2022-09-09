@@ -5,7 +5,7 @@ import torch.nn as nn
 import mne
 from time import time
 
-def ch_locations_2d(montage_name="easycap-M10"):
+def ch_locations_2d(montage_name):
     montage = mne.channels.make_standard_montage(montage_name)
     info = mne.create_info(ch_names=montage.ch_names, sfreq=512., ch_types="eeg")
     info.set_montage(montage)
@@ -27,7 +27,7 @@ def ch_locations_2d(montage_name="easycap-M10"):
 class SpatialAttentionOrig(nn.Module):
     """This is easier to understand but very slow. I reimplemented to SpatialAttention"""
 
-    def __init__(self, z_re=None, z_im=None, D1=270, K=32, montage_name="easycap-M10"):
+    def __init__(self, D1, K, montage_name, z_re=None, z_im=None):
         super(SpatialAttentionOrig, self).__init__()
 
         self.D1 = D1
@@ -70,7 +70,7 @@ class SpatialAttentionOrig(nn.Module):
 class SpatialAttention(nn.Module):
     """Faster version of SpatialAttentionOrig"""
 
-    def __init__(self, D1=270, K=32, montage_name="easycap-M10"):
+    def __init__(self, D1, K, montage_name):
         super(SpatialAttention, self).__init__()
 
         self.D1 = D1
@@ -132,13 +132,13 @@ class SpatialAttention(nn.Module):
 
 
 class SubjectBlock(nn.Module):
-    def __init__(self, num_subjects=49, D1=270):
+    def __init__(self, num_subjects, D1, K, montage_name):
         super(SubjectBlock, self).__init__()
 
         self.num_subjects = num_subjects
         self.D1 = D1
 
-        self.spatial_attention = SpatialAttention()
+        self.spatial_attention = SpatialAttention(D1, K, montage_name)
         # self.spatial_attention = SpatialAttentionOrig()
         self.conv = nn.Conv1d(
             in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1
@@ -167,7 +167,7 @@ class SubjectBlock(nn.Module):
 
 
 class ConvBlock(nn.Module):
-    def __init__(self, k, D1=270, D2=320):
+    def __init__(self, k, D1, D2):
         super(ConvBlock, self).__init__()
 
         self.k = k
@@ -206,17 +206,21 @@ class ConvBlock(nn.Module):
 
 
 class BrainEncoder(nn.Module):
-    def __init__(self, D2=320, F=512):
+    def __init__(self, args):
         super(BrainEncoder, self).__init__()
 
-        self.D2 = D2
-        self.F = F
+        self.num_subjects = args.num_subjects
+        self.D1 = args.D1
+        self.D2 = args.D2
+        self.F = args.F
+        self.K = args.K
+        self.montage_name = args.montage
 
-        self.subject_block = SubjectBlock()
+        self.subject_block = SubjectBlock(self.num_subjects, self.D1, self.K, self.montage_name)
 
         self.conv_blocks = nn.Sequential()
         for k in range(1,6):
-            self.conv_blocks.add_module(f"conv{k}", ConvBlock(k))
+            self.conv_blocks.add_module(f"conv{k}", ConvBlock(k, self.D1, self.D2))
 
         self.conv_final1 = nn.Conv1d(
             in_channels=self.D2, out_channels=2*self.D2, kernel_size=1,
