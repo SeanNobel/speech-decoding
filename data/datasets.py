@@ -1,14 +1,17 @@
 import os, sys
 import torch
 import torchaudio
+import numpy as np
+import pandas as pd
 import fairseq
 import glob
 from natsort import natsorted
 import scipy.io
-import mne
-import numpy as np
+import mne, mne_bids
 from sklearn.preprocessing import RobustScaler
 from omegaconf import DictConfig, open_dict
+import tqdm
+
 
 def baseline_correction(X):
     """Assumes that X (M/EEG) is already resampled to 120Hz"""
@@ -28,6 +31,7 @@ def shift_brain_signal(X, Y, resampled_rate=135, shift=150):
     Y = Y[:, :-shift] # ( 512, 99692 )
 
     return X, Y
+
 
 class Brennan2018Dataset(torch.utils.data.Dataset):
     def __init__(self, seq_len, wav2vec_model):
@@ -54,8 +58,6 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
 
         # NOTE: trying scaling X becauase it looks roughly 10 times larger than Y
         # self.X /= 10
-
-        self.subj_num = self.X.shape[0]
 
         self.X, self.Y = shift_brain_signal(self.X, self.Y)
 
@@ -164,8 +166,80 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         return torch.from_numpy(X.astype(np.float32))
 
 
+class Gwilliams2022Dataset(torch.utils.data.Dataset):
+    def __init__(self, num_subjects=11, resample_rate=120):
+        super().__init__()
+
+        x_path = "data/Gwilliams2022/processed_X.pt"
+
+        if os.path.exists(x_path):
+            self.X = torch.load(x_path)
+        else:
+            self.X = self.brain_preproc(num_subjects, resample_rate)
+            torch.save(self.X, x_path)
+
+    @staticmethod
+    def brain_preproc(num_subjects, resample_rate):
+        X = []
+        for subject_idx in tqdm.tqdm(range(num_subjects)):
+            bids_path = mne_bids.BIDSPath(
+                subject=str(subject_idx+1).zfill(2), # '01', '02', ...
+                session="0", # TODO: there are 2 sessions for each subject
+                task="0", # TODO: there are 4 tasks for each session
+                datatype="meg",
+                root="data/Gwilliams2022/",
+            )
+            raw = mne_bids.read_raw_bids(bids_path)
+            raw.resample(sfreq=resample_rate) # To 120Hz
+
+            df = raw.to_data_frame()
+            meg_resampled = np.stack([df[key] for key in df.keys() if "MEG" in key]) # ( 224, 39600 )
+
+            meg_filtered = mne.filter.filter_data(
+                meg_resampled, sfreq=resample_rate, l_freq=0.5, h_freq=30,
+            )
+
+            scaler = RobustScaler().fit(meg_filtered)
+            meg_scaled = scaler.tranform(meg_filtered)
+
+            X.append(meg_scaled)
+
+        X = np.stack(X)
+
+        return torch.from_numpy(X.astype(np.float32))
+
+
+class ToyDataset():
+    def __init__(self, num_samples=10000, seq_len=256, X_dim=60, Y_dim=512):
+        super().__init__()
+
+        linspaces = torch.stack([
+            torch.linspace(st, st+10, seq_len) for st in torch.rand(num_samples) * 10
+        ])
+
+        self.Y = torch.stack([linspaces * torch.rand(1) for _ in range(Y_dim)])
+        # self.X = torch.stack([linspaces * torch.rand(1) for _ in range(X_dim)])
+        self.X = self.Y[:X_dim]
+
+        self.Y = torch.cos(self.Y.permute(1,0,2))
+        self.X = torch.cos(self.X.permute(1,0,2))
+
+        self.subject_idxs = torch.randint(33, size=(num_samples,))
+
+    def __len__(self):
+        return len(self.X)
+
+    def __getitem__(self, i):
+        return self.X[i], self.Y[i], self.subject_idxs[i]
+
+
 if __name__ == '__main__':
     
-    dataset = Brennan2018Dataset(seq_len=256)
+    # dataset = Brennan2018Dataset(seq_len=256)
+    # print(dataset.Y.requires_grad)
 
-    print(dataset.Y.requires_grad)
+    # dataset = ToyDataset()
+    # print(dataset.Y.shape)
+
+    dataset = Gwilliams2022Dataset()
+    print(dataset.X.shape)

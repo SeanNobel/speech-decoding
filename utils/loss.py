@@ -1,9 +1,57 @@
+import sys
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+def torch_exp(x: torch.Tensor): # x: ( N, )
+    return torch.exp(x.clamp(max=10))
+
+def torch_log(x: torch.Tensor):
+    return torch.log(x.clamp(min=1e-10))
+
+
+class MSELoss(nn.Module):
+    """Takes reduction mean only for batch direction"""
+    def __init__(self):
+        super().__init__()
+
+        self.mse = nn.MSELoss(reduction="none")
+
+    def forward(self, Y, Z): # Y, Z: both ( B, 512, 256 )
+        return self.mse(Y, Z).sum(dim=(-1,-2)).mean()
+
 
 class CLIPLoss(nn.Module):
+    def __init__(self, reduction="sum"):
+        super().__init__()
+
+        self.reduction = reduction
+
+    def forward(self, Y: torch.Tensor, Z: torch.Tensor):
+        """
+        Y ( N, F, T ): latent representation of speech sound from wav2vec
+        Z ( N, F, T ): latent representation of EEG/MEG from brain encoder
+        """
+        assert Y.shape == Z.shape
+        N = Y.shape[0]
+
+        probs = torch.einsum('bft,nft->bn', Z, Y) # ( N, N )
+
+        probs = nn.LogSoftmax(dim=1)(probs)
+        
+        targets = torch.eye(N).cuda()
+
+        loss = -(targets * probs).sum(dim=1)
+
+        if self.reduction == "sum":
+            return loss.sum()
+        elif self.reduction == "mean":
+            return loss.mean()
+        else:
+            raise NotImplementedError()
+
+
+class CLIPLossOrig(nn.Module):
     def __init__(self, reduction="sum"):
         super().__init__()
 
@@ -31,7 +79,7 @@ class CLIPLoss(nn.Module):
         return F.cross_entropy(input=probs, target=labels, reduction=self.reduction)
 
 
-class CLIPLoss2(nn.Module):
+class CLIPLossOrig2(nn.Module):
     def __init__(self, reduction="sum"):
         super().__init__()
 
@@ -45,52 +93,36 @@ class CLIPLoss2(nn.Module):
         assert Y.shape == Z.shape
         N = Y.shape[0]
 
-        logits = torch.einsum('bft,nft->bn', Z, Y) # ( N, N )
+        term_1 = -torch.einsum('nft,nft->n', Z, Y) # ( N, )
+        # print(term_1)
         
-        labels = torch.eye(N).cuda()
+        term_2 = []
+        for i in range(N):
+            _term_2 = torch.einsum('ft,nft->n', Z[i], Y) # ( N, )
+            # _term_2 -= _term_2.max()
+            # _term_2 = _term_2 - _term_2.mean()
+            _term_2 = torch_exp(_term_2)
+            _term_2 = _term_2.sum()
 
-        loss_i = F.binary_cross_entropy(input=logits, target=labels, reduction=self.reduction)
-        loss_t = F.binary_cross_entropy(input=logits.T, target=labels, reduction=self.reduction)
+            term_2.append(torch_log(_term_2))
 
-        return loss_i + loss_t
+        term_2 = torch.stack(term_2)
+        # print(term_2)
 
+        # sys.exit()
 
-# def clip_loss_(Y: torch.Tensor, Z: torch.Tensor):
-#     """
-#     Y ( N, F, T ): latent representation of speech sound from wav2vec
-#     Z ( N, F, T ): latent representation of EEG/MEG from brain encoder
-#     """
-#     assert Y.shape == Z.shape
-#     N = Y.shape[0]
-
-#     loss = 0
-#     for j in range(N):
-#         # Inner product over both dimensions. Same as torch.sum(Z[j] * Y[j])
-#         probs = torch.einsum('ft,nft->n', Z[j], Y) # ( N, )
-
-#         # NOTE avoid nan by this
-#         probs -= probs.max()
-
-#         probs = torch.exp(probs)
-#         probs /= probs.sum()
-        
-#         labels = torch.zeros_like(probs)
-#         labels[j] = 1
-
-#         loss += nn.CrossEntropyLoss()(input=probs, target=labels)
-
-    
-#     return loss
+        # return (term_1 + term_2).mean()
+        return term_1.mean()
 
 
 if __name__ == "__main__":
 
-    Y = torch.rand(128, 20, 100)
-    Z = torch.rand(128, 20, 100)
+    Y = torch.rand(128, 20, 100).cuda()
+    Z = torch.rand(128, 20, 100).cuda()
 
     # loss = clip_loss_(Y, Z)
     # print(loss)
 
-    clip_loss = CLIPLoss2()
+    clip_loss = CLIPLoss()
     loss = clip_loss(Y, Z)
     print(loss)

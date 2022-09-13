@@ -6,16 +6,16 @@ import torch.nn as nn
 import argparse
 from time import time
 from tqdm import tqdm
-from data.datasets import Brennan2018Dataset
+from data.datasets import Brennan2018Dataset, ToyDataset
 from models.brain_encoder import BrainEncoder
-from utils.loss import CLIPLoss
+from utils.loss import CLIPLoss, MSELoss, CLIPLossOrig
 
 assert torch.cuda.is_available(), "Training without GPU is not supported."
 
 parser = argparse.ArgumentParser(description="Speech decoding by MetaAI reimplementation")
 parser.add_argument("--batch-size", default=128)
 parser.add_argument("--lr", default=0.001)
-parser.add_argument("--epochs", default=20)
+parser.add_argument("--epochs", type=int, default=100)
 parser.add_argument("--seq-len", type=int, default=256, help="T in the paper") # seq-len 256 is approximately 1.8 seconds in real world
 parser.add_argument("--num-subjects", default=33)
 parser.add_argument("--D1", type=int, default=270, help="D_1 in the paper")
@@ -31,21 +31,25 @@ args = parser.parse_args()
 # ---------------------
 brain_encoder = BrainEncoder(args).cuda()
 optimizer = torch.optim.Adam(brain_encoder.parameters(), lr=args.lr)
-scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
+scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.97)
 
 # -----------------------
 #       Dataloader
 # -----------------------
+dataset=Brennan2018Dataset(args.seq_len, args.wav2vec_model)
+# dataset=ToyDataset()
+
 train_loader = torch.utils.data.DataLoader(
-    dataset=Brennan2018Dataset(args.seq_len, args.wav2vec_model),
+    dataset=dataset,
     batch_size=args.batch_size,
     shuffle=True,
 )
 # TODO: test loader
 
 
-# loss_func = CLIPLoss("sum").cuda()
-loss_func = nn.MSELoss(reduction="sum").cuda()
+loss_func = CLIPLoss("sum").cuda()
+# loss_func = CLIPLossOrig("sum").cuda()
+# loss_func = MSELoss().cuda()
 
 
 brain_encoder.train()
@@ -63,7 +67,7 @@ for epoch in range(args.epochs):
 
         loss = loss_func(Y, Z)
         losses.append(loss.item())
-        print(loss.item())
+        # print(loss.item())
 
         loss.backward()
         optimizer.step()
@@ -74,3 +78,6 @@ for epoch in range(args.epochs):
     # print(f"Learning: {not torch.equal(weight_prev, weight_after)}")
 
     scheduler.step()
+
+
+torch.save(brain_encoder.state_dict(), "weights/brain_encoder/test.pt")

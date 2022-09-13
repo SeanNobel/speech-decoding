@@ -14,7 +14,7 @@ Under development. CLIP loss seems not working properly.
 
 * Perfectly align speech and EEG  
   - [ ] Encode 3s chunks of speech every iteration, not doing it beforehand
-  - [ ] Solve the problem of EEG recording having slightly different lengths (find how they correspond each other)
+  - [ ] Solve the problem of EEG recording having slightly different lengths (find how timings correspond each other)
   - [x] Shift EEG 150ms to the future
 
 * Make subject layer each for subject
@@ -25,7 +25,7 @@ Under development. CLIP loss seems not working properly.
 
 - [x] Robust scaling for EEG
 
-- [ ] Correct CLIP Loss
+- [ ] Correct CLIP Loss (maybe done)
 
 - [ ] The paper says "1x1 convolution" but how do we apply 1x1 convolution to sequences?
 
