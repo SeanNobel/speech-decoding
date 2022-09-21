@@ -2,32 +2,14 @@ import sys
 import numpy as np
 import torch
 import torch.nn as nn
-import mne
 from time import time
-
-def ch_locations_2d(montage_name):
-    montage = mne.channels.make_standard_montage(montage_name)
-    info = mne.create_info(ch_names=montage.ch_names, sfreq=512., ch_types="eeg")
-    info.set_montage(montage)
-
-    layout = mne.channels.find_layout(info, ch_type="eeg")
-
-    loc = layout.pos[:,:2] # ( 61, 2 )
-
-    if montage_name == "easycap-M10":
-        # Channel 29 was broken in Brennan 2018
-        loc = np.delete(loc, 28, axis=0) # ( 60, 2 )
-
-    # min-max normalization
-    loc = (loc - loc.min(axis=0)) / (loc.max(axis=0) - loc.min(axis=0))
-
-    return torch.from_numpy(loc.astype(np.float32))
+from utils.layout import ch_locations_2d
 
 
 class SpatialAttentionOrig(nn.Module):
     """This is easier to understand but very slow. I reimplemented to SpatialAttention"""
 
-    def __init__(self, D1, K, montage_name, z_re=None, z_im=None):
+    def __init__(self, D1, K, dataset_name, z_re=None, z_im=None):
         super(SpatialAttentionOrig, self).__init__()
 
         self.D1 = D1
@@ -42,7 +24,7 @@ class SpatialAttentionOrig(nn.Module):
             self.z_re = z_re
             self.z_im = z_im
 
-        self.ch_locations_2d = ch_locations_2d(montage_name).cuda()
+        self.ch_locations_2d = ch_locations_2d(dataset_name).cuda()
 
     def fourier_space(self, j, x:torch.Tensor, y:torch.Tensor): # x: ( 60, ) y: ( 60, )
         a_j = 0
@@ -70,7 +52,7 @@ class SpatialAttentionOrig(nn.Module):
 class SpatialAttention(nn.Module):
     """Faster version of SpatialAttentionOrig"""
 
-    def __init__(self, D1, K, montage_name):
+    def __init__(self, D1, K, dataset_name):
         super(SpatialAttention, self).__init__()
 
         self.D1 = D1
@@ -83,7 +65,7 @@ class SpatialAttention(nn.Module):
 
         self.K_arange = torch.arange(self.K).cuda()
 
-        self.ch_locations_2d = ch_locations_2d(montage_name).cuda()
+        self.ch_locations_2d = ch_locations_2d(dataset_name).cuda()
 
 
     def fourier_space(self, x:torch.Tensor, y:torch.Tensor): # x: ( 60, ) y: ( 60, )
@@ -132,13 +114,13 @@ class SpatialAttention(nn.Module):
 
 
 class SubjectBlock(nn.Module):
-    def __init__(self, num_subjects, D1, K, montage_name):
+    def __init__(self, num_subjects, D1, K, dataset_name):
         super(SubjectBlock, self).__init__()
 
         self.num_subjects = num_subjects
         self.D1 = D1
 
-        self.spatial_attention = SpatialAttention(D1, K, montage_name)
+        self.spatial_attention = SpatialAttention(D1, K, dataset_name)
         # self.spatial_attention = SpatialAttentionOrig()
         self.conv = nn.Conv1d(
             in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1
@@ -214,9 +196,9 @@ class BrainEncoder(nn.Module):
         self.D2 = args.D2
         self.F = args.F
         self.K = args.K
-        self.montage_name = args.montage
+        self.dataset_name = args.dataset
 
-        self.subject_block = SubjectBlock(self.num_subjects, self.D1, self.K, self.montage_name)
+        self.subject_block = SubjectBlock(self.num_subjects, self.D1, self.K, self.dataset_name)
 
         self.conv_blocks = nn.Sequential()
         for k in range(1,6):
