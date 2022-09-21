@@ -1,20 +1,18 @@
 # Reimplementation of speech decoding paper by MetaAI
 
-**Should I make this repo private...? Please let me know if you think so.**
-
 Paper: https://arxiv.org/pdf/2208.12266.pdf
 
 <div align="center"><img src="overview_meta2022.png" width=300></div>
 
 ## Status
 
-Under development. CLIP loss seems not working properly.
+Works for Gwilliams2022 dataset and Brennan2018 dataset.
 
 ## ToDos
 
 * Perfectly align speech and EEG  
-  - [ ] Encode 3s chunks of speech every iteration, not doing it beforehand
-  - [ ] Solve the problem of EEG recording having slightly different lengths (find how timings correspond each other)
+  - [x] Encode 3s chunks of speech every iteration, not doing it beforehand
+  - [x] Solve the problem of EEG recording having slightly different lengths (find how timings correspond each other)
   - [x] Shift EEG 150ms to the future
 
 * Make subject layer each for subject
@@ -25,13 +23,19 @@ Under development. CLIP loss seems not working properly.
 
 - [x] Robust scaling for EEG
 
-- [ ] Correct CLIP Loss (maybe done)
+- [x] Correct CLIP Loss (maybe done)
 
 - [ ] The paper says "1x1 convolution" but how do we apply 1x1 convolution to sequences?
 
 ## Dataset
 
-4 datasets were used in the paper (2 EEG and 2 MEG). Because speech audio was not available for Broderick2019, I'm only using Brennan2019. I haven't checked for two MEG datasets.
+4 datasets were used in the paper (2 EEG and 2 MEG). I implemented preprocessing for Gwilliams2022 (MEG) and Brennan2018 (EEG). As in the paper, the model learns MEG much better.
+
+**Gwilliams et al., 2022**
+
+- Paper https://arxiv.org/abs/2208.11488
+
+- Dataset https://osf.io/ag3kj/
 
 **Brennan et al., 2019**
 
