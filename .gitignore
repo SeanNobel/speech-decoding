@@ -20,3 +20,5 @@ weights/*.pt
 weights/brain_encoder/
 
 tests.ipynb
+.ipynb_checkpoints
+sandbox.ipynb
