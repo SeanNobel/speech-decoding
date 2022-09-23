@@ -8,7 +8,7 @@ from time import time
 from tqdm import tqdm
 from data.datasets import Gwilliams2022Dataset, Brennan2018Dataset, ToyDataset
 from models.brain_encoder import BrainEncoder
-from utils.loss import CLIPLoss, MSELoss, CLIPLossOrig
+from utils.loss import CLIPLoss, MSELoss, CLIPLossOrig, CLIPLossX
 from utils.wav2vec_util import load_wav2vec_model
 
 assert torch.cuda.is_available(), "Training without GPU is not supported."
@@ -59,11 +59,10 @@ test_loader = torch.utils.data.DataLoader(
     shuffle=False,
 )
 
-
-loss_func = CLIPLoss("sum").cuda()
+# loss_func = CLIPLoss("sum").cuda()
+loss_func = CLIPLossX()
 # loss_func = CLIPLossOrig("sum").cuda()
 # loss_func = MSELoss().cuda()
-
 
 for epoch in range(args.epochs):
     train_losses = []
@@ -104,8 +103,9 @@ for epoch in range(args.epochs):
         loss = loss_func(Y, Z)
         test_losses.append(loss.item())
 
-
-    print(f"Epoch {epoch} | avg train loss: {np.mean(train_losses):.3f} | avg test loss: {np.mean(test_losses):.3f} | lr: {optimizer.param_groups[0]['lr']:.3f}")
+    print(
+        f"Epoch {epoch} | avg train loss: {np.mean(train_losses):.3f} | avg test loss: {np.mean(test_losses):.3f} | lr: {optimizer.param_groups[0]['lr']:.3f}"
+    )
 
     scheduler.step()
 
