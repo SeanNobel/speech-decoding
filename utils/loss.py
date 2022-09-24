@@ -27,19 +27,23 @@ class MSELoss(nn.Module):
 
 class CLIPLossX(nn.Module):
 
-    def __init__(self):
+    def __init__(self, batch_size, reduction="mean"):
         super().__init__()
         self.compute_similarity = nn.CosineSimilarity(dim=-1)
-        self._criterion = nn.CrossEntropyLoss(reduction='mean')
+        self._criterion = nn.CrossEntropyLoss(reduction=reduction)
         # self.targets = torch.zeros(size=(batch_size, )).long() # that's for the slow method
         self.registered_targets = False
+        self.batch_size = batch_size
 
     def forward(self, x, y, fast=True, return_logits=False):
-        batch_size = x.size(0)
+        # batch_size = x.size(0)
         if not self.registered_targets:
-            self.register_buffer('targets', torch.arange(batch_size, requires_grad=False))
+            self.register_buffer(
+                'targets',
+                torch.arange(self.batch_size, requires_grad=False).cuda(),
+            )
             self.registered_targets = True
-            print('registered')
+            # print('registered')
 
         if not fast:
             # less efficient way
@@ -55,12 +59,13 @@ class CLIPLossX(nn.Module):
 
         else:
             # fast way
-            x = x.view(batch_size, -1)
-            y = y.view(batch_size, -1)
+            x = x.reshape(self.batch_size, -1)
+            y = y.reshape(self.batch_size, -1)
             logits = torch.matmul(x, y.T)
             # I don't know why yet, but normalization seems to be necessary to get sensible similarities (0, 1)
             logits = logits / (x.norm(dim=-1) * y.norm(dim=-1))
 
+        # print(f"is_cuda self.targets {self.targets.is_cuda} logits {logits.is_cuda}")
         if return_logits:
             return logits, self._criterion(logits, self.targets)
         else:
