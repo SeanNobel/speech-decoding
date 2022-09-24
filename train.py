@@ -86,12 +86,10 @@ for epoch in range(args.epochs):
     # weight_after = brain_encoder.subject_block.spatial_attention.z_re.clone()
     # print(f"Learning: {not torch.equal(weight_prev, weight_after)}")
 
+
+    # NOTE: maybe testing in this way is meaningless for contrastive loss
     brain_encoder.eval()
     for i, (X, Y, subject_idxs) in enumerate(tqdm(test_loader)):
-
-        if i < 2:
-            torch.save(X, run_dir+f"test_x_{i}.pt")
-            torch.save(subject_idxs, run_dir+f"test_subject_idxs_{i}.pt")
 
         X, Y = X.cuda(), Y.cuda()
 
@@ -104,7 +102,7 @@ for epoch in range(args.epochs):
         test_losses.append(loss.item())
 
     print(
-        f"Epoch {epoch}/{args.epochs} | avg train loss: {np.mean(train_losses):.3f} | avg test loss: {np.mean(test_losses):.3f} | lr: {optimizer.param_groups[0]['lr']:.3f}"
+        f"Epoch {epoch}/{args.epochs} | avg train loss: {np.mean(train_losses):.3f} | avg test loss: {np.mean(test_losses):.3f} | lr: {optimizer.param_groups[0]['lr']}"
     )
 
     scheduler.step()
