@@ -22,3 +22,5 @@ weights/brain_encoder/
 tests.ipynb
 .ipynb_checkpoints
 sandbox.ipynb
+wandb
+.vscode
