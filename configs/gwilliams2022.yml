@@ -1,0 +1,16 @@
+# ==== Dataset ==== #
+dataset: Gwilliams2022
+num_subjects: 27
+
+# ==== Training ==== #
+batch_size: 64
+lr: 0.001
+epochs: 50
+
+# ==== Architecture ==== #
+D1: 270
+D2: 320
+F: 512
+K: 32
+
+wav2vec_model: xlsr_53_56k
