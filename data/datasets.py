@@ -1,6 +1,7 @@
 import os, sys
 import torch
 import torchaudio
+import torchaudio.functional as F
 import numpy as np
 import pandas as pd
 import glob
@@ -104,15 +105,16 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         # waveform: ( 1, 31908132 ), sample_rate: 44100
         waveform, sample_rate = torchaudio.load("data/Brennan2018/merged_audio.wav")
 
+        # NOTE: the base model was pre-trained on audio sampled @ 16kHz
+        resample_rate = 16000
+        waveform = F.resample(waveform, sample_rate, resample_rate, lowpass_filter_width=128)
+
         model = load_wav2vec_model(wav2vec_model)
         model.eval()
 
         # FIXME: in the paper, activations of the last four transformer layers were averaged
-        # NOTE: embed the entire waveform into a tensor (512, n), n: number of embeddings
-        # NOTE: we get 99712 embeddings out of 31908132 samples in the waveform
-        # NOTE: (a downsampling factor of 320.002) which means that one embedding captures
-        # NOTE: roughly 320 samples (which @44.1kHz is ~7.256 ms of the original audio)
-        return model.feature_extractor(waveform).squeeze()  # ( 512, 99712 )
+        # FIXME: isn't the audio srate expected to be @16kHz?
+        return model.feature_extractor(waveform).squeeze()  # ( 512, 36176 @16kHz) ( 512, 99712 @44.1kHz)
 
     @staticmethod
     def brain_preproc(audio_embd_len):
