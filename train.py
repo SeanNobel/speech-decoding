@@ -32,10 +32,11 @@ parser.add_argument("--dataset", type=str, default="Brennan2018", choices=["Gwil
 parser.add_argument("--wav2vec-model", type=str, default="xlsr_53_56k", help="Type of wav2vec2.0 model to use")
 parser.add_argument("--wandb", type=bool, default=False, help="If you want to log progress to W&B")
 
+# TODO: Now the user has to calculate the nuber of embeddings in each sample. Will add a few lines to make it possible to specify the length of the sample in seconds. Now 147 corresponds to ~3s of audio, as in the paper
 parser.add_argument(
     "--seq_len",
     type=int,
-    default=140,
+    default=147,
     help="length (i.e. bptt, or number of embeddings in a sequence). 140 corresponds to ~1 s",
 )
 args = parser.parse_args()
