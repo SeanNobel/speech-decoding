@@ -27,8 +27,9 @@ class MSELoss(nn.Module):
 
 class CLIPLossX(nn.Module):
 
-    def __init__(self, batch_size, reduction="mean"):
+    def __init__(self, device, batch_size, reduction="mean"):
         super().__init__()
+        self.device = device
         self.compute_similarity = nn.CosineSimilarity(dim=-1)
         self._criterion = nn.CrossEntropyLoss(reduction=reduction)
         # self.targets = torch.zeros(size=(batch_size, )).long() # that's for the slow method
@@ -38,12 +39,8 @@ class CLIPLossX(nn.Module):
     def forward(self, x, y, fast=True, return_logits=False):
         # batch_size = x.size(0)
         if not self.registered_targets:
-            self.register_buffer(
-                'targets',
-                torch.arange(self.batch_size, requires_grad=False).cuda(),
-            )
+            self.register_buffer('targets', torch.arange(self.batch_size, requires_grad=False).to(self.device))
             self.registered_targets = True
-            # print('registered')
 
         if not fast:
             # less efficient way

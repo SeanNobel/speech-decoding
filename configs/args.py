@@ -11,7 +11,8 @@ def parse_arguments():
     parser.add_argument("--config", default=None, help="Config file to use (see configs dir)")
     parser.add_argument("--name", type=str, default="test")
     parser.add_argument("--batch-size", default=64)
-    parser.add_argument("--lr", default=0.001)
+    parser.add_argument("--lr", type=float, default=0.001)
+    parser.add_argument("--lr-gamma", type=float, default=0.97, help="Decay rate for exponential lr scheduler")
     parser.add_argument("--epochs", type=int, default=100)
     # parser.add_argument("--seq-len", type=int, default=256, help="T in the paper") # seq-len 256 is approximately 1.8 seconds in real world
     parser.add_argument("--num-subjects", default=27)

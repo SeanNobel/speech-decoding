@@ -9,21 +9,35 @@ from data.datasets import Gwilliams2022Dataset, Brennan2018Dataset, ToyDataset
 from models.brain_encoder import BrainEncoder
 from utils.loss import CLIPLoss, MSELoss, CLIPLossOrig, CLIPLossX
 from utils.wav2vec_util import load_wav2vec_model
+from tqdm import trange
+from termcolor import cprint
+import wandb
 
-assert torch.cuda.is_available(), "Training without GPU is not supported."
+# assert torch.cuda.is_available(), "Training without GPU is not supported."
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 run_dir = f"runs/{args.name}/"
 if not os.path.exists(run_dir):
     os.mkdir(run_dir)
 
+# NOTE: we'll remove this, once the repo is ready
+if args.wandb:
+    wandb.config = {k: v for k, v in args.__dict__.items() if not k.startswith('__')}
+    wandb.init(
+        project="speech_decoding",
+        entity="nightdude",
+        config=wandb.config,
+        save_code=True,
+    )
+
 # ---------------------
 #        Models
 # ---------------------
-brain_encoder = BrainEncoder(args).cuda()
+brain_encoder = BrainEncoder(args).to(device)
 optimizer = torch.optim.Adam(brain_encoder.parameters(), lr=args.lr)
 scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.97)
 
-wav2vec = load_wav2vec_model(args.wav2vec_model).cuda()
+wav2vec = load_wav2vec_model(args.wav2vec_model).to(device)
 wav2vec.eval()
 
 # -----------------------
@@ -40,22 +54,14 @@ train_set, test_set = torch.utils.data.random_split(
     generator=torch.Generator().manual_seed(1234)
 )
 
-train_loader = torch.utils.data.DataLoader(
-    dataset=train_set,
-    batch_size=args.batch_size,
-    shuffle=True,
-)
-test_loader = torch.utils.data.DataLoader(
-    dataset=test_set,
-    batch_size=args.batch_size,
-    shuffle=False,
-)
+train_loader = torch.utils.data.DataLoader(dataset=train_set, batch_size=args.batch_size, shuffle=True, drop_last=True)
+test_loader = torch.utils.data.DataLoader(dataset=test_set, batch_size=args.batch_size, shuffle=False, drop_last=True)
 
 # ---------------
 #      Loss
 # ---------------
 # loss_func = CLIPLoss("sum").cuda()
-loss_func = CLIPLossX(args.batch_size, reduction="sum")
+loss_func = CLIPLossX(device, args.batch_size, reduction="sum")
 # loss_func = CLIPLossOrig("sum").cuda()
 # loss_func = MSELoss().cuda()
 
@@ -69,17 +75,18 @@ for epoch in range(args.epochs):
     brain_encoder.train()
     for i, (X, Y, subject_idxs) in enumerate(tqdm(train_loader)):
 
-        X, Y = X.cuda(), Y.cuda()
+        X, Y = X.to(device), Y.to(device)
 
-        with torch.no_grad():
-            Y = wav2vec.feature_extractor(Y)
+        # NOTE: we don't need this for Brennan, we have precomputed W2V2 embeddings
+        # with torch.no_grad():
+        #     Y = wav2vec.feature_extractor(Y)
 
         Z = brain_encoder(X, subject_idxs)
 
         loss = loss_func(Y, Z)
         train_losses.append(loss.item())
 
-        brain_encoder.zero_grad()
+        optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
@@ -89,13 +96,13 @@ for epoch in range(args.epochs):
 
     # NOTE: maybe testing in this way is meaningless for contrastive loss
     brain_encoder.eval()
-    for i, (X, Y, subject_idxs) in enumerate(tqdm(test_loader)):
+    for X, Y, subject_idxs in test_loader:
 
-        X, Y = X.cuda(), Y.cuda()
+        X, Y = X.to(device), Y.to(device)
 
         with torch.no_grad():
-            Y = wav2vec.feature_extractor(Y)
-
+            # NOTE: we don't need it. We already have precomputed W2V2 embeddings.
+            # Y = wav2vec.feature_extractor(Y)
             Z = brain_encoder(X, subject_idxs)
 
         loss = loss_func(Y, Z)
@@ -104,6 +111,15 @@ for epoch in range(args.epochs):
     print(
         f"Epoch {epoch}/{args.epochs} | avg train loss: {np.mean(train_losses):.3f} | avg test loss: {np.mean(test_losses):.3f} | lr: {optimizer.param_groups[0]['lr']}"
     )
+
+    if args.wandb:
+        performance_now = {
+            'epoch': epoch,
+            'train_loss': np.mean(train_losses),
+            'test_loss': np.mean(test_losses),
+            'lrate': optimizer.param_groups[0]['lr'],
+        }
+        wandb.log(performance_now)
 
     scheduler.step()
 

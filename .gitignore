@@ -26,5 +26,4 @@ weights/*.pt
 tests.ipynb
 .ipynb_checkpoints
 sandbox.ipynb
-
-.vscode/
+wandb

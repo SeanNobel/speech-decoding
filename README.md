@@ -27,6 +27,8 @@ Works for Gwilliams2022 dataset and Brennan2018 dataset.
 
 - [ ] The paper says "1x1 convolution" but how do we apply 1x1 convolution to sequences?
 
+- [x] w2v2 expects audio sampled @ 16 kHz
+
 ## Dataset
 
 4 datasets were used in the paper (2 EEG and 2 MEG). I implemented preprocessing for Gwilliams2022 (MEG) and Brennan2018 (EEG). As in the paper, the model learns MEG much better.
