@@ -1,11 +1,10 @@
 import os, sys
-import sched
 import numpy as np
 import torch
 import torch.nn as nn
-import argparse
 from time import time
 from tqdm import tqdm
+from configs.args import args
 from data.datasets import Gwilliams2022Dataset, Brennan2018Dataset, ToyDataset
 from models.brain_encoder import BrainEncoder
 from utils.loss import CLIPLoss, MSELoss, CLIPLossOrig, CLIPLossX
@@ -17,29 +16,9 @@ import wandb
 # assert torch.cuda.is_available(), "Training without GPU is not supported."
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-parser = argparse.ArgumentParser(description="Speech decoding by MetaAI reimplementation")
-parser.add_argument("--name", type=str, default="test")
-parser.add_argument("--batch-size", default=64)
-parser.add_argument("--lr", default=0.001)
-parser.add_argument("--epochs", type=int, default=100)
-# parser.add_argument("--seq-len", type=int, default=256, help="T in the paper") # seq-len 256 is approximately 1.8 seconds in real world
-parser.add_argument("--num-subjects", default=27)
-parser.add_argument("--D1", type=int, default=270, help="D_1 in the paper")
-parser.add_argument("--D2", type=int, default=320)
-parser.add_argument("--F", type=int, default=512, help="Embedding dimension for both speech and M/EEG")
-parser.add_argument("--K", type=int, default=32, help="Number of harmonics in fourier space for spatial attention")
-parser.add_argument("--dataset", type=str, default="Brennan2018", choices=["Gwilliams2022", "Brennan2018", "Toy"])
-parser.add_argument("--wav2vec-model", type=str, default="xlsr_53_56k", help="Type of wav2vec2.0 model to use")
-parser.add_argument("--wandb", type=bool, default=False, help="If you want to log progress to W&B")
-
-# TODO: Now the user has to calculate the nuber of embeddings in each sample. Will add a few lines to make it possible to specify the length of the sample in seconds. Now 147 corresponds to ~3s of audio, as in the paper
-parser.add_argument(
-    "--seq_len",
-    type=int,
-    default=147,
-    help="length (i.e. bptt, or number of embeddings in a sequence). 140 corresponds to ~1 s",
-)
-args = parser.parse_args()
+run_dir = f"runs/{args.name}/"
+if not os.path.exists(run_dir):
+    os.mkdir(run_dir)
 
 # NOTE: we'll remove this, once the repo is ready
 if args.wandb:
@@ -64,20 +43,28 @@ wav2vec.eval()
 # -----------------------
 #       Dataloader
 # -----------------------
-# dataset = Gwilliams2022Dataset(args.wav2vec_model)
-dataset = Brennan2018Dataset(args.seq_len, args.wav2vec_model)
+dataset = Gwilliams2022Dataset(args.wav2vec_model, shift_brain=True)
+# dataset = Brennan2018Dataset(args.seq_len, args.wav2vec_model)
 
 train_size = int(dataset.X.shape[0] * 0.8)
 test_size = dataset.X.shape[0] - train_size
-train_set, test_set = torch.utils.data.random_split(dataset, lengths=[train_size, test_size])
+train_set, test_set = torch.utils.data.random_split(
+    dataset,
+    lengths=[train_size, test_size],
+    generator=torch.Generator().manual_seed(1234)
+)
 
 train_loader = torch.utils.data.DataLoader(dataset=train_set, batch_size=args.batch_size, shuffle=True, drop_last=True)
 test_loader = torch.utils.data.DataLoader(dataset=test_set, batch_size=args.batch_size, shuffle=False, drop_last=True)
 
-# loss_func = CLIPLoss("sum").to(device)
-loss_func = CLIPLossX(device)
-# loss_func = CLIPLossOrig("sum").to(device)
-# loss_func = MSELoss().to(device)
+# ---------------
+#      Loss
+# ---------------
+# loss_func = CLIPLoss("sum").cuda()
+loss_func = CLIPLossX(device, args.batch_size, reduction="sum")
+# loss_func = CLIPLossOrig("sum").cuda()
+# loss_func = MSELoss().cuda()
+
 
 for epoch in range(args.epochs):
     train_losses = []
@@ -106,6 +93,8 @@ for epoch in range(args.epochs):
     # weight_after = brain_encoder.subject_block.spatial_attention.z_re.clone()
     # print(f"Learning: {not torch.equal(weight_prev, weight_after)}")
 
+
+    # NOTE: maybe testing in this way is meaningless for contrastive loss
     brain_encoder.eval()
     for X, Y, subject_idxs in test_loader:
 
@@ -120,7 +109,7 @@ for epoch in range(args.epochs):
         test_losses.append(loss.item())
 
     print(
-        f"Epoch {epoch} | avg train loss: {np.mean(train_losses):.3f} | avg test loss: {np.mean(test_losses):.3f} | lr: {optimizer.param_groups[0]['lr']:.3f}"
+        f"Epoch {epoch}/{args.epochs} | avg train loss: {np.mean(train_losses):.3f} | avg test loss: {np.mean(test_losses):.3f} | lr: {optimizer.param_groups[0]['lr']}"
     )
 
     if args.wandb:
@@ -134,4 +123,4 @@ for epoch in range(args.epochs):
 
     scheduler.step()
 
-    torch.save(brain_encoder.state_dict(), f"weights/brain_encoder/{args.name}.pt")
+    torch.save(brain_encoder.state_dict(), run_dir+"model_last.pt")

@@ -11,6 +11,7 @@ import mne, mne_bids
 from sklearn.preprocessing import RobustScaler
 from tqdm import tqdm
 import ast
+from typing import Union
 from utils.bcolors import cyan, yellow
 from utils.wav2vec_util import load_wav2vec_model
 from termcolor import cprint
@@ -177,18 +178,20 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
         seq_len=3,  # length of a segment in seconds
         resample_rate=120,
         audio_upsample=38530,
+        shift_brain=True,
     ):
         super().__init__()
 
         self.wav2vec_model = wav2vec_model
+        self.resample_rate = resample_rate
         self.meg_len = resample_rate * seq_len
         # NOTE: upsample audio so that it becomes (roughly) 120Hz after wav2vec2.0
         self.audio_upsample = audio_upsample
         # TODO: decide whether to wav2vec before or after
         self.audio_len = audio_upsample * seq_len  # self.meg_len
 
-        self.x_path = "data/Gwilliams2022/processed_X.npy"
-        self.y_path = "data/Gwilliams2022/processed_Y.npy"
+        self.x_path = "data/Gwilliams2022/processed_x_dict.npy"
+        self.y_path = "data/Gwilliams2022/processed_y_dict.npy"
         real_dur_path = "data/Gwilliams2022/real_durations.npy"
 
         # Make X
@@ -196,8 +199,8 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
             self.X = np.load(self.x_path, allow_pickle=True).item()
             self.real_durations = np.load(real_dur_path, allow_pickle=True).item()
         else:
-            self.real_durations = {}  # will be updated in self.brain_preproc
-            self.X = self.brain_preproc(num_subjects, resample_rate)
+            self.real_durations = {} # will be updated in self.brain_preproc
+            self.X = self.brain_preproc(num_subjects)
             np.save(real_dur_path, self.real_durations)
 
         # Make Y
@@ -225,12 +228,17 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
         subject_idxs_list = []
         for i, key in enumerate(self.X.keys()):
             X = self.X[key]
+            Y = self.Y[key.split("_")[-1]]
+            if self.shift_brain:
+                X, Y = self.shift_brain_signal(X, Y)
+
+            # print(f"X: {X.shape}")
             trim_len = X.shape[-1] % self.meg_len
             X = X[:, :-trim_len]
             X = X.reshape(X.shape[0], -1, self.meg_len).transpose(1, 0, 2)
             X_list.append(torch.from_numpy(X.astype(np.float32)))
 
-            Y = self.Y[key.split("_")[-1]]
+            # print(f"Y: {Y.shape}")
             trim_len = Y.shape[-1] % self.audio_len
             Y = Y[:, :-trim_len]
             Y = Y.reshape(-1, self.audio_len)  # .unsqueeze(1)
@@ -248,7 +256,7 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
 
         return torch.cat(subject_idxs_list)
 
-    def brain_preproc(self, num_subjects, resample_rate, num_channels=208):
+    def brain_preproc(self, num_subjects, num_channels=208):
         np.save(self.x_path, {})
         for subject_idx in range(num_subjects):
             for session_idx in range(2):  # 2 sessions for each subject
@@ -280,13 +288,10 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
                     self.update_real_durations(real_durations, task_idx)
 
                     # To 120 Hz
-                    meg_resampled = mne.filter.resample(meg_trimmed, down=1000 / resample_rate)  # ( 208, 37853 )
+                    meg_resampled = mne.filter.resample(meg_trimmed, down=1000/self.resample_rate) # ( 208, 37853 )
 
                     meg_filtered = mne.filter.filter_data(
-                        meg_resampled,
-                        sfreq=resample_rate,
-                        l_freq=0.5,
-                        h_freq=30,
+                        meg_resampled, sfreq=self.resample_rate, l_freq=0.5, h_freq=30,
                     )
 
                     scaler = RobustScaler().fit(meg_filtered)
@@ -384,6 +389,21 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
                 print(yellow(self.real_durations[task_str]))
 
         self.real_durations.update({task_str: real_durations})
+
+    def shift_brain_signal(self, X: np.ndarray, Y: torch.Tensor, shift=150):
+        """
+        - X: ( 208, 37853 ) Y: ( 1, 12153904 )
+        - shift (ms): how much to shift M/EEG forward
+        """
+        # TODO: find actual resampled_rate (need to fix resampling amount for subjects)
+
+        x_shift = int(self.resample_rate * (shift / 1000)) # 18
+        y_shift = int(self.audio_upsample * (shift / 1000)) # 5779
+
+        X = X[:, x_shift:] # ( 208, 37835 )
+        Y = Y[:, :-y_shift] # ( 1, 12148125 )
+
+        return X, Y
 
 
 class ToyDataset():
