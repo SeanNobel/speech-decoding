@@ -29,6 +29,8 @@ Works for Gwilliams2022 dataset and Brennan2018 dataset.
 
 - [x] w2v2 expects audio sampled @ 16 kHz
 
+- [ ] I may happen that on batch more than one segment. This shouldn't break CLIPLoss completely, but it has to deal with it somehow.
+
 ## Dataset
 
 4 datasets were used in the paper (2 EEG and 2 MEG). I implemented preprocessing for Gwilliams2022 (MEG) and Brennan2018 (EEG). As in the paper, the model learns MEG much better.
