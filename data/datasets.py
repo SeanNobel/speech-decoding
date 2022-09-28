@@ -132,9 +132,9 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         embeddings = model.feature_extractor(waveform).squeeze()  # (512, 36176 @16kHz) ( 512, 99712 @44.1kHz)
 
         embedding_srate = embeddings.shape[-1] / len_audio_s
-        print(f'Original embedding shape {embeddings.shape} | srate (out out w2v): {embedding_srate}')
+        print(f'Original  embedding shape {embeddings.shape} | srate (out out w2v): {embedding_srate}')
         res_embeddings = F.resample(embeddings, orig_freq=10, new_freq=24)  # to upsample from ~50 to ~120 Hz
-        print(f'Original embedding shape {res_embeddings.shape} | srate: {120}')
+        print(f'Resampled embedding shape {res_embeddings.shape} | srate: {120}')
         return res_embeddings
 
     @staticmethod

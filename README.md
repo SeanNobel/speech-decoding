@@ -31,10 +31,15 @@ Works for Gwilliams2022 dataset and Brennan2018 dataset.
 
 - [ ] It may happen that one batch has more than one segment. This shouldn't break CLIPLoss completely, but it has to deal with it somehow.
 - [x] `--wandb` tells the `train.py` to log progress to wandb.
-- [x] `--from_scratch` tells `dataset.py` to pre-process EEG and audio again.
+- [x] `--force_recompute` tells `dataset.py` to pre-process EEG and audio again.
 - [x] Done for Brennan2018, but should be REVISITED. Upsample embeddings to 120 Hz (instead of ~50 Hz now). FIX: resample exactly to 120 Hz (not 119)
 - [ ] Use embeddings at the output of the last 4 transformer blocks instead of the feature extractor.
 - [ ] Subject selection based on comprehension score in Brennan2018.
+
+# Usage
+
+## For EEG (Brennan 2018 et al.)
+Run `python train.py --config brennan2018.yml --wandb --force_recompute`.
 
 ## Dataset
 
