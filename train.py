@@ -64,8 +64,18 @@ train_set, test_set = torch.utils.data.random_split(
     generator=torch.Generator().manual_seed(1234),
 )
 
-train_loader = torch.utils.data.DataLoader(dataset=train_set, batch_size=args.batch_size, shuffle=True, drop_last=True)
-test_loader = torch.utils.data.DataLoader(dataset=test_set, batch_size=args.batch_size, shuffle=False, drop_last=True)
+train_loader = torch.utils.data.DataLoader(
+    dataset=train_set,
+    batch_size=args.batch_size,
+    shuffle=True,
+    drop_last=True,
+)
+test_loader = torch.utils.data.DataLoader(
+    dataset=test_set,
+    batch_size=args.batch_size,
+    shuffle=False,
+    drop_last=True,
+)
 
 # ---------------
 #      Loss

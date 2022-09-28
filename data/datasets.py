@@ -48,10 +48,10 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
 
         Y_path = f"data/Brennan2018/Y_embeds/embd_{wav2vec_model}.pt"
 
-        if not os.path.exists(Y_path):
+        if (not os.path.exists(Y_path)) or force_recompute:
             torch.save(self.audio_preproc(wav2vec_model), Y_path)
 
-        self.Y = torch.load(Y_path)  # ( 512, 99712 ) # load the embeddings (of the entire recording)
+        self.Y = torch.load(Y_path)  # load the upsampled (to 120 Hz) embeddings (of the entire recording)
 
         X_path = "data/Brennan2018/processed_X.pt"
 
@@ -129,8 +129,13 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         model.eval()
 
         # FIXME: in the paper, activations of the last four transformer layers were averaged
-        # FIXME: isn't the audio srate expected to be @16kHz?
-        return model.feature_extractor(waveform).squeeze()  # ( 512, 36176 @16kHz) ( 512, 99712 @44.1kHz)
+        embeddings = model.feature_extractor(waveform).squeeze()  # (512, 36176 @16kHz) ( 512, 99712 @44.1kHz)
+
+        embedding_srate = embeddings.shape[-1] / len_audio_s
+        print(f'Original embedding shape {embeddings.shape} | srate (out out w2v): {embedding_srate}')
+        res_embeddings = F.resample(embeddings, orig_freq=10, new_freq=24)  # to upsample from ~50 to ~120 Hz
+        print(f'Original embedding shape {res_embeddings.shape} | srate: {120}')
+        return res_embeddings
 
     @staticmethod
     def brain_preproc(audio_embd_len):
@@ -142,6 +147,7 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         pprint(matfile_paths)
         # matfile_paths = np.delete(matfile_paths, excluded_subjects)
 
+        # NOTE: find the shortest EEG and trim all EEG datasets to that length
         a = []
         pbar = tqdm(matfile_paths)
         for i, matfile_path in enumerate(pbar):
@@ -157,13 +163,14 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
             mat_raw = scipy.io.loadmat(matfile_path)["raw"][0, 0]
             eeg_raw = mat_raw["trial"][0, 0][:60, :trim_eeg_to]  # drop non-EEG channels
             fsample = mat_raw["fsample"][0, 0]  # 500 Hz
+            assert fsample == 500, f"{matfile_path} has the wrong srate: {fsample}."
             # label = [e[0] for e in mat_raw["label"].squeeze()]
 
             eeg_filtered = mne.filter.filter_data(
                 eeg_raw,
                 sfreq=fsample,
                 l_freq=1.0,
-                h_freq=None,
+                h_freq=60,
             )
 
             # NOTE: This resamples EEG from 500Hz down to around 135Hz
@@ -175,14 +182,14 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
             )
 
             new_srate = fsample / downsampling_factor
-            print(f'Old srate: {fsample}, new srate: {new_srate} Hz')
+            cprint(f'Downsampling EEG from {fsample} Hz to {new_srate:.4f} Hz', color='cyan')
 
             scaler = RobustScaler().fit(eeg_resampled)
             eeg_scaled = scaler.transform(eeg_resampled)
 
             X.append(eeg_scaled)
         for i, x in enumerate(X):
-            cprint(f"Samples in EEG DS {i}: {x.shape[-1]} | total wav embeddings: {audio_embd_len}")
+            cprint(f"Samples in EEG DS {i}: {x.shape[-1]} | total wav embeddings: {audio_embd_len}", color='magenta')
 
         X = np.stack(X)  # ( num_subjects, num_channels, num_embeddings ) *you get for the entire recording
 
@@ -223,7 +230,7 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
             self.X = self.brain_preproc(num_subjects)
             np.save(real_dur_path, self.real_durations)
 
-        # Make Y
+        # Make Y if it doesn't already exist
         if os.path.exists(self.y_path):
             self.Y = np.load(self.y_path, allow_pickle=True).item()
         else:
