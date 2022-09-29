@@ -54,7 +54,7 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
 
         Y_path = f"data/Brennan2018/Y_embeds/embd_{wav2vec_model}.pt"
 
-        if (not os.path.exists(Y_path)) or force_recompute:
+        if (not os.path.exists(Y_path)) or force_recompute[0]:
             torch.save(self.audio_preproc(
                 wav2vec_model,
                 last4layers=last4layers,
@@ -65,19 +65,19 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
 
         X_path = "data/Brennan2018/processed_X.pt"
 
-        if not force_recompute and os.path.exists(X_path):
-            cprint(f'Loading existing preprocessed EEG...', color='green')
-            preprocessed_eeg = torch.load(X_path)
-            self.X = preprocessed_eeg['X']
-            srate = preprocessed_eeg['srate']  # ( 33, 60, 99712 )
-            cprint(f"Using existing pre-processed data {self.X.shape}, srate={srate}", 'red', 'on_yellow')
-        else:
+        if (not os.path.exists(X_path)) or force_recompute[0]:
             cprint(f'Pre-processing EEG...', color='red')
             self.X, srate = self.brain_preproc(audio_embd_len=self.Y.shape[-1])
             torch.save({
                 'X': self.X,
                 'srate': srate,
             }, X_path)
+        else:
+            cprint(f'Loading existing preprocessed EEG...', color='green')
+            preprocessed_eeg = torch.load(X_path)
+            self.X = preprocessed_eeg['X']
+            srate = preprocessed_eeg['srate']  # ( 33, 60, 99712 )
+            cprint(f"Using existing pre-processed data {self.X.shape}, srate={srate}", 'red', 'on_yellow')
 
         self.X, self.Y = shift_brain_signal(self.X, self.Y, srate=srate)
 
@@ -162,7 +162,7 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
 
         matfile_paths = natsorted(glob.glob("data/Brennan2018/raw/*.mat"))
         # matfile_paths = [matfile_paths[i] for i in range(21) if not i in [1, 6, 8]]
-        matfile_paths = [matfile_paths[i] for i in [0, 48]]
+        matfile_paths = [matfile_paths[i] for i in [0, 1, 3, 4, 5, 6, 7, 48]]
         pprint(matfile_paths)
         # matfile_paths = np.delete(matfile_paths, excluded_subjects)
 

@@ -1,13 +1,12 @@
 # ==== Dataset ==== #
 dataset: Brennan2018
-num_subjects: 27
 seqLengthInSeconds: 3
 
 # ==== Training ==== #
 batch_size: 64
 lr: 0.001
 epochs: 50
-last4layers: False # if True, the brain_encoder's emsize will be 1024, not 512
+last4layers: True # if True, the brain_encoder's emsize will be 1024, not 512
 before: True # (if last4layers: either before drop, residuals, and layer_norm or after)
 
 # ==== Architecture ==== #

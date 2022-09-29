@@ -40,7 +40,8 @@ Works for Gwilliams2022 dataset and Brennan2018 dataset.
 # Usage
 
 ## For EEG (Brennan 2018 et al.)
-Run `python train.py --config brennan2018.yml --wandb --force_recompute`.
+Run `python train.py --config configs/brennan2018.yml --force_recompute`.
+When `--force_recompute` flag is not set, the model just load the stred pre-processed data. This is useful if you want to run the model on exactly the same data several times.
 
 ## Dataset
 
