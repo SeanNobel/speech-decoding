@@ -7,6 +7,8 @@ seqLengthInSeconds: 3
 batch_size: 64
 lr: 0.001
 epochs: 50
+last4layers: False # if True, the brain_encoder's emsize will be 1024, not 512
+before: True # (if last4layers: either before drop, residuals, and layer_norm or after)
 
 # ==== Architecture ==== #
 D1: 270

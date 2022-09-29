@@ -48,11 +48,7 @@ if args.dataset == 'Gwilliams2022':
 elif args.dataset == 'Brennan2018':
     # NOTE: now the DS take not the number of samples, but the seconds to make windows
     # NOTE: takes an optional debug param force_recompute to pre-process the EEG even if it exists
-    dataset = Brennan2018Dataset(
-        args.seqLengthInSeconds,
-        args.wav2vec_model,
-        force_recompute=args.force_recompute,
-    )
+    dataset = Brennan2018Dataset(args)
 else:
     raise ValueError('Unknown dataset')
 
