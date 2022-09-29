@@ -43,19 +43,35 @@ wav2vec.eval()
 # -----------------------
 #       Dataloader
 # -----------------------
-dataset = Gwilliams2022Dataset(args.wav2vec_model, shift_brain=True)
-# dataset = Brennan2018Dataset(args.seq_len, args.wav2vec_model)
+if args.dataset == 'Gwilliams2022':
+    dataset = Gwilliams2022Dataset(args.wav2vec_model, shift_brain=True)
+elif args.dataset == 'Brennan2018':
+    # NOTE: now the DS take not the number of samples, but the seconds to make windows
+    # NOTE: takes an optional debug param force_recompute to pre-process the EEG even if it exists
+    dataset = Brennan2018Dataset(args)
+else:
+    raise ValueError('Unknown dataset')
 
 train_size = int(dataset.X.shape[0] * 0.8)
 test_size = dataset.X.shape[0] - train_size
 train_set, test_set = torch.utils.data.random_split(
     dataset,
     lengths=[train_size, test_size],
-    generator=torch.Generator().manual_seed(1234)
+    generator=torch.Generator().manual_seed(1234),
 )
 
-train_loader = torch.utils.data.DataLoader(dataset=train_set, batch_size=args.batch_size, shuffle=True, drop_last=True)
-test_loader = torch.utils.data.DataLoader(dataset=test_set, batch_size=args.batch_size, shuffle=False, drop_last=True)
+train_loader = torch.utils.data.DataLoader(
+    dataset=train_set,
+    batch_size=args.batch_size,
+    shuffle=True,
+    drop_last=True,
+)
+test_loader = torch.utils.data.DataLoader(
+    dataset=test_set,
+    batch_size=args.batch_size,
+    shuffle=False,
+    drop_last=True,
+)
 
 # ---------------
 #      Loss
@@ -64,7 +80,6 @@ test_loader = torch.utils.data.DataLoader(dataset=test_set, batch_size=args.batc
 loss_func = CLIPLossX(device, args.batch_size, reduction="sum")
 # loss_func = CLIPLossOrig("sum").cuda()
 # loss_func = MSELoss().cuda()
-
 
 for epoch in range(args.epochs):
     train_losses = []
@@ -77,10 +92,6 @@ for epoch in range(args.epochs):
 
         X, Y = X.to(device), Y.to(device)
 
-        # NOTE: we don't need this for Brennan, we have precomputed W2V2 embeddings
-        # with torch.no_grad():
-        #     Y = wav2vec.feature_extractor(Y)
-
         Z = brain_encoder(X, subject_idxs)
 
         loss = loss_func(Y, Z)
@@ -92,7 +103,6 @@ for epoch in range(args.epochs):
 
     # weight_after = brain_encoder.subject_block.spatial_attention.z_re.clone()
     # print(f"Learning: {not torch.equal(weight_prev, weight_after)}")
-
 
     # NOTE: maybe testing in this way is meaningless for contrastive loss
     brain_encoder.eval()
@@ -109,7 +119,7 @@ for epoch in range(args.epochs):
         test_losses.append(loss.item())
 
     print(
-        f"Epoch {epoch}/{args.epochs} | avg train loss: {np.mean(train_losses):.3f} | avg test loss: {np.mean(test_losses):.3f} | lr: {optimizer.param_groups[0]['lr']}"
+        f"Epoch {epoch}/{args.epochs} | avg train loss: {np.mean(train_losses):.3f} | avg test loss: {np.mean(test_losses):.3f} | lr: {optimizer.param_groups[0]['lr']:.5f}"
     )
 
     if args.wandb:
@@ -123,4 +133,4 @@ for epoch in range(args.epochs):
 
     scheduler.step()
 
-    torch.save(brain_encoder.state_dict(), run_dir+"model_last.pt")
+    torch.save(brain_encoder.state_dict(), run_dir + "model_last.pt")

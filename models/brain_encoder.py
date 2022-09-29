@@ -197,7 +197,7 @@ class BrainEncoder(nn.Module):
         self.num_subjects = args.num_subjects
         self.D1 = args.D1
         self.D2 = args.D2
-        self.F = args.F
+        self.F = args.F if not args.last4layers else 1024
         self.K = args.K
         self.dataset_name = args.dataset
 

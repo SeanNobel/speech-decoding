@@ -2,8 +2,10 @@ import sys
 import argparse
 import yaml
 from configs import parser as _parser
+import distutils
 
 args = None
+
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Speech decoding by MetaAI reimplementation")
@@ -14,20 +16,19 @@ def parse_arguments():
     parser.add_argument("--lr", type=float, default=0.001)
     parser.add_argument("--lr-gamma", type=float, default=0.97, help="Decay rate for exponential lr scheduler")
     parser.add_argument("--epochs", type=int, default=100)
-    # parser.add_argument("--seq-len", type=int, default=256, help="T in the paper") # seq-len 256 is approximately 1.8 seconds in real world
     parser.add_argument("--num-subjects", default=27)
     parser.add_argument("--D1", type=int, default=270, help="D_1 in the paper")
     parser.add_argument("--D2", type=int, default=320)
     parser.add_argument("--F", type=int, default=512, help="Embedding dimension for both speech and M/EEG")
     parser.add_argument("--K", type=int, default=32, help="Number of harmonics in fourier space for spatial attention")
-    # parser.add_argument("--dataset", type=str, default="Gwilliams2022", choices=["Gwilliams2022", "Brennan2018", "Toy"])
     parser.add_argument("--wav2vec-model", type=str, default="xlsr_53_56k", help="Type of wav2vec2.0 model to use")
+    parser.add_argument("--wandb", action='store_true', help="Whether to log to wandb")
+    parser.add_argument("--force_recompute", action='store_true', help="Recompute EEG even if exists")
 
     args = parser.parse_args()
 
     if len(sys.argv) > 1:
         get_config(args)
-
     return args
 
 

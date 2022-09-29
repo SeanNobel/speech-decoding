@@ -8,7 +8,7 @@ Paper: https://arxiv.org/pdf/2208.12266.pdf
 
 Works for Gwilliams2022 dataset and Brennan2018 dataset.
 
-## ToDos
+## TODOs
 
 * Perfectly align speech and EEG  
   - [x] Encode 3s chunks of speech every iteration, not doing it beforehand
@@ -28,6 +28,20 @@ Works for Gwilliams2022 dataset and Brennan2018 dataset.
 - [ ] The paper says "1x1 convolution" but how do we apply 1x1 convolution to sequences?
 
 - [x] w2v2 expects audio sampled @ 16 kHz
+
+- [ ] It may happen that one batch has more than one segment. This shouldn't break CLIPLoss completely, but it has to deal with it somehow.
+- [x] `--wandb` tells the `train.py` to log progress to wandb.
+- [x] `--force_recompute` tells `dataset.py` to pre-process EEG and audio again.
+- [x] Done for Brennan2018, but should be REVISITED. Upsample embeddings to 120 Hz (instead of ~50 Hz now). FIX: resample exactly to 120 Hz (not 119)
+- [x] For `Brennan2018` added the option of using either the output of `feature_extractor` or the average of the outputs of the last four transformer blocks, either _before_ or _after_ dropout, layer_norm are applied and residual connections are added.
+- [ ] Unlike the `feature_extractor`, the `transformer` outputs embeddings of dim=1024. This means that we either have to project them by adding another learnable layer, or change the `brain_encoder` so that it's embeddings are not 512-dimensional, but 1024-dimensional.
+- [ ] Subject selection based on comprehension score in Brennan2018.
+
+# Usage
+
+## For EEG (Brennan 2018 et al.)
+Run `python train.py --config configs/brennan2018.yml --force_recompute`.
+When `--force_recompute` flag is not set, the model just load the stred pre-processed data. This is useful if you want to run the model on exactly the same data several times.
 
 ## Dataset
 
