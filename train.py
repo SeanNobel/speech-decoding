@@ -12,9 +12,7 @@ from utils.wav2vec_util import load_wav2vec_model
 from tqdm import trange
 from termcolor import cprint
 import wandb
-
-# assert torch.cuda.is_available(), "Training without GPU is not supported."
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+from constants import device
 
 run_dir = f"runs/{args.name}/"
 if not os.path.exists(run_dir):

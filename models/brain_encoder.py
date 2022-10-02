@@ -4,6 +4,8 @@ import torch
 import torch.nn as nn
 from time import time
 from utils.layout import ch_locations_2d
+import torch.nn.functional as F
+from constants import device
 
 
 class SpatialAttentionOrig(nn.Module):
@@ -107,6 +109,46 @@ class SpatialAttention(nn.Module):
         return spat_attn.permute(0, 2, 1)  # ( 128, 270, 256 )
 
 
+class SpatialAttentionX(nn.Module):
+    """Same as SpatialAttention, but a little more concise"""
+
+    def __init__(self, D1, K, dataset_name):
+        super(SpatialAttentionX, self).__init__()
+
+        # vectorize of k's and l's
+        a = []
+        for k in range(K):
+            for l in range(K):
+                a.append((k, l))
+        a = torch.tensor(a)
+        k, l = a[:, 0], a[:, 1]
+
+        # vectorize x- and y-positions of the sensors
+        loc = ch_locations_2d(dataset_name)
+        x, y = loc[:, 0], loc[:, 1]
+
+        # make a complex-valued parameter, reshape k,l into one dimension
+        self.z = nn.Parameter(torch.rand(size=(D1, K**2), dtype=torch.cfloat)).to(device)
+
+        # NOTE: pre-compute the values of cos and sin (they depend on k, l, x and y which repeat)
+        phi = 2 * torch.pi * (torch.einsum('k,x->kx', k, x) + torch.einsum('l,y->ly', l, y))  # torch.Size([1024, 60]))
+        self.cos = torch.cos(phi).to(device)
+        self.sin = torch.cos(phi).to(device)
+
+    def forward(self, X):
+
+        # NOTE: do hadamard product and and sum over l and m (i.e. m, which is l X m)
+        re = torch.einsum('jm, me -> je', self.z.real, self.cos)  # torch.Size([270, 60])
+        im = torch.einsum('jm, me -> je', self.z.imag, self.sin)
+        a = re + im  # essentially (unnormalized) weights with which to mix input channels into ouput channels
+
+        # NOTE: to get the softmax spatial attention weights over input electrodes,
+        # we don't compute exp, etc (as in the eq. 5), we take softmax instead:
+        SA_wts = F.softmax(a, dim=-1)  # each row sums to 1
+
+        return torch.einsum('oi,bit->bot', SA_wts, X)  # each output is a diff weighted sum over each input channel
+
+
 class SubjectBlock(nn.Module):
 
     def __init__(self, num_subjects, D1, K, dataset_name):
@@ -115,7 +157,8 @@ class SubjectBlock(nn.Module):
         self.num_subjects = num_subjects
         self.D1 = D1
 
-        self.spatial_attention = SpatialAttention(D1, K, dataset_name)
+        self.spatial_attention = SpatialAttentionX(D1, K, dataset_name)
+        # self.spatial_attention = SpatialAttention(D1, K, dataset_name)
         # self.spatial_attention = SpatialAttentionOrig()
         self.conv = nn.Conv1d(in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1)
         self.subject_matrix = nn.Parameter(torch.rand(self.num_subjects, self.D1, self.D1))
