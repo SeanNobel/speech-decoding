@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
+from constants import device
 
 
 def torch_exp(x: torch.Tensor):  # x: ( N, )
@@ -39,7 +40,10 @@ class CLIPLossX(nn.Module):
     def forward(self, x, y, fast=True, return_logits=False):
         # batch_size = x.size(0)
         if not self.registered_targets:
-            self.register_buffer('targets', torch.arange(self.batch_size, requires_grad=False).to(self.device))
+            self.register_buffer(
+                'targets',
+                torch.arange(self.batch_size,
+                             requires_grad=False).to(self.device))
             self.registered_targets = True
 
         if not fast:
@@ -88,7 +92,7 @@ class CLIPLoss(nn.Module):
 
         probs = nn.LogSoftmax(dim=1)(probs)
 
-        targets = torch.eye(N).cuda()
+        targets = torch.eye(N).to(device)
 
         loss = -(targets * probs).sum(dim=1)
 
@@ -123,10 +127,12 @@ class CLIPLossOrig(nn.Module):
         probs = torch.exp(probs)
         probs = (probs.T / probs.sum(dim=1)).T
 
-        labels = torch.eye(N).cuda()
+        labels = torch.eye(N).to(device)
 
         # return F.binary_cross_entropy(input=probs, target=labels, reduction=self.reduction)
-        return F.cross_entropy(input=probs, target=labels, reduction=self.reduction)
+        return F.cross_entropy(input=probs,
+                               target=labels,
+                               reduction=self.reduction)
 
 
 class CLIPLossOrig2(nn.Module):

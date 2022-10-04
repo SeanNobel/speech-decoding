@@ -38,6 +38,11 @@ Works for Gwilliams2022 dataset and Brennan2018 dataset.
 - [ ] Subject selection based on comprehension score in Brennan2018.
 - [ ] Spatial dropout.
 
+### Sensho Gwilliams2022
+
+- [ ] last4layers
+- [ ] 16 channels are references, but need to confirm that last 16 are
+
 # Usage
 
 ## For EEG (Brennan 2018 et al.)

@@ -20,7 +20,10 @@ if not os.path.exists(run_dir):
 
 # NOTE: we'll remove this, once the repo is ready
 if args.wandb:
-    wandb.config = {k: v for k, v in args.__dict__.items() if not k.startswith('__')}
+    wandb.config = {
+        k: v
+        for k, v in args.__dict__.items() if not k.startswith('__')
+    }
     wandb.init(
         project="speech_decoding",
         entity="nightdude",
@@ -42,7 +45,7 @@ wav2vec.eval()
 #       Dataloader
 # -----------------------
 if args.dataset == 'Gwilliams2022':
-    dataset = Gwilliams2022Dataset(args.wav2vec_model, shift_brain=True)
+    dataset = Gwilliams2022Dataset(args)
 elif args.dataset == 'Brennan2018':
     # NOTE: now the DS take not the number of samples, but the seconds to make windows
     # NOTE: takes an optional debug param force_recompute to pre-process the EEG even if it exists

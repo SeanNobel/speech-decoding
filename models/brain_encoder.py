@@ -26,14 +26,17 @@ class SpatialAttentionOrig(nn.Module):
             self.z_re = z_re
             self.z_im = z_im
 
-        self.ch_locations_2d = ch_locations_2d(dataset_name).cuda()
+        self.ch_locations_2d = ch_locations_2d(dataset_name).to(device)
 
-    def fourier_space(self, j, x: torch.Tensor, y: torch.Tensor):  # x: ( 60, ) y: ( 60, )
+    def fourier_space(self, j, x: torch.Tensor,
+                      y: torch.Tensor):  # x: ( 60, ) y: ( 60, )
         a_j = 0
         for k in range(self.K):
             for l in range(self.K):
-                a_j += self.z_re[j, k, l] * torch.cos(2 * torch.pi * (k * x + l * y))
-                a_j += self.z_im[j, k, l] * torch.sin(2 * torch.pi * (k * x + l * y))
+                a_j += self.z_re[j, k, l] * torch.cos(2 * torch.pi *
+                                                      (k * x + l * y))
+                a_j += self.z_im[j, k, l] * torch.sin(2 * torch.pi *
+                                                      (k * x + l * y))
 
         return a_j  # ( 60, )
 
@@ -44,7 +47,9 @@ class SpatialAttentionOrig(nn.Module):
             a_j = self.fourier_space(j, loc[:, 0], loc[:, 1])  # ( 60, )
 
             # sa.append(torch.exp(a_j) @ X / torch.exp(a_j).sum()) # ( 128, 256 )
-            spat_attn.append(torch.einsum('c,bct->bt', torch.exp(a_j), X) / torch.exp(a_j).sum())  # ( 128, 256 )
+            spat_attn.append(
+                torch.einsum('c,bct->bt', torch.exp(a_j), X) /
+                torch.exp(a_j).sum())  # ( 128, 256 )
 
         spat_attn = torch.stack(spat_attn)  # ( 270, 128, 256 )
 
@@ -65,11 +70,12 @@ class SpatialAttention(nn.Module):
         nn.init.kaiming_uniform_(self.z_re, a=np.sqrt(5))
         nn.init.kaiming_uniform_(self.z_im, a=np.sqrt(5))
 
-        self.K_arange = torch.arange(self.K).cuda()
+        self.K_arange = torch.arange(self.K).to(device)
 
-        self.ch_locations_2d = ch_locations_2d(dataset_name).cuda()
+        self.ch_locations_2d = ch_locations_2d(dataset_name).to(device)
 
-    def fourier_space(self, x: torch.Tensor, y: torch.Tensor):  # x: ( 60, ) y: ( 60, )
+    def fourier_space(self, x: torch.Tensor,
+                      y: torch.Tensor):  # x: ( 60, ) y: ( 60, )
 
         rad1 = torch.einsum('k,c->kc', self.K_arange, x)
         rad2 = torch.einsum('l,c->lc', self.K_arange, y)
@@ -78,21 +84,26 @@ class SpatialAttention(nn.Module):
         # ( 32, 1, 60 ) + ( 1, 32, 60 ) -> ( 32, 32, 60 )
         rad = rad1.unsqueeze(1) + rad2.unsqueeze(0)
 
-        real = torch.einsum('dkl,klc->dc', self.z_re, torch.cos(2 * torch.pi * rad))  # ( 270, 60 )
-        imag = torch.einsum('dkl,klc->dc', self.z_im, torch.sin(2 * torch.pi * rad))
+        real = torch.einsum('dkl,klc->dc', self.z_re,
+                            torch.cos(2 * torch.pi * rad))  # ( 270, 60 )
+        imag = torch.einsum('dkl,klc->dc', self.z_im,
+                            torch.sin(2 * torch.pi * rad))
 
         return real + imag  # ( 270, 60 )
 
-    def fourier_space_orig(self, x: torch.Tensor, y: torch.Tensor):  # x: ( 60, ) y: ( 60, )
+    def fourier_space_orig(self, x: torch.Tensor,
+                           y: torch.Tensor):  # x: ( 60, ) y: ( 60, )
         """Slower version of fourier_space"""
 
-        a = torch.zeros(self.D1, x.shape[0], device='cuda')  # ( 270, 60 )
+        a = torch.zeros(self.D1, x.shape[0], device=device)  # ( 270, 60 )
         for k in range(self.K):
             for l in range(self.K):
                 # This einsum is same as torch.stack([_d * c for _d in d])
                 a += torch.einsum('d,c->dc', self.z_re[:, k, l],
-                                  torch.cos(2 * torch.pi * (k * x + l * y)))  # ( 270, 60 )
-                a += torch.einsum('d,c->dc', self.z_im[:, k, l], torch.sin(2 * torch.pi * (k * x + l * y)))
+                                  torch.cos(2 * torch.pi *
+                                            (k * x + l * y)))  # ( 270, 60 )
+                a += torch.einsum('d,c->dc', self.z_im[:, k, l],
+                                  torch.sin(2 * torch.pi * (k * x + l * y)))
 
         return a  # ( 270, 60 )
 
@@ -104,7 +115,8 @@ class SpatialAttention(nn.Module):
         # print(torch.equal(_a, a))
 
         # ( 270, 60 ) @ ( 128, 60, 256 ) -> ( 128, 256, 270 )
-        spat_attn = torch.einsum('dc,bct->btd', torch.exp(a), X) / torch.exp(a).sum(dim=1)
+        spat_attn = torch.einsum('dc,bct->btd', torch.exp(a),
+                                 X) / torch.exp(a).sum(dim=1)
 
         return spat_attn.permute(0, 2, 1)  # ( 128, 270, 256 )
 
@@ -128,17 +140,20 @@ class SpatialAttentionX(nn.Module):
         x, y = loc[:, 0], loc[:, 1]
 
         # make a complex-valued parameter, reshape k,l into one dimension
-        self.z = nn.Parameter(torch.rand(size=(D1, K**2), dtype=torch.cfloat)).to(device)
+        self.z = nn.Parameter(torch.rand(size=(D1, K**2),
+                                         dtype=torch.cfloat)).to(device)
 
         # NOTE: pre-compute the values of cos and sin (they depend on k, l, x and y which repeat)
-        phi = 2 * torch.pi * (torch.einsum('k,x->kx', k, x) + torch.einsum('l,y->ly', l, y))  # torch.Size([1024, 60]))
+        phi = 2 * torch.pi * (torch.einsum('k,x->kx', k, x) + torch.einsum(
+            'l,y->ly', l, y))  # torch.Size([1024, 60]))
         self.cos = torch.cos(phi).to(device)
         self.sin = torch.cos(phi).to(device)
 
     def forward(self, X):
 
         # NOTE: do hadamard product and and sum over l and m (i.e. m, which is l X m)
-        re = torch.einsum('jm, me -> je', self.z.real, self.cos)  # torch.Size([270, 60])
+        re = torch.einsum('jm, me -> je', self.z.real,
+                          self.cos)  # torch.Size([270, 60])
         im = torch.einsum('jm, me -> je', self.z.imag, self.sin)
         a = re + im  # essentially (unnormalized) weights with which to mix input channels into ouput channels
 
@@ -146,7 +161,9 @@ class SpatialAttentionX(nn.Module):
         # we don't compute exp, etc (as in the eq. 5), we take softmax instead:
         SA_wts = F.softmax(a, dim=-1)  # each row sums to 1
 
-        return torch.einsum('oi,bit->bot', SA_wts, X)  # each output is a diff weighted sum over each input channel
+        return torch.einsum(
+            'oi,bit->bot', SA_wts,
+            X)  # each output is a diff weighted sum over each input channel
 
 
 class SubjectBlock(nn.Module):
@@ -160,11 +177,18 @@ class SubjectBlock(nn.Module):
         self.spatial_attention = SpatialAttentionX(D1, K, dataset_name)
         # self.spatial_attention = SpatialAttention(D1, K, dataset_name)
         # self.spatial_attention = SpatialAttentionOrig()
-        self.conv = nn.Conv1d(in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1)
-        self.subject_matrix = nn.Parameter(torch.rand(self.num_subjects, self.D1, self.D1))
+        self.conv = nn.Conv1d(in_channels=self.D1,
+                              out_channels=self.D1,
+                              kernel_size=1,
+                              stride=1)
+        self.subject_matrix = nn.Parameter(
+            torch.rand(self.num_subjects, self.D1, self.D1))
         self.subject_layer = [
-            nn.Conv1d(in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1, device='cuda')
-            for _ in range(self.num_subjects)
+            nn.Conv1d(in_channels=self.D1,
+                      out_channels=self.D1,
+                      kernel_size=1,
+                      stride=1,
+                      device=device) for _ in range(self.num_subjects)
         ]
 
     def forward(self, X, subject_idxs):
@@ -175,7 +199,8 @@ class SubjectBlock(nn.Module):
         # TODO make this more efficient
         _X = []
         for i, x in enumerate(X):  # x: ( 270, 256 )
-            x = self.subject_layer[subject_idxs[i]](x.unsqueeze(0))  # ( 1, 270, 256 )
+            x = self.subject_layer[subject_idxs[i]](
+                x.unsqueeze(0))  # ( 1, 270, 256 )
             _X.append(x.squeeze())
 
         X = torch.stack(_X)
@@ -240,15 +265,17 @@ class BrainEncoder(nn.Module):
         self.num_subjects = args.num_subjects
         self.D1 = args.D1
         self.D2 = args.D2
-        self.F = args.F if not args.last4layers else 1024
+        self.F = args.F if not args.preprocs["last4layers"] else 1024
         self.K = args.K
         self.dataset_name = args.dataset
 
-        self.subject_block = SubjectBlock(self.num_subjects, self.D1, self.K, self.dataset_name)
+        self.subject_block = SubjectBlock(self.num_subjects, self.D1, self.K,
+                                          self.dataset_name)
 
         self.conv_blocks = nn.Sequential()
         for k in range(1, 6):
-            self.conv_blocks.add_module(f"conv{k}", ConvBlock(k, self.D1, self.D2))
+            self.conv_blocks.add_module(f"conv{k}",
+                                        ConvBlock(k, self.D1, self.D2))
 
         self.conv_final1 = nn.Conv1d(
             in_channels=self.D2,
@@ -285,7 +312,7 @@ if __name__ == '__main__':
     X = torch.rand(128, 60, 256).cuda()
     X.requires_grad = True
 
-    subject_idxs = torch.randint(19, size=(128,))
+    subject_idxs = torch.randint(19, size=(128, ))
 
     Z = brain_encoder(X, subject_idxs)  # ( 512, 270, 256 )
 
