@@ -6,13 +6,17 @@ from time import time
 from utils.layout import ch_locations_2d
 import torch.nn.functional as F
 from constants import device
+from termcolor import cprint
 
 
-class SpatialAttentionOrig(nn.Module):
-    """This is easier to understand but very slow. I reimplemented to SpatialAttention"""
+class SpatialAttentionVer1(nn.Module):
+    """
+    This is easier to understand but very slow.
+    I reimplemented to SpatialAttentionVer2 (which is not the final version).
+    """
 
     def __init__(self, D1, K, dataset_name, z_re=None, z_im=None):
-        super(SpatialAttentionOrig, self).__init__()
+        super(SpatialAttentionVer1, self).__init__()
 
         self.D1 = D1
         self.K = K
@@ -56,11 +60,11 @@ class SpatialAttentionOrig(nn.Module):
         return spat_attn.permute(1, 0, 2)  # ( 128, 270, 256 )
 
 
-class SpatialAttention(nn.Module):
-    """Faster version of SpatialAttentionOrig"""
+class SpatialAttentionVer2(nn.Module):
+    """Faster version of SpatialAttentionVer1"""
 
     def __init__(self, D1, K, dataset_name):
-        super(SpatialAttention, self).__init__()
+        super(SpatialAttentionVer2, self).__init__()
 
         self.D1 = D1
         self.K = K
@@ -121,11 +125,37 @@ class SpatialAttention(nn.Module):
         return spat_attn.permute(0, 2, 1)  # ( 128, 270, 256 )
 
 
-class SpatialAttentionX(nn.Module):
-    """Same as SpatialAttention, but a little more concise"""
+class SpatialDropout(nn.Module):
 
-    def __init__(self, D1, K, dataset_name):
-        super(SpatialAttentionX, self).__init__()
+    def __init__(self, x, y, d_drop):
+        super(SpatialDropout, self).__init__()
+        self.x = x
+        self.y = y
+        self.d_drop = d_drop
+        self.num_channels = len(x)
+
+    def forward(self, SA_wts):
+        assert SA_wts.shape[-1] == self.num_channels
+
+        drop_center_id = np.random.randint(self.num_channels)
+        distances = np.sqrt((self.x - self.x[drop_center_id])**2 +
+                            (self.y - self.y[drop_center_id])**2)
+        is_dropped = torch.where(distances < self.d_drop, 0., 1.).to(device)
+        # cprint(
+        #     f"{self.num_channels - int(is_dropped.sum())} channels were dropped.",
+        #     color="cyan")
+
+        return SA_wts * is_dropped
+
+
+class SpatialAttention(nn.Module):
+    """
+    Same as SpatialAttentionVer2, but a little more concise.
+    Also SpatialAttention is added.
+    """
+
+    def __init__(self, D1, K, dataset_name, d_drop):
+        super(SpatialAttention, self).__init__()
 
         # vectorize of k's and l's
         a = []
@@ -149,6 +179,8 @@ class SpatialAttentionX(nn.Module):
         self.cos = torch.cos(phi).to(device)
         self.sin = torch.cos(phi).to(device)
 
+        self.spatial_dropout = SpatialDropout(x, y, d_drop)
+
     def forward(self, X):
 
         # NOTE: do hadamard product and and sum over l and m (i.e. m, which is l X m)
@@ -156,10 +188,14 @@ class SpatialAttentionX(nn.Module):
                           self.cos)  # torch.Size([270, 60])
         im = torch.einsum('jm, me -> je', self.z.imag, self.sin)
         a = re + im  # essentially (unnormalized) weights with which to mix input channels into ouput channels
+        # ( D1, num_channels )
 
         # NOTE: to get the softmax spatial attention weights over input electrodes,
         # we don't compute exp, etc (as in the eq. 5), we take softmax instead:
         SA_wts = F.softmax(a, dim=-1)  # each row sums to 1
+        # ( D1, num_channels )
+
+        SA_wts = self.spatial_dropout(SA_wts)
 
         return torch.einsum(
             'oi,bit->bot', SA_wts,
@@ -168,15 +204,15 @@ class SpatialAttentionX(nn.Module):
 
 class SubjectBlock(nn.Module):
 
-    def __init__(self, num_subjects, D1, K, dataset_name):
+    def __init__(self, num_subjects, D1, K, dataset_name, d_drop):
         super(SubjectBlock, self).__init__()
 
         self.num_subjects = num_subjects
         self.D1 = D1
 
-        self.spatial_attention = SpatialAttentionX(D1, K, dataset_name)
-        # self.spatial_attention = SpatialAttention(D1, K, dataset_name)
-        # self.spatial_attention = SpatialAttentionOrig()
+        # self.spatial_attention = SpatialAttentionX(D1, K, dataset_name)
+        self.spatial_attention = SpatialAttention(D1, K, dataset_name, d_drop)
+
         self.conv = nn.Conv1d(in_channels=self.D1,
                               out_channels=self.D1,
                               kernel_size=1,
@@ -270,7 +306,7 @@ class BrainEncoder(nn.Module):
         self.dataset_name = args.dataset
 
         self.subject_block = SubjectBlock(self.num_subjects, self.D1, self.K,
-                                          self.dataset_name)
+                                          self.dataset_name, args.d_drop)
 
         self.conv_blocks = nn.Sequential()
         for k in range(1, 6):
@@ -300,33 +336,46 @@ class BrainEncoder(nn.Module):
 
 
 if __name__ == '__main__':
+    from configs.args import args
+
+    batch_size = 2
+
     # torch.autograd.set_detect_anomaly(True)
 
-    brain_encoder = BrainEncoder().cuda()
+    brain_encoder = BrainEncoder(args).cuda()
     # brain_encoder = SpatialAttention().cuda()
     # brain_encoder = SubjectBlock().cuda()
     # brain_encoder_ = SpatialAttentionOrig(
     #     brain_encoder.z_re.clone(), brain_encoder.z_im.clone()
     # ).cuda()
 
-    X = torch.rand(128, 60, 256).cuda()
-    X.requires_grad = True
+    X = torch.rand(batch_size, 208, 256).to(device)
+    X.requires_grad = False
 
-    subject_idxs = torch.randint(19, size=(128, ))
+    subject_idxs = torch.randint(args.num_subjects, size=(batch_size, ))
 
-    Z = brain_encoder(X, subject_idxs)  # ( 512, 270, 256 )
+    # spatial_attention = SpatialAttention(D1=args.D1,
+    #                                      K=args.K,
+    #                                      dataset_name=args.dataset).to(device)
+    # spatial_attention_x = SpatialAttentionX(
+    #     D1=args.D1, K=args.K, dataset_name=args.dataset).to(device)
 
-    # Z_ = brain_encoder_(X)
+    # output = spatial_attention(X)
+    # output_x = spatial_attention_x(X)
+
+    # print(torch.equal(output, output_x))
+
+    Z = brain_encoder(X, subject_idxs)
 
     # print(torch.equal(Z, Z_))
 
     # print((Z - Z_).sum())
 
-    stime = time()
-    grad = torch.autograd.grad(outputs=Z,
-                               inputs=X,
-                               grad_outputs=torch.ones_like(Z),
-                               create_graph=True,
-                               retain_graph=True,
-                               only_inputs=True)[0]
-    print(f"grad {time() - stime}")
+    # stime = time()
+    # grad = torch.autograd.grad(outputs=Z,
+    #                            inputs=X,
+    #                            grad_outputs=torch.ones_like(Z),
+    #                            create_graph=True,
+    #                            retain_graph=True,
+    #                            only_inputs=True)[0]
+    # print(f"grad {time() - stime}")

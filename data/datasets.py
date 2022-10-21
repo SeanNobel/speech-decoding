@@ -279,6 +279,7 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
 
         # Make X
         if args.preprocs["x_done"]:
+            cprint("Found x_dict.npy. Skipping preprocessing.", color="cyan")
             self.X = np.load(self.x_path, allow_pickle=True).item()
             self.real_durations = np.load(real_dur_path,
                                           allow_pickle=True).item()
@@ -292,6 +293,7 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
 
         # Make Y if it doesn't already exist
         if args.preprocs["y_done"]:
+            cprint("Found y_dict.npy. Skipping preprocessing.", color="cyan")
             self.Y = np.load(self.y_path, allow_pickle=True).item()
         else:
             self.Y = self.audio_preproc()
@@ -305,7 +307,7 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
         # self.Y.requires_grad = False
 
         print(
-            f"X: {self.X.shape}, Y: {len(self.Y)}, subject_idxs: {self.subject_idxs.shape}, task_id_list: {len(self.task_id_list)}"
+            f"X: {self.X.shape}, Y (list): {len(self.Y)}, subject_idxs: {self.subject_idxs.shape}, task_id_list: {len(self.task_id_list)}"
         )
 
     def __len__(self):
@@ -367,7 +369,7 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
             task_id_list += [task_id] * X.shape[0]
 
         cprint("Batchfying Y", color="cyan")
-        for key, Y in self.Y.items():
+        for key, Y in tqdm(self.Y.items()):
             if self.shift_brain:
                 Y = self.shift_brain_signal(Y, is_Y=True)
 

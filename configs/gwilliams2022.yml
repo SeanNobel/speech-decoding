@@ -3,15 +3,22 @@ dataset: Gwilliams2022
 num_subjects: 27
 
 # ==== Training ==== #
-batch_size: 64
+batch_size: 512
 lr: 0.001
-epochs: 50
+lr_scheduler: step
+lr_exp_gamma: 0.99
+lr_steps: 5
+lr_step_gamma: 0.5
+epochs: 500
 
 # ==== Architecture ==== #
 D1: 270
 D2: 320
 F: 1024
 K: 32
+d_drop: 0.15
+# When calculating softmax for spatial attention in each iteration, we drop
+# channels that are within the distance d_drop from a randomly selected channel
 
 wav2vec_model: xlsr_53_56k
 

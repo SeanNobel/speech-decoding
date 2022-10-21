@@ -26,7 +26,7 @@ if args.wandb:
     }
     wandb.init(
         project="speech_decoding",
-        entity="nightdude",
+        # entity="nightdude",
         config=wandb.config,
         save_code=True,
     )
@@ -36,7 +36,16 @@ if args.wandb:
 # ---------------------
 brain_encoder = BrainEncoder(args).to(device)
 optimizer = torch.optim.Adam(brain_encoder.parameters(), lr=args.lr)
-scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.97)
+if args.lr_scheduler == "exponential":
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer,
+                                                       gamma=args.lr_exp_gamma)
+elif args.lr_scheduler == "step":
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
+                                                step_size=args.epochs //
+                                                args.lr_steps,
+                                                gamma=args.lr_step_gamma)
+else:
+    raise ValueError()
 
 wav2vec = load_wav2vec_model(args.wav2vec_model).to(device)
 wav2vec.eval()
