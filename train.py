@@ -33,7 +33,7 @@ if args.wandb:
 # ---------------------
 brain_encoder = BrainEncoder(args).to(device)
 optimizer = torch.optim.Adam(brain_encoder.parameters(), lr=args.lr)
-scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.97)
+scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.99)
 
 wav2vec = load_wav2vec_model(args.wav2vec_model).to(device)
 wav2vec.eval()

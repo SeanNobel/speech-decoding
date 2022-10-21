@@ -11,11 +11,11 @@ from constants import device
 class SpatialAttentionOrig(nn.Module):
     """This is easier to understand but very slow. I reimplemented to SpatialAttention"""
 
-    def __init__(self, D1, K, dataset_name, z_re=None, z_im=None):
+    def __init__(self, args, z_re=None, z_im=None):
         super(SpatialAttentionOrig, self).__init__()
 
-        self.D1 = D1
-        self.K = K
+        self.D1 = args.D1
+        self.K = args.K
 
         if z_re is None or z_im is None:
             self.z_re = nn.Parameter(torch.Tensor(self.D1, self.K, self.K))
@@ -26,7 +26,7 @@ class SpatialAttentionOrig(nn.Module):
             self.z_re = z_re
             self.z_im = z_im
 
-        self.ch_locations_2d = ch_locations_2d(dataset_name).cuda()
+        self.ch_locations_2d = ch_locations_2d(args.dataset).cuda()
 
     def fourier_space(self, j, x: torch.Tensor, y: torch.Tensor):  # x: ( 60, ) y: ( 60, )
         a_j = 0
@@ -54,11 +54,11 @@ class SpatialAttentionOrig(nn.Module):
 class SpatialAttention(nn.Module):
     """Faster version of SpatialAttentionOrig"""
 
-    def __init__(self, D1, K, dataset_name):
+    def __init__(self, args):
         super(SpatialAttention, self).__init__()
 
-        self.D1 = D1
-        self.K = K
+        self.D1 = args.D1
+        self.K = args.K
 
         self.z_re = nn.Parameter(torch.Tensor(self.D1, self.K, self.K))
         self.z_im = nn.Parameter(torch.Tensor(self.D1, self.K, self.K))
@@ -67,7 +67,7 @@ class SpatialAttention(nn.Module):
 
         self.K_arange = torch.arange(self.K).cuda()
 
-        self.ch_locations_2d = ch_locations_2d(dataset_name).cuda()
+        self.ch_locations_2d = ch_locations_2d(args.dataset).cuda()
 
     def fourier_space(self, x: torch.Tensor, y: torch.Tensor):  # x: ( 60, ) y: ( 60, )
 
@@ -112,23 +112,25 @@ class SpatialAttention(nn.Module):
 class SpatialAttentionX(nn.Module):
     """Same as SpatialAttention, but a little more concise"""
 
-    def __init__(self, D1, K, dataset_name):
+    def __init__(self, args):
         super(SpatialAttentionX, self).__init__()
+
+        self.spatial_dropout = SpatialDropout(args)
 
         # vectorize of k's and l's
         a = []
-        for k in range(K):
-            for l in range(K):
+        for k in range(args.K):
+            for l in range(args.K):
                 a.append((k, l))
         a = torch.tensor(a)
         k, l = a[:, 0], a[:, 1]
 
         # vectorize x- and y-positions of the sensors
-        loc = ch_locations_2d(dataset_name)
+        loc = ch_locations_2d(args.dataset)
         x, y = loc[:, 0], loc[:, 1]
 
         # make a complex-valued parameter, reshape k,l into one dimension
-        self.z = nn.Parameter(torch.rand(size=(D1, K**2), dtype=torch.cfloat)).to(device)
+        self.z = nn.Parameter(torch.rand(size=(args.D1, args.K**2), dtype=torch.cfloat)).to(device)
 
         # NOTE: pre-compute the values of cos and sin (they depend on k, l, x and y which repeat)
         phi = 2 * torch.pi * (torch.einsum('k,x->kx', k, x) + torch.einsum('l,y->ly', l, y))  # torch.Size([1024, 60]))
@@ -146,19 +148,51 @@ class SpatialAttentionX(nn.Module):
         # we don't compute exp, etc (as in the eq. 5), we take softmax instead:
         SA_wts = F.softmax(a, dim=-1)  # each row sums to 1
 
-        return torch.einsum('oi,bit->bot', SA_wts, X)  # each output is a diff weighted sum over each input channel
+        # NOTE: drop some channels within a d_drop of the sampled channel
+        dropped_X = self.spatial_dropout(X)
+
+        # NOTE: each output is a diff weighted sum over each input channel
+        return torch.einsum('oi,bit->bot', SA_wts, dropped_X)
+
+
+class SpatialDropout(nn.Module):
+    # NOTE: in progress
+    # FIXME: now each item in a batch gets the same channels masked
+
+    def __init__(self, args):
+        super(SpatialDropout, self).__init__()
+        self.p = args.p_spatial_drop
+        self.d_drop = args.d_drop
+
+        loc = ch_locations_2d(args.dataset)
+        self.loc = [loc[i, :].flatten() for i in range(loc.shape[0])]
+
+    def get_dropouts(self):
+        drop_id = np.random.choice(len(self.loc))
+        drop_center = self.loc[drop_id]
+        dropouts = []
+        for i, coord in enumerate(self.loc):
+            if (coord - drop_center).norm() < self.d_drop:
+                dropouts.append(i)
+        return dropouts
+
+    def forward(self, X):
+        dropouts = self.get_dropouts()
+        X[:, dropouts, :] = 0.0
+        return X
 
 
 class SubjectBlock(nn.Module):
 
-    def __init__(self, num_subjects, D1, K, dataset_name):
+    # args
+    def __init__(self, args):
         super(SubjectBlock, self).__init__()
 
-        self.num_subjects = num_subjects
-        self.D1 = D1
-
-        self.spatial_attention = SpatialAttentionX(D1, K, dataset_name)
-        # self.spatial_attention = SpatialAttention(D1, K, dataset_name)
+        self.num_subjects = args.num_subjects
+        self.D1 = args.D1
+        self.K = args.K
+        self.spatial_attention = SpatialAttentionX(args)
+        # self.spatial_attention = SpatialAttention(args)
         # self.spatial_attention = SpatialAttentionOrig()
         self.conv = nn.Conv1d(in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1)
         self.subject_matrix = nn.Parameter(torch.rand(self.num_subjects, self.D1, self.D1))
@@ -244,7 +278,7 @@ class BrainEncoder(nn.Module):
         self.K = args.K
         self.dataset_name = args.dataset
 
-        self.subject_block = SubjectBlock(self.num_subjects, self.D1, self.K, self.dataset_name)
+        self.subject_block = SubjectBlock(args)
 
         self.conv_blocks = nn.Sequential()
         for k in range(1, 6):

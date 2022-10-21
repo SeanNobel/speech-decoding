@@ -34,7 +34,7 @@ def getW2VLastFourLayersAvg(wav2vec, waveform, before=True):
         a = []
         for i, l in enumerate(out['layer_results'][-4:]):
             # NOTE: each layer returns `x, (attn, layer_result)` where layer_result is the output of a layer before
-            # NOTE: dropout, adding the residual, and layer_norm. We'll used the ones before.
+            # NOTE: dropout, adding the residual, and layer_norm. We'll use the ones before.
             if before:
                 a.append(l[2].detach())  # to get layer activations before drop, layer_norm, residuals
             else:
@@ -42,7 +42,7 @@ def getW2VLastFourLayersAvg(wav2vec, waveform, before=True):
         return torch.stack(a).mean(axis=0)
 
     # NOTE: can't process the entire waveform in one go, so we do chunk-by-chunk
-    # FIXME: the number of embeddings is slightly different that if you feed the entire waveform though the feature_extractor
+    # FIXME: the number of embeddings is slightly different than if you feed the entire waveform though the feature_extractor
     splits = np.array_split(list(range(waveform.shape[-1])), 10)
     embeddings = []
     pbar = tqdm(splits, desc="Computing W2V embeddings (last 4 layers)")
