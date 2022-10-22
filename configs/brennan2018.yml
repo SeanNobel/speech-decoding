@@ -2,11 +2,11 @@
 dataset: Brennan2018
 seqLengthInSeconds: 3
 
-# ==== Training ==== #
+# ==== Training ==== # # TODO: maybe add LR Schedule here ??
 batch_size: 64
 lr: 0.001
 epochs: 500
-last4layers: True # if True, the brain_encoder's emsize will be 1024, not 512
+last4layers: True  # if True, the brain_encoder's emsize will be 1024, not 512
 before: False      # (if last4layers: either before drop, residuals, and layer_norm or after)
 
 # ==== Architecture ==== #
@@ -14,6 +14,6 @@ D1: 270
 D2: 320
 F: 512
 K: 32
-p_spatial_drop: 0.1
-d_drop: 0.15
+p_spatial_drop: 0.25 # this wasn't in the paper, but perhaps this would make sense
+d_drop: 0.2
 wav2vec_model: xlsr_53_56k

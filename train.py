@@ -7,7 +7,7 @@ from tqdm import tqdm
 from configs.args import args
 from data.datasets import Gwilliams2022Dataset, Brennan2018Dataset, ToyDataset
 from models.brain_encoder import BrainEncoder
-from utils.loss import CLIPLoss, MSELoss, CLIPLossOrig, CLIPLossX
+from utils.loss import *
 from utils.wav2vec_util import load_wav2vec_model
 from tqdm import trange
 from termcolor import cprint
@@ -74,9 +74,9 @@ test_loader = torch.utils.data.DataLoader(
 # ---------------
 #      Loss
 # ---------------
-# loss_func = CLIPLoss("sum").cuda()
-loss_func = CLIPLossX(device, args.batch_size, reduction="sum")
-# loss_func = CLIPLossOrig("sum").cuda()
+# loss_func = CLIPLossVer3("sum").cuda()
+loss_func = CLIPLoss(device, args.batch_size, reduction="mean")
+# loss_func = CLIPLossVer1("sum").cuda()
 # loss_func = MSELoss().cuda()
 
 for epoch in range(args.epochs):

@@ -25,7 +25,7 @@ class MSELoss(nn.Module):
         return self.mse(Y, Z).sum(dim=(-1, -2)).mean()
 
 
-class CLIPLossX(nn.Module):
+class CLIPLoss(nn.Module):
 
     def __init__(self, device, batch_size, reduction="mean"):
         super().__init__()
@@ -69,7 +69,7 @@ class CLIPLossX(nn.Module):
             return self._criterion(logits, self.targets)
 
 
-class CLIPLoss(nn.Module):
+class CLIPLossVer3(nn.Module):
 
     def __init__(self, reduction="sum"):
         super().__init__()
@@ -100,7 +100,7 @@ class CLIPLoss(nn.Module):
             raise NotImplementedError()
 
 
-class CLIPLossOrig(nn.Module):
+class CLIPLossVer1(nn.Module):
 
     def __init__(self, reduction="sum"):
         super().__init__()
@@ -129,7 +129,7 @@ class CLIPLossOrig(nn.Module):
         return F.cross_entropy(input=probs, target=labels, reduction=self.reduction)
 
 
-class CLIPLossOrig2(nn.Module):
+class CLIPLossVer2(nn.Module):
 
     def __init__(self, reduction="sum"):
         super().__init__()

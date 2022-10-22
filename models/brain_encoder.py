@@ -8,11 +8,11 @@ import torch.nn.functional as F
 from constants import device
 
 
-class SpatialAttentionOrig(nn.Module):
-    """This is easier to understand but very slow. I reimplemented to SpatialAttention"""
+class SpatialAttentionVer1(nn.Module):
+    """This is easier to understand but very slow. I reimplemented to SpatialAttentionVer2"""
 
     def __init__(self, args, z_re=None, z_im=None):
-        super(SpatialAttentionOrig, self).__init__()
+        super(SpatialAttentionVer1, self).__init__()
 
         self.D1 = args.D1
         self.K = args.K
@@ -51,11 +51,11 @@ class SpatialAttentionOrig(nn.Module):
         return spat_attn.permute(1, 0, 2)  # ( 128, 270, 256 )
 
 
-class SpatialAttention(nn.Module):
-    """Faster version of SpatialAttentionOrig"""
+class SpatialAttentionVer2(nn.Module):
+    """Faster version of SpatialAttentionVer1"""
 
     def __init__(self, args):
-        super(SpatialAttention, self).__init__()
+        super(SpatialAttentionVer2, self).__init__()
 
         self.D1 = args.D1
         self.K = args.K
@@ -109,11 +109,11 @@ class SpatialAttention(nn.Module):
         return spat_attn.permute(0, 2, 1)  # ( 128, 270, 256 )
 
 
-class SpatialAttentionX(nn.Module):
-    """Same as SpatialAttention, but a little more concise"""
+class SpatialAttention(nn.Module):
+    """Same as SpatialAttentionVer2, but a little more concise"""
 
     def __init__(self, args):
-        super(SpatialAttentionX, self).__init__()
+        super(SpatialAttention, self).__init__()
 
         self.spatial_dropout = SpatialDropoutX(args)
 
@@ -180,22 +180,21 @@ class SpatialDropoutX(nn.Module):
         return mask.to(device)
 
     def forward(self, X):
-        mask = self.make_mask()
+        mask = self.make_mask()  # mask: B by num_chans. Each item in batch gets a different mask
         return torch.einsum('bc,bct->bct', mask, X)
 
 
 class SubjectBlock(nn.Module):
 
-    # args
     def __init__(self, args):
         super(SubjectBlock, self).__init__()
 
         self.num_subjects = args.num_subjects
         self.D1 = args.D1
         self.K = args.K
-        self.spatial_attention = SpatialAttentionX(args)
-        # self.spatial_attention = SpatialAttention(args)
-        # self.spatial_attention = SpatialAttentionOrig()
+        self.spatial_attention = SpatialAttention(args)
+        # self.spatial_attention = SpatialAttentionVer2(args)
+        # self.spatial_attention = SpatialAttentionVer1()
         self.conv = nn.Conv1d(in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1)
         self.subject_matrix = nn.Parameter(torch.rand(self.num_subjects, self.D1, self.D1))
         self.subject_layer = [
@@ -312,9 +311,9 @@ if __name__ == '__main__':
     # torch.autograd.set_detect_anomaly(True)
 
     brain_encoder = BrainEncoder().cuda()
-    # brain_encoder = SpatialAttention().cuda()
+    # brain_encoder = SpatialAttentionVer2().cuda()
     # brain_encoder = SubjectBlock().cuda()
-    # brain_encoder_ = SpatialAttentionOrig(
+    # brain_encoder_ = SpatialAttentionVer1(
     #     brain_encoder.z_re.clone(), brain_encoder.z_im.clone()
     # ).cuda()
 
