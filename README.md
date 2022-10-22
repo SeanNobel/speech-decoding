@@ -36,7 +36,7 @@ Works for Gwilliams2022 dataset and Brennan2018 dataset.
 - [x] For `Brennan2018` added the option of using either the output of `feature_extractor` or the average of the outputs of the last four transformer blocks, either _before_ or _after_ dropout, layer_norm are applied and residual connections are added.
 - [x] SOLVED: the has communicated that _wav2vec_'s embeddings are "upsampled" to 1024. PROBLEM was: Unlike the `feature_extractor`, the `transformer` outputs embeddings of dim=1024. This means that we either have to project them by adding another learnable layer, or change the `brain_encoder` so that it's embeddings are not 512-dimensional, but 1024-dimensional.
 - [ ] Subject selection based on comprehension score in Brennan2018.
-- [ ] 🔥 Spatial dropout 🔥.
+- [ ] 🔥 Spatial dropout al 🔥.
 - [ ] look into the 
 
 

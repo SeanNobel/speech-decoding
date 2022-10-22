@@ -15,6 +15,5 @@ D2: 320
 F: 512
 K: 32
 p_spatial_drop: 0.1
-d_drop: 0.01
-
+d_drop: 0.15
 wav2vec_model: xlsr_53_56k

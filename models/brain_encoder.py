@@ -115,7 +115,7 @@ class SpatialAttentionX(nn.Module):
     def __init__(self, args):
         super(SpatialAttentionX, self).__init__()
 
-        self.spatial_dropout = SpatialDropout(args)
+        self.spatial_dropout = SpatialDropoutX(args)
 
         # vectorize of k's and l's
         a = []
@@ -155,31 +155,33 @@ class SpatialAttentionX(nn.Module):
         return torch.einsum('oi,bit->bot', SA_wts, dropped_X)
 
 
-class SpatialDropout(nn.Module):
+class SpatialDropoutX(nn.Module):
     # NOTE: in progress
     # FIXME: now each item in a batch gets the same channels masked
 
     def __init__(self, args):
-        super(SpatialDropout, self).__init__()
+        super(SpatialDropoutX, self).__init__()
         self.p = args.p_spatial_drop
         self.d_drop = args.d_drop
+        self.bsz = args.batch_size
 
         loc = ch_locations_2d(args.dataset)
         self.loc = [loc[i, :].flatten() for i in range(loc.shape[0])]
 
-    def get_dropouts(self):
-        drop_id = np.random.choice(len(self.loc))
-        drop_center = self.loc[drop_id]
-        dropouts = []
-        for i, coord in enumerate(self.loc):
-            if (coord - drop_center).norm() < self.d_drop:
-                dropouts.append(i)
-        return dropouts
+    def make_mask(self):
+        # FIXME: could just pre-compute all the possilbe drop locations
+        mask = torch.ones(size=(self.bsz, len(self.loc)))
+        for b in range(self.bsz):
+            drop_id = np.random.choice(len(self.loc))
+            drop_center = self.loc[drop_id]
+            for i, coord in enumerate(self.loc):
+                if (coord - drop_center).norm() < self.d_drop:
+                    mask[b, i] *= 0.0
+        return mask.to(device)
 
     def forward(self, X):
-        dropouts = self.get_dropouts()
-        X[:, dropouts, :] = 0.0
-        return X
+        mask = self.make_mask()
+        return torch.einsum('bc,bct->bct', mask, X)
 
 
 class SubjectBlock(nn.Module):
