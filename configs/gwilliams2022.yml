@@ -5,9 +5,10 @@ num_subjects: 27
 # ==== Training ==== #
 batch_size: 512
 lr: 0.001
-lr_scheduler: step
+lr_scheduler: multistep
 lr_exp_gamma: 0.99
-lr_steps: 5
+lr_step_numsteps: 5
+lr_multistep_mlstns: [0.4, 0.6, 0.8, 0.9]
 lr_step_gamma: 0.5
 epochs: 500
 
@@ -16,7 +17,7 @@ D1: 270
 D2: 320
 F: 1024
 K: 32
-d_drop: 0.15
+d_drop: 0.3
 # When calculating softmax for spatial attention in each iteration, we drop
 # channels that are within the distance d_drop from a randomly selected channel
 

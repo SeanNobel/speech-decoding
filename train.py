@@ -42,8 +42,13 @@ if args.lr_scheduler == "exponential":
 elif args.lr_scheduler == "step":
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
                                                 step_size=args.epochs //
-                                                args.lr_steps,
+                                                args.lr_step_numsteps,
                                                 gamma=args.lr_step_gamma)
+elif args.lr_scheduler == "multistep":
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(
+        optimizer,
+        milestones=[int(m * args.epochs) for m in args.lr_multistep_mlstns],
+        gamma=args.lr_step_gamma)
 else:
     raise ValueError()
 
