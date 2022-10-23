@@ -29,4 +29,9 @@ sandbox.ipynb
 wandb
 .vscode/
 __pycache__
+<<<<<<< HEAD
 README_MY.md
+=======
+
+train.sh
+>>>>>>> origin/main
