@@ -29,3 +29,5 @@ sandbox.ipynb
 wandb
 .vscode/
 __pycache__
+
+train.sh

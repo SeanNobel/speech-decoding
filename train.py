@@ -12,9 +12,7 @@ from utils.wav2vec_util import load_wav2vec_model
 from tqdm import trange
 from termcolor import cprint
 import wandb
-
-# assert torch.cuda.is_available(), "Training without GPU is not supported."
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+from constants import device
 
 run_dir = f"runs/{args.name}/"
 if not os.path.exists(run_dir):
@@ -22,10 +20,13 @@ if not os.path.exists(run_dir):
 
 # NOTE: we'll remove this, once the repo is ready
 if args.wandb:
-    wandb.config = {k: v for k, v in args.__dict__.items() if not k.startswith('__')}
+    wandb.config = {
+        k: v
+        for k, v in args.__dict__.items() if not k.startswith('__')
+    }
     wandb.init(
         project="speech_decoding",
-        entity="nightdude",
+        # entity="nightdude",
         config=wandb.config,
         save_code=True,
     )
@@ -35,7 +36,21 @@ if args.wandb:
 # ---------------------
 brain_encoder = BrainEncoder(args).to(device)
 optimizer = torch.optim.Adam(brain_encoder.parameters(), lr=args.lr)
-scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.97)
+if args.lr_scheduler == "exponential":
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer,
+                                                       gamma=args.lr_exp_gamma)
+elif args.lr_scheduler == "step":
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
+                                                step_size=args.epochs //
+                                                args.lr_step_numsteps,
+                                                gamma=args.lr_step_gamma)
+elif args.lr_scheduler == "multistep":
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(
+        optimizer,
+        milestones=[int(m * args.epochs) for m in args.lr_multistep_mlstns],
+        gamma=args.lr_step_gamma)
+else:
+    raise ValueError()
 
 wav2vec = load_wav2vec_model(args.wav2vec_model).to(device)
 wav2vec.eval()
@@ -44,7 +59,7 @@ wav2vec.eval()
 #       Dataloader
 # -----------------------
 if args.dataset == 'Gwilliams2022':
-    dataset = Gwilliams2022Dataset(args.wav2vec_model, shift_brain=True)
+    dataset = Gwilliams2022Dataset(args)
 elif args.dataset == 'Brennan2018':
     # NOTE: now the DS take not the number of samples, but the seconds to make windows
     # NOTE: takes an optional debug param force_recompute to pre-process the EEG even if it exists
@@ -77,7 +92,7 @@ test_loader = torch.utils.data.DataLoader(
 #      Loss
 # ---------------
 # loss_func = CLIPLoss("sum").cuda()
-loss_func = CLIPLossX(device, args.batch_size, reduction="sum")
+loss_func = CLIPLossX(device, args.batch_size, reduction="mean")
 # loss_func = CLIPLossOrig("sum").cuda()
 # loss_func = MSELoss().cuda()
 
