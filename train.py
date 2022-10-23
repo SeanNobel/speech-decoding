@@ -84,9 +84,9 @@ test_loader = torch.utils.data.DataLoader(
 # ---------------
 #      Loss
 # ---------------
-# loss_func = CLIPLossVer3("sum").cuda()
-loss_func = CLIPLoss(device, args.batch_size, reduction="mean")
-# loss_func = CLIPLossVer1("sum").cuda()
+# loss_func = CLIPLossVer3(args).cuda()
+loss_func = CLIPLoss(args)
+# loss_func = CLIPLossVer1(args).cuda()
 # loss_func = MSELoss().cuda()
 
 for epoch in range(args.epochs):

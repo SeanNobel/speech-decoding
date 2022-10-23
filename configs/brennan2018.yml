@@ -3,18 +3,28 @@ dataset: Brennan2018
 seqLengthInSeconds: 3
 
 # ==== Training ==== #
-batch_size: 512
+# 🔥 FIXME: with too large a batchsize there isn't enough 
+# 🔥 FIXME: samples in the eval set, and the CLIPLoss produces nans silently
+batch_size: 64 
+
 lr: 0.001
-lr_gamma: 0.99
+lr_scheduler: multistep
+lr_exp_gamma: 0.99
+lr_step_numsteps: 5
+lr_multistep_mlstns: [0.4, 0.6, 0.8, 0.9]
+lr_step_gamma: 0.5
 epochs: 200
-last4layers: True # if True, the brain_encoder's emsize will be 1024, not 512
-before: True # (if last4layers: either before drop, residuals, and layer_norm or after)
+epochs: 500
+reduction: "mean"
 
 # ==== Architecture ==== #
 D1: 270
 D2: 320
 F: 512 # NOTE: because if you set last4layers=False, then it's set to 1024 in the dataset class
 K: 32
+d_drop: 0.3
+# When calculating softmax for spatial attention in each iteration, we drop
+# channels that are within the distance d_drop from a randomly selected channel
 
 wav2vec_model: xlsr_53_56k
 
@@ -32,5 +42,5 @@ preprocs:
   shift_brain: True
   shift_len: 150 # ms
 
-  last4layers: True
-  before: True
+  last4layers: True # if True, the brain_encoder's emsize will be 1024, not 512
+  before: True # (if last4layers: either before drop, residuals, and layer_norm or after)

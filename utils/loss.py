@@ -28,22 +28,19 @@ class MSELoss(nn.Module):
 
 class CLIPLoss(nn.Module):
 
-    def __init__(self, device, batch_size, reduction="mean"):
+    def __init__(self, args):
         super().__init__()
         self.device = device
         self.compute_similarity = nn.CosineSimilarity(dim=-1)
-        self._criterion = nn.CrossEntropyLoss(reduction=reduction)
+        self._criterion = nn.CrossEntropyLoss(reduction=args.reduction)
         # self.targets = torch.zeros(size=(batch_size, )).long() # that's for the slow method
         self.registered_targets = False
-        self.batch_size = batch_size
+        self.batch_size = args.batch_size
 
     def forward(self, x, y, fast=True, return_logits=False):
         # batch_size = x.size(0)
         if not self.registered_targets:
-            self.register_buffer(
-                'targets',
-                torch.arange(self.batch_size,
-                             requires_grad=False).to(self.device))
+            self.register_buffer('targets', torch.arange(self.batch_size, requires_grad=False).to(self.device))
             self.registered_targets = True
 
         if not fast:
@@ -75,10 +72,10 @@ class CLIPLoss(nn.Module):
 
 class CLIPLossVer3(nn.Module):
 
-    def __init__(self, reduction="sum"):
+    def __init__(self, args):
         super().__init__()
 
-        self.reduction = reduction
+        self.reduction = args.reduction
 
     def forward(self, Y: torch.Tensor, Z: torch.Tensor):
         """
@@ -106,10 +103,10 @@ class CLIPLossVer3(nn.Module):
 
 class CLIPLossVer1(nn.Module):
 
-    def __init__(self, reduction="sum"):
+    def __init__(self, args):
         super().__init__()
 
-        self.reduction = reduction
+        self.reduction = args.reduction
 
     def forward(self, Y: torch.Tensor, Z: torch.Tensor):
         """
@@ -130,17 +127,15 @@ class CLIPLossVer1(nn.Module):
         labels = torch.eye(N).to(device)
 
         # return F.binary_cross_entropy(input=probs, target=labels, reduction=self.reduction)
-        return F.cross_entropy(input=probs,
-                               target=labels,
-                               reduction=self.reduction)
+        return F.cross_entropy(input=probs, target=labels, reduction=self.reduction)
 
 
 class CLIPLossVer2(nn.Module):
 
-    def __init__(self, reduction="sum"):
+    def __init__(self, args):
         super().__init__()
 
-        self.reduction = reduction
+        self.reduction = args.reduction
 
     def forward(self, Y: torch.Tensor, Z: torch.Tensor):
         """

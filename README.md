@@ -38,7 +38,8 @@ Works for Gwilliams2022 dataset and Brennan2018 dataset.
 - [ ] Subject selection based on comprehension score in Brennan2018.
 - [x] Spatial dropout: different channels dropped in each batch item.
 - [ ] Unify (harmonize the `Brennan` and `Gwilliams` dataset classes)
-- 
+- [ ] 🔥 review and harmonize the dataset classes (Gwilliams, Roman)
+- [ ] 🔥 FIXME: with too large a batchsize `CLIPloss` fails silently with nans. Handle this.
 
 
 ### Sensho Gwilliams2022
