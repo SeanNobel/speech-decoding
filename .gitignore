@@ -27,11 +27,7 @@ tests.ipynb
 .ipynb_checkpoints
 sandbox.ipynb
 wandb
-.vscode/
+.vscode/launch.json
 __pycache__
-<<<<<<< HEAD
-README_MY.md
-=======
-
 train.sh
->>>>>>> origin/main
+README_MY.md

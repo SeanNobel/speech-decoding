@@ -1,6 +1,6 @@
 # ==== Dataset ==== #
 dataset: Gwilliams2022
-num_subjects: 27
+num_subjects: 2 # NOTE: I've limited the number of subjects to 3 to save time for now
 
 # ==== Training ==== #
 # 🔥 FIXME: with too large a batchsize there isn't enough 

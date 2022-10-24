@@ -252,7 +252,7 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
             self.real_durations = np.load(real_dur_path, allow_pickle=True).item()
         else:
             self.real_durations = {}  # will be updated in self.brain_preproc
-            self.X = self.brain_preproc(args.num_subjects)
+            self.X = self.brain_preproc(args.num_subjects)  # ???
             np.save(real_dur_path, self.real_durations)
             args.preprocs.update({"x_done": True})
             with open(preproc_dir + "settings.json", 'w') as f:
@@ -425,6 +425,8 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
         task_prefixes = ["lw1", "cable", "easy", "the"]
 
         Y = {}
+        assert os.path.exists(
+            'data/Gwilliams2022/stimuli/audio'), "The path `data/Gwilliams2022/stimuli/audio` DOESN'T EXIST."
         for task_idx in range(4):  # 4 tasks for each subject
 
             audio_paths = natsorted(glob.glob(f"data/Gwilliams2022/stimuli/audio/{task_prefixes[task_idx]}*.wav"))
