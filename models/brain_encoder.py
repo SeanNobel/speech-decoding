@@ -136,7 +136,7 @@ class SpatialAttention(nn.Module):
         # NOTE: pre-compute the values of cos and sin (they depend on k, l, x and y which repeat)
         phi = 2 * torch.pi * (torch.einsum('k,x->kx', k, x) + torch.einsum('l,y->ly', l, y))  # torch.Size([1024, 60]))
         self.cos = torch.cos(phi).to(device)
-        self.sin = torch.cos(phi).to(device)
+        self.sin = torch.sin(phi).to(device)
 
     def forward(self, X):
 
@@ -159,8 +159,7 @@ class SpatialAttention(nn.Module):
 
 
 class SpatialDropoutX(nn.Module):
-    # NOTE: in progress
-    # FIXME: now each item in a batch gets the same channels masked
+    # NOTE: each item in a batch gets the same channels masked
 
     def __init__(self, args):
         super(SpatialDropoutX, self).__init__()
@@ -171,7 +170,7 @@ class SpatialDropoutX(nn.Module):
         self.loc = [loc[i, :].flatten() for i in range(loc.shape[0])]
 
     def make_mask(self):
-        # FIXME: could just pre-compute all the possilbe drop locations
+        # TODO: could just pre-compute all the possilbe drop locations
         mask = torch.ones(size=(self.bsz, len(self.loc)))
         for b in range(self.bsz):
             drop_id = np.random.choice(len(self.loc))
@@ -198,24 +197,25 @@ class SubjectBlock(nn.Module):
         # self.spatial_attention = SpatialAttentionVer2(args)
         # self.spatial_attention = SpatialAttentionVer1()
         self.conv = nn.Conv1d(in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1)
+
+        # NOTE: The below implementations are equivalent to learning a matrix:
         self.subject_matrix = nn.Parameter(torch.rand(self.num_subjects, self.D1, self.D1))
-        self.subject_layer = [
-            nn.Conv1d(in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1, device=device)
-            for _ in range(self.num_subjects)
-        ]
+        # self.subject_layer = [
+        #     nn.Conv1d(in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1, device=device)
+        #     for _ in range(self.num_subjects)
+        # ]
 
     def forward(self, X, subject_idxs):
         X = self.spatial_attention(X)  # ( B, 270, 256 )
         X = self.conv(X)  # ( B, 270, 256 )
 
-        # X = self.subject_matrix[s] @ X # ( 270, 270 ) @ ( B , 270, 256 ) -> ( B, 270, 256 )
-        # TODO make this more efficient
-        _X = []
-        for i, x in enumerate(X):  # x: ( 270, 256 )
-            x = self.subject_layer[subject_idxs[i]](x.unsqueeze(0))  # ( 1, 270, 256 )
-            _X.append(x.squeeze())
-
-        X = torch.stack(_X)
+        # TODO: make this more efficient
+        X = self.subject_matrix[subject_idxs] @ X  # ( 270, 270 ) @ ( B , 270, 256 ) -> ( B, 270, 256 )
+        # _X = []
+        # for i, x in enumerate(X):  # x: ( 270, 256 )
+        #     x = self.subject_layer[subject_idxs[i]](x.unsqueeze(0))  # ( 1, 270, 256 )
+        #     _X.append(x.squeeze())
+        # X = torch.stack(_X)
 
         return X  # ( B, 270, 256 )
 
@@ -227,44 +227,45 @@ class ConvBlock(nn.Module):
 
         self.k = k
         self.D2 = D2
-        self.in_channels = D1 if k == 1 else D2
+        self.in_channels = D1 if k == 0 else D2
 
-        self.conv1 = nn.Conv1d(
+        self.conv0 = nn.Conv1d(
             in_channels=self.in_channels,
             out_channels=self.D2,
             kernel_size=3,
             padding='same',
-            dilation=2**(2 * self.k % 5),
+            dilation=2**((2 * k) % 5),
         )
-        self.batchnorm1 = nn.BatchNorm1d(num_features=self.D2)
-        self.conv2 = nn.Conv1d(
+        self.batchnorm0 = nn.BatchNorm1d(num_features=self.D2)
+        self.conv1 = nn.Conv1d(
             in_channels=self.D2,
             out_channels=self.D2,
             kernel_size=3,
             padding='same',
-            dilation=2**(2 * self.k + 1 % 5),
+            dilation=2**((2 * k + 1) % 5),
         )
-        self.batchnorm2 = nn.BatchNorm1d(num_features=self.D2)
-        self.conv3 = nn.Conv1d(
+        self.batchnorm1 = nn.BatchNorm1d(num_features=self.D2)
+        self.conv2 = nn.Conv1d(
             in_channels=self.D2,
             out_channels=2 * self.D2,
             kernel_size=3,
             padding='same',
-            dilation=2,
+            dilation=2,  #FIXME: The text doesn't say this, but the picture shows dilation=2
         )
 
     def forward(self, X):
-        if self.k == 1:
-            X = self.conv1(X)
+        if self.k == 0:
+            X = self.conv0(X)
         else:
-            X = self.conv1(X) + X  # skip connection
-        X = nn.GELU()(self.batchnorm1(X))
+            X = self.conv0(X) + X  # skip connection
 
-        X = self.conv2(X) + X  # skip connection
-        X = nn.GELU()(self.batchnorm2(X))
+        X = F.gelu(self.batchnorm0(X))
 
-        X = self.conv3(X)
-        X = nn.GLU(dim=-2)(X)
+        X = self.conv1(X) + X  # skip connection
+        X = F.gelu(self.batchnorm1(X))
+
+        X = self.conv2(X)
+        X = F.glu(X, dim=-2)
 
         return X  # ( B, 320, 256 )
 
@@ -284,7 +285,7 @@ class BrainEncoder(nn.Module):
         self.subject_block = SubjectBlock(args)
 
         self.conv_blocks = nn.Sequential()
-        for k in range(1, 6):
+        for k in range(5):
             self.conv_blocks.add_module(f"conv{k}", ConvBlock(k, self.D1, self.D2))
 
         self.conv_final1 = nn.Conv1d(

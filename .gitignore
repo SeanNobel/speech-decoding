@@ -22,7 +22,7 @@ runs/*
 tmp/
 
 weights/*.pt
-
+*.pt
 tests.ipynb
 .ipynb_checkpoints
 sandbox.ipynb

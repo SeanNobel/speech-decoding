@@ -100,11 +100,13 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
                     X[subj_id, :, chunk_id, :] -= baseline.view(-1, 1)
 
                 # NOTE: scale the data using the priviously fit subject-specific scaler
-                torch.save(X[subj_id], f'_X{subj_id}.pt')
+                # torch.save(X[subj_id], f'_X{subj_id}.pt')
                 X_ = rearrange(X[subj_id], 'c w t -> (w t) c')
                 X_ = torch.from_numpy(scaler.transform(X_))
+                # NOTE: "We clamp values greater than 20 after normalization"
+                X_.clamp_(min=-20, max=20)
                 X[subj_id] = rearrange(X_, '(w t) c -> c w t', t=self.seq_len_samp)
-                torch.save(X[subj_id], f'X_{subj_id}.pt')
+                # torch.save(X[subj_id], f'X_{subj_id}.pt')
                 cprint(f'subj_id: {subj_id} {X[subj_id].max().item()}', color='magenta')
         return X
 
