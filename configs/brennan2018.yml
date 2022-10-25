@@ -1,6 +1,5 @@
 # ==== Dataset ==== #
 dataset: Brennan2018
-seqLengthInSeconds: 3
 
 # ==== Training ==== #
 # 🔥 FIXME: with too large a batchsize there isn't enough 
@@ -37,8 +36,8 @@ preprocs:
   brain_filter_low: 1.0 # Hz
   brain_filter_high: 60 # Hz
 
-  seq_len: 3 # segment length in seconds
-
+  seq_len_sec: 3        # segment length in seconds
+  baseline_len_sec: 0.5 # baseline period in seconds
   shift_brain: True
   shift_len: 150 # ms
 

@@ -1,4 +1,5 @@
 import os, sys
+from re import sub
 import torch
 import torchaudio
 import torchaudio.functional as F
@@ -18,13 +19,9 @@ from utils.wav2vec_util import load_wav2vec_model, getW2VLastFourLayersAvg
 from utils.preproc_utils import check_preprocs
 from termcolor import cprint
 from pprint import pprint
+from einops import rearrange
 
 mne.set_log_level(verbose="WARNING")
-
-
-def baseline_correction(X):
-    """Assumes that X (M/EEG) is already resampled to 120Hz"""
-    return X
 
 
 class Brennan2018Dataset(torch.utils.data.Dataset):
@@ -32,7 +29,8 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
     def __init__(self, args):
         super().__init__()
 
-        seq_len_seconds = args.seqLengthInSeconds
+        self.seq_len_sec = args.preprocs["seq_len_sec"]
+        self.baseline_len_sec = args.preprocs["baseline_len_sec"]
         wav2vec_model = args.wav2vec_model
         force_recompute = args.force_recompute,
         last4layers = args.preprocs["last4layers"]
@@ -68,11 +66,17 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         self.X, self.Y = self.shift_brain_signal(self.X, self.Y, srate=srate)
 
         print(f"X: {self.X.shape}, Y: {self.Y.shape}")
-        # X: ( 33, 60, 99692 ) -> ( B, 60, 256 )
-        # Y: ( 512, 99692 ) -> ( B, 512, 256 ) # w2v embeddings
-        seq_len = int(seq_len_seconds * srate)
-        cprint(f'Building batches of {seq_len_seconds} s ({seq_len} samples).', color='blue')
-        self.X, self.Y, self.subject_idxs = self.batchfy(self.X, self.Y, seq_len)
+        # X: ( 33, 60, 86791 ) -> ( B, 60, 1024 )
+        # Y: ( 1024, 86791 ) -> ( B, 1024, 1024 ) # w2v embeddings
+
+        # length of sequence in samples
+        self.seq_len_samp = int(self.seq_len_sec * srate)
+
+        # length of baseline period in samples
+        self.baseline_len_samp = int(self.seq_len_samp * self.baseline_len_sec / self.seq_len_sec)
+
+        cprint(f'Building batches of {self.seq_len_sec} s ({self.seq_len_samp} samples).', color='blue')
+        self.X, self.Y, self.subject_idxs = self.batchfy(self.X, self.Y)
         cprint(f'X: {self.X.shape} | Y: {self.Y.shape} | {self.subject_idxs.shape}', color='blue')
 
     def __len__(self):
@@ -81,23 +85,47 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
     def __getitem__(self, i):
         return self.X[i], self.Y[i], self.subject_idxs[i]
 
-    @staticmethod
-    def batchfy(X: torch.Tensor, Y: torch.Tensor, seq_len: int):
-        # NOTE: seq_len is `bptt`
+    def baseline_correction(self, X):
+
+        # subject-wise baselining (except the first chunk)
+        with torch.no_grad():
+            for subj_id in range(X.shape[0]):
+                # NOTE: fit the scaler subject-wise
+                X_ = rearrange(X[subj_id], 'c w t -> (w t) c')
+                scaler = RobustScaler().fit(X_)
+
+                # NOTE: apply baseline correction
+                for chunk_id in range(1, X.shape[2]):
+                    baseline = X[subj_id, :, chunk_id - 1, -self.baseline_len_samp:].mean(axis=1)
+                    X[subj_id, :, chunk_id, :] -= baseline.view(-1, 1)
+
+                # NOTE: scale the data using the priviously fit subject-specific scaler
+                torch.save(X[subj_id], f'_X{subj_id}.pt')
+                X_ = rearrange(X[subj_id], 'c w t -> (w t) c')
+                X_ = torch.from_numpy(scaler.transform(X_))
+                X[subj_id] = rearrange(X_, '(w t) c -> c w t', t=self.seq_len_samp)
+                torch.save(X[subj_id], f'X_{subj_id}.pt')
+                cprint(f'subj_id: {subj_id} {X[subj_id].max().item()}', color='magenta')
+        return X
+
+    def batchfy(self, X: torch.Tensor, Y: torch.Tensor):
+        # NOTE: self.seq_len_samp is `bptt`
 
         assert X.shape[-1] == Y.shape[-1]
-        trim_len = X.shape[-1] - X.shape[-1] % seq_len
+        trim_len = X.shape[-1] - X.shape[-1] % self.seq_len_samp
 
         X = X[:, :, :trim_len]  # ( 33, 60, 99584 ) (subj, chans, num_embeddings)
         Y = Y[:, :trim_len]  # ( 512, 99584 )       (emsize, num_embeddings)
 
-        X = X.reshape(X.shape[0], X.shape[1], -1, seq_len)  # ( 33, 60, 389, 256 )
-        Y = Y.reshape(Y.shape[0], -1, seq_len)  # ( 512, 389, 256 )
+        X = X.reshape(X.shape[0], X.shape[1], -1, self.seq_len_samp)  # ( 8, 60, 243, 356 ) (sub, ch, chunks, bptt)
+        X = self.baseline_correction(X)
+
+        Y = Y.reshape(Y.shape[0], -1, self.seq_len_samp)  # ( 1024, 243, 356 )  (emsize, chunks, bptt)
 
         Y = Y.unsqueeze(0).expand(X.shape[0], *Y.shape)  # ( 33, 512, 389, 256 )
 
-        X = X.permute(0, 2, 1, 3)  # ( 33, 389, 60, 256 )
-        Y = Y.permute(0, 2, 1, 3)  # ( 33, 389, 512, 256 )
+        X = X.permute(0, 2, 1, 3)  # (8, 243, 60, 356) (sub, chunks, ch, bptt)
+        Y = Y.permute(0, 2, 1, 3)  # (8, 243, 1024, 356) (sub, chunks, emsz, bptt)
 
         subject_idxs = torch.arange(X.shape[0]).unsqueeze(1).expand(-1, X.shape[1])  # ( 33, 389 )
         subject_idxs = subject_idxs.flatten()  # ( 19061, )
@@ -190,10 +218,7 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
             new_srate = fsample / downsampling_factor
             cprint(f'Downsampling EEG from {fsample} Hz to {new_srate:.4f} Hz', color='cyan')
 
-            scaler = RobustScaler().fit(eeg_resampled)
-            eeg_scaled = scaler.transform(eeg_resampled)
-
-            X.append(eeg_scaled)
+            X.append(eeg_resampled)
         for i, x in enumerate(X):
             cprint(f"Samples in EEG DS {i}: {x.shape[-1]} | total wav embeddings: {audio_embd_len}", color='magenta')
 
