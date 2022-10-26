@@ -1,0 +1,17 @@
+{
+    "python.pythonPath": "/home/roman/miniconda3/envs/tachikoma/bin/python",
+    "files.exclude": {
+        "**/._*": true,
+    },
+    "python.analysis.extraPaths": [
+        "./code"
+    ],
+    "python.formatting.provider": "yapf",
+    "[python]": {
+        "editor.formatOnSave": true,
+        "editor.formatOnPaste": false,
+    },
+    "python.formatting.yapfArgs": [
+        "--style={based_on_style: google, column_limit: 120, indent_width: 4}"
+    ]
+}

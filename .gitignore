@@ -22,12 +22,12 @@ runs/*
 tmp/
 
 weights/*.pt
-
+*.pt
 tests.ipynb
 .ipynb_checkpoints
 sandbox.ipynb
 wandb
-.vscode/
+.vscode/launch.json
 __pycache__
-
 train.sh
+README_MY.md

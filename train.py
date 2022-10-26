@@ -7,7 +7,7 @@ from tqdm import tqdm
 from configs.args import args
 from data.datasets import Gwilliams2022Dataset, Brennan2018Dataset, ToyDataset
 from models.brain_encoder import BrainEncoder
-from utils.loss import CLIPLoss, MSELoss, CLIPLossOrig, CLIPLossX
+from utils.loss import *
 from utils.wav2vec_util import load_wav2vec_model
 from tqdm import trange
 from termcolor import cprint
@@ -20,10 +20,7 @@ if not os.path.exists(run_dir):
 
 # NOTE: we'll remove this, once the repo is ready
 if args.wandb:
-    wandb.config = {
-        k: v
-        for k, v in args.__dict__.items() if not k.startswith('__')
-    }
+    wandb.config = {k: v for k, v in args.__dict__.items() if not k.startswith('__')}
     wandb.init(
         project="speech_decoding",
         # entity="nightdude",
@@ -37,18 +34,14 @@ if args.wandb:
 brain_encoder = BrainEncoder(args).to(device)
 optimizer = torch.optim.Adam(brain_encoder.parameters(), lr=args.lr)
 if args.lr_scheduler == "exponential":
-    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer,
-                                                       gamma=args.lr_exp_gamma)
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.lr_exp_gamma)
 elif args.lr_scheduler == "step":
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
-                                                step_size=args.epochs //
-                                                args.lr_step_numsteps,
+                                                step_size=args.epochs // args.lr_step_numsteps,
                                                 gamma=args.lr_step_gamma)
 elif args.lr_scheduler == "multistep":
     scheduler = torch.optim.lr_scheduler.MultiStepLR(
-        optimizer,
-        milestones=[int(m * args.epochs) for m in args.lr_multistep_mlstns],
-        gamma=args.lr_step_gamma)
+        optimizer, milestones=[int(m * args.epochs) for m in args.lr_multistep_mlstns], gamma=args.lr_step_gamma)
 else:
     raise ValueError()
 
@@ -91,9 +84,9 @@ test_loader = torch.utils.data.DataLoader(
 # ---------------
 #      Loss
 # ---------------
-# loss_func = CLIPLoss("sum").cuda()
-loss_func = CLIPLossX(device, args.batch_size, reduction="mean")
-# loss_func = CLIPLossOrig("sum").cuda()
+# loss_func = CLIPLossVer3(args).cuda()
+loss_func = CLIPLoss(args)
+# loss_func = CLIPLossVer1(args).cuda()
 # loss_func = MSELoss().cuda()
 
 for epoch in range(args.epochs):
