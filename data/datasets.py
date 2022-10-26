@@ -35,6 +35,8 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         force_recompute = args.force_recompute,
         last4layers = args.preprocs["last4layers"]
         before = args.preprocs["before"]
+        self.clamp = args.clamp
+        self.clamp_lim = args.clamp_lim
 
         Y_path = f"data/Brennan2018/Y_embeds/embd_{wav2vec_model}.pt"
 
@@ -104,8 +106,9 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
                 X_ = rearrange(X[subj_id], 'c w t -> (w t) c')
                 X_ = torch.from_numpy(scaler.transform(X_))
                 # NOTE: "We clamp values greater than 20 after normalization"
-                X_.clamp_(min=-20, max=20)
-                X[subj_id] = rearrange(X_, '(w t) c -> c w t', t=self.seq_len_samp)
+                if self.clamp:
+                    X_.clamp_(min=-self.clamp_lim, max=self.clamp_lim)
+                    X[subj_id] = rearrange(X_, '(w t) c -> c w t', t=self.seq_len_samp)
                 # torch.save(X[subj_id], f'X_{subj_id}.pt')
                 cprint(f'subj_id: {subj_id} {X[subj_id].max().item()}', color='magenta')
         return X

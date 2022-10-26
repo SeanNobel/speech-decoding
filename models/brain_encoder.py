@@ -181,7 +181,6 @@ class SpatialDropoutX(nn.Module):
         return mask.to(device)
 
     def forward(self, X):
-        print(self.training)
         if self.training:
             mask = self.make_mask()  # mask: B by num_chans. Each item in batch gets a different mask
             return torch.einsum('bc,bct->bct', mask, X)

@@ -12,8 +12,10 @@ lr_exp_gamma: 0.99
 lr_step_numsteps: 5
 lr_multistep_mlstns: [0.4, 0.6, 0.8, 0.9]
 lr_step_gamma: 0.5
-epochs: 200
+epochs: 500
 reduction: "mean"
+clamp: False
+clamp_lim: 20
 
 # ==== Architecture ==== #
 D1: 270
@@ -41,4 +43,4 @@ preprocs:
   shift_len: 150 # ms
 
   last4layers: True # if True, the brain_encoder's emsize will be 1024, not 512
-  before: True # (if last4layers: either before drop, residuals, and layer_norm or after)
+  before: False # (if last4layers: either before drop, residuals, and layer_norm or after)
