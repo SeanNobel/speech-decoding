@@ -136,8 +136,8 @@ class SpatialAttention(nn.Module):
         self.cos = torch.cos(phi).to(device)
         self.sin = torch.sin(phi).to(device)
 
-        self.spatial_dropout = SpatialDropoutX(args)
-        # self.spatial_dropout = SpatialDropout(loc, args.d_drop)
+        # self.spatial_dropout = SpatialDropoutX(args)
+        self.spatial_dropout = SpatialDropout(loc, args.d_drop)
 
     def forward(self, X):
 
