@@ -356,7 +356,8 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
             #     )
 
             subj_idx = int(key.split("_")[0][-2:]) - 1  # 0, 1,...
-            subj_idx *= torch.ones(X.shape[0], dtype=torch.uint8)
+            # NOTE in PyTorch we can't index with tensor of uint8
+            subj_idx *= torch.ones(X.shape[0], dtype=torch.int64)
             subject_idxs_list.append(subj_idx)
 
             task_id = int(key[-1])  # 0 or 1 or 2 or 3

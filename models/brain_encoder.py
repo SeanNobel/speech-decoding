@@ -116,8 +116,6 @@ class SpatialAttention(nn.Module):
     def __init__(self, args):
         super(SpatialAttention, self).__init__()
 
-        self.spatial_dropout = SpatialDropoutX(args)
-
         # vectorize of k's and l's
         a = []
         for k in range(args.K):
@@ -138,6 +136,9 @@ class SpatialAttention(nn.Module):
         self.cos = torch.cos(phi).to(device)
         self.sin = torch.sin(phi).to(device)
 
+        self.spatial_dropout = SpatialDropoutX(args)
+        # self.spatial_dropout = SpatialDropout(loc, args.d_drop)
+
     def forward(self, X):
 
         # NOTE: do hadamard product and and sum over l and m (i.e. m, which is l X m)
@@ -156,6 +157,37 @@ class SpatialAttention(nn.Module):
 
         # NOTE: each output is a diff weighted sum over each input channel
         return torch.einsum('oi,bit->bot', SA_wts, dropped_X)
+
+
+class SpatialDropout(nn.Module):
+
+    def __init__(self, loc, d_drop):
+        super(SpatialDropout, self).__init__()
+        self.loc = loc  # ( num_channels, 2 )
+        self.d_drop = d_drop
+        self.num_channels = loc.shape[0]
+
+    def make_mask(self, batch_size):
+        drop_center_idxs = np.random.randint(self.num_channels, size=batch_size)  # ( B, )
+        drop_centers = self.loc[drop_center_idxs]  # ( B, 2 )
+        distances = (self.loc.unsqueeze(0) - drop_centers.unsqueeze(1)).norm(dim=-1)
+        # ( B, num_channels )
+        mask = torch.where(distances < self.d_drop, 0., 1.)
+        # cprint(mask.shape, color="yellow")
+        # cprint(
+        #     f"{self.num_channels - int(is_dropped.sum())} channels were dropped.",
+        #     color="cyan")
+
+        return mask.to(device)  # ( B, num_channels )
+
+    def forward(self, X):  # ( B, num_channels, seq_len )
+        assert X.shape[1] == self.num_channels
+
+        if self.training:
+            mask = self.make_mask(X.shape[0])  # ( B, num_channels )
+            return torch.einsum('bc,bct->bct', mask, X)
+        else:
+            return X
 
 
 class SpatialDropoutX(nn.Module):
