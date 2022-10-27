@@ -10,16 +10,16 @@ import json
 from natsort import natsorted
 import scipy.io
 import mne, mne_bids
-from sklearn.preprocessing import RobustScaler
 from tqdm import tqdm
 import ast
 from typing import Union
 from utils.bcolors import cyan, yellow
 from utils.wav2vec_util import load_wav2vec_model, getW2VLastFourLayersAvg
-from utils.preproc_utils import check_preprocs
+from utils.preproc_utils import check_preprocs, scaleAndClamp, baseline_correction
 from termcolor import cprint
 from pprint import pprint
 from einops import rearrange
+from sklearn.preprocessing import RobustScaler
 
 mne.set_log_level(verbose="WARNING")
 
@@ -31,6 +31,10 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
 
         self.seq_len_sec = args.preprocs["seq_len_sec"]
         self.baseline_len_sec = args.preprocs["baseline_len_sec"]
+        self.preceding_chunk_for_baseline = args.preprocs["preceding_chunk_for_baseline"]
+        self.clamp = args.preprocs["clamp"]
+        self.clamp_lim = args.preprocs["clamp_lim"]
+
         wav2vec_model = args.wav2vec_model
         force_recompute = args.force_recompute,
         last4layers = args.preprocs["last4layers"]
@@ -85,31 +89,6 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
     def __getitem__(self, i):
         return self.X[i], self.Y[i], self.subject_idxs[i]
 
-    def baseline_correction(self, X):
-
-        # subject-wise baselining (except the first chunk)
-        with torch.no_grad():
-            for subj_id in range(X.shape[0]):
-                # NOTE: fit the scaler subject-wise
-                X_ = rearrange(X[subj_id], 'c w t -> (w t) c')
-                scaler = RobustScaler().fit(X_)
-
-                # NOTE: apply baseline correction
-                for chunk_id in range(1, X.shape[2]):
-                    baseline = X[subj_id, :, chunk_id - 1, -self.baseline_len_samp:].mean(axis=1)
-                    X[subj_id, :, chunk_id, :] -= baseline.view(-1, 1)
-
-                # NOTE: scale the data using the priviously fit subject-specific scaler
-                # torch.save(X[subj_id], f'_X{subj_id}.pt')
-                X_ = rearrange(X[subj_id], 'c w t -> (w t) c')
-                X_ = torch.from_numpy(scaler.transform(X_))
-                # NOTE: "We clamp values greater than 20 after normalization"
-                X_.clamp_(min=-20, max=20)
-                X[subj_id] = rearrange(X_, '(w t) c -> c w t', t=self.seq_len_samp)
-                # torch.save(X[subj_id], f'X_{subj_id}.pt')
-                cprint(f'subj_id: {subj_id} {X[subj_id].max().item()}', color='magenta')
-        return X
-
     def batchfy(self, X: torch.Tensor, Y: torch.Tensor):
         # NOTE: self.seq_len_samp is `bptt`
 
@@ -117,10 +96,13 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         trim_len = X.shape[-1] - X.shape[-1] % self.seq_len_samp
 
         X = X[:, :, :trim_len]  # ( 33, 60, 99584 ) (subj, chans, num_embeddings)
+        # NOTE: the previous implementation was hard to understand and possibly wrong
+        X = scaleAndClamp(X, self.clamp_lim, self.clamp)
+
         Y = Y[:, :trim_len]  # ( 512, 99584 )       (emsize, num_embeddings)
 
         X = X.reshape(X.shape[0], X.shape[1], -1, self.seq_len_samp)  # ( 8, 60, 243, 356 ) (sub, ch, chunks, bptt)
-        X = self.baseline_correction(X)
+        X = baseline_correction(X, self.baseline_len_samp, self.preceding_chunk_for_baseline)
 
         Y = Y.reshape(Y.shape[0], -1, self.seq_len_samp)  # ( 1024, 243, 356 )  (emsize, chunks, bptt)
 

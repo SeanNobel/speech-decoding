@@ -2,6 +2,8 @@
     "python.pythonPath": "/home/roman/miniconda3/envs/tachikoma/bin/python",
     "files.exclude": {
         "**/._*": true,
+        "**/.ipynb_checkpoints": true,
+        "**/__pycache__": true,
     },
     "python.analysis.extraPaths": [
         "./code"

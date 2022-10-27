@@ -194,7 +194,7 @@ class BrainEncoder(nn.Module):
         )
 
     def forward(self, X, subject_idxs):
-        X = self.subject_block(X, subject_idxs)
+        X = self.subject_block(X, subject_idxs.tolist())
         X = self.conv_blocks(X)
         # print(X.shape)
         X = nn.GELU()(self.conv_final1(X))
