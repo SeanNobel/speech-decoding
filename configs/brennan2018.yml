@@ -14,8 +14,6 @@ lr_multistep_mlstns: [0.4, 0.6, 0.8, 0.9]
 lr_step_gamma: 0.5
 epochs: 500
 reduction: "mean"
-clamp: False
-clamp_lim: 20
 
 # ==== Architecture ==== #
 D1: 270
@@ -39,8 +37,12 @@ preprocs:
 
   seq_len_sec: 3        # segment length in seconds
   baseline_len_sec: 0.5 # baseline period in seconds
+  preceding_chunk_for_baseline: False # False to calc baseline based on the current epoch
   shift_brain: True
   shift_len: 150 # ms
 
   last4layers: True # if True, the brain_encoder's emsize will be 1024, not 512
   before: False # (if last4layers: either before drop, residuals, and layer_norm or after)
+
+  clamp: True
+  clamp_lim: 20
