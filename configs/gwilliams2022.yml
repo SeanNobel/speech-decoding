@@ -1,11 +1,11 @@
 # ==== Dataset ==== #
 dataset: Gwilliams2022
-num_subjects: 2 # NOTE: I've limited the number of subjects to 3 to save time for now
+num_subjects: 27 # NOTE: I've limited the number of subjects to 3 to save time for now
 
 # ==== Training ==== #
 # 🔥 FIXME: with too large a batchsize there isn't enough 
 # 🔥 FIXME: samples in the eval set, and the CLIPLoss produces nans silently
-batch_size: 512
+batch_size: 128
 lr: 0.001
 lr_scheduler: multistep
 lr_exp_gamma: 0.99
