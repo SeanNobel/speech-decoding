@@ -34,12 +34,19 @@ Works for Gwilliams2022 dataset and Brennan2018 dataset.
 - [x] `--force_recompute` tells `dataset.py` to pre-process EEG and audio again.
 - [x] Done for Brennan2018, but should be REVISITED. Upsample embeddings to 120 Hz (instead of ~50 Hz now). FIX: resample exactly to 120 Hz (not 119)
 - [x] For `Brennan2018` added the option of using either the output of `feature_extractor` or the average of the outputs of the last four transformer blocks, either _before_ or _after_ dropout, layer_norm are applied and residual connections are added.
-- [x] SOLVED: the has communicated that _wav2vec_'s embeddings are "upsampled" to 1024. PROBLEM was: Unlike the `feature_extractor`, the `transformer` outputs embeddings of dim=1024. This means that we either have to project them by adding another learnable layer, or change the `brain_encoder` so that it's embeddings are not 512-dimensional, but 1024-dimensional.
-- [ ] Subject selection based on comprehension score in Brennan2018.
-- [x] Spatial dropout: different channels dropped in each batch item.
+- [x] SOLVED: the author has communicated that _wav2vec_'s embeddings are "upsampled" to 1024. PROBLEM was: Unlike the `feature_extractor`, the `transformer` outputs embeddings of dim=1024. This means that we either have to project them by adding another learnable layer, or change the `brain_encoder` so that it's embeddings are not 512-dimensional, but 1024-dimensional.
 - [ ] Unify (harmonize the `Brennan` and `Gwilliams` dataset classes)
 - [ ] 🔥 review and harmonize the dataset classes (Gwilliams, Roman)
 - [ ] 🔥 FIXME: with too large a batchsize `CLIPloss` fails silently with nans. Handle this.
+- [x] Full reproducibility support. Will be useful for HP tuning. 
+- [ ] 🔥 FIXME: with reproducibility, the training is very slow. 
+- [x] CLIPLoss: learnable temperature parameter (as per Radford et al.)
+- [x] CLIPLoss: brain and speech embedding normalization (as per Radford et al.)
+
+
+## Reproducibility
+Use the `--reproducible` CLI argument. You might need to run `export CUBLAS_WORKSPACE_CONFIG=:4096:8` in the terminal just before you run `train.py`. 
+
 
 
 ### Sensho Gwilliams2022

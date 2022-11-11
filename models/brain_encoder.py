@@ -104,7 +104,9 @@ class SubjectBlock(nn.Module):
         X = self.conv(X)  # ( B, 270, 256 )
 
         # TODO: make this more efficient
-        X = self.subject_matrix[subject_idxs.tolist()] @ X  # ( 270, 270 ) @ ( B , 270, 256 ) -> ( B, 270, 256 )
+        if not isinstance(subject_idxs, list):
+            subject_idxs = subject_idxs.tolist()
+        X = self.subject_matrix[subject_idxs] @ X  # ( 270, 270 ) @ ( B , 270, 256 ) -> ( B, 270, 256 )
         # _X = []
         # for i, x in enumerate(X):  # x: ( 270, 256 )
         #     x = self.subject_layer[subject_idxs[i]](x.unsqueeze(0))  # ( 1, 270, 256 )

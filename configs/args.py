@@ -24,6 +24,7 @@ def parse_arguments():
     parser.add_argument("--wav2vec-model", type=str, default="xlsr_53_56k", help="Type of wav2vec2.0 model to use")
     parser.add_argument("--wandb", action='store_true', help="Whether to log to wandb")
     parser.add_argument("--force_recompute", action='store_true', help="Recompute EEG even if exists")
+    parser.add_argument("--reproducible", action='store_true', help="Seed everything")
 
     args = parser.parse_args()
 

@@ -12,7 +12,7 @@ lr_exp_gamma: 0.99
 lr_step_numsteps: 5
 lr_multistep_mlstns: [0.4, 0.6, 0.8, 0.9]
 lr_step_gamma: 0.5
-epochs: 500
+epochs: 3500
 reduction: "mean"
 
 # ==== Architecture ==== #
