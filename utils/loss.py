@@ -36,6 +36,7 @@ class CLIPLoss(nn.Module):
         # self.targets = torch.zeros(size=(batch_size, )).long() # that's for the slow method
         self.registered_targets = False
         self.batch_size = args.batch_size
+        self.temp = nn.Parameter(torch.rand(size=(1,)))
 
     def forward(self, x, y, fast=True, return_logits=False):
         # batch_size = x.size(0)
@@ -59,15 +60,29 @@ class CLIPLoss(nn.Module):
             # fast way
             x = x.reshape(self.batch_size, -1)
             y = y.reshape(self.batch_size, -1)
-            logits = torch.matmul(x, y.T)
-            # I don't know why yet, but normalization seems to be necessary to get sensible similarities (0, 1)
-            logits = logits / (x.norm(dim=-1) * y.norm(dim=-1))
 
-        # print(f"is_cuda self.targets {self.targets.is_cuda} logits {logits.is_cuda}")
+            # NOTE: scale the embeddings to unit norm
+            x = x / x.norm(dim=-1, keepdim=True)
+            y = y / y.norm(dim=-1, keepdim=True)
+
+            # get dot products
+            logits = torch.matmul(x, y.T)
+
+            # scale by temperature (learned)
+            logits *= torch.exp(self.temp)
+
+            # NOTE: the old way
+            # I don't know why yet, but normalization seems to be necessary to get sensible similarities (0, 1)
+            # logits = logits / (x.norm(dim=-1) * y.norm(dim=-1))
+            # loss = self._criterion(logits, self.targets)
+
+            # NOTE: as in https://arxiv.org/abs/2103.00020
+            loss = (self._criterion(logits, self.targets) + self._criterion(logits.t(), self.targets)) / 2
+
         if return_logits:
-            return logits, self._criterion(logits, self.targets)
+            return logits, loss
         else:
-            return self._criterion(logits, self.targets)
+            return loss
 
 
 class CLIPLossVer3(nn.Module):

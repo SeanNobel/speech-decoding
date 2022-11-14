@@ -1,3 +1,4 @@
+from constants import bar_format, device
 import os, sys
 import numpy as np
 import torch
@@ -8,12 +9,14 @@ from configs.args import args
 from data.datasets import Gwilliams2022Dataset, Brennan2018Dataset, ToyDataset
 from models.brain_encoder import BrainEncoder
 from models.classifier import Classifier
+from utils.get_dataloaders import get_dataloaders
 from utils.loss import *
+if args.reproducible:
+    from utils.reproducibility import g, seed_worker
 from utils.wav2vec_util import load_wav2vec_model
 from tqdm import trange
 from termcolor import cprint
 import wandb
-from constants import device
 
 run_dir = f"runs/{args.name}/"
 if not os.path.exists(run_dir):
@@ -33,7 +36,20 @@ if args.wandb:
 #        Models
 # ---------------------
 brain_encoder = BrainEncoder(args).to(device)
-optimizer = torch.optim.Adam(brain_encoder.parameters(), lr=args.lr)
+
+# ---------------
+#      Loss
+# ---------------
+# loss_func = CLIPLossVer3(args).cuda()
+loss_func = CLIPLoss(args).to(device)
+loss_func.train()
+# loss_func = CLIPLossVer1(args).cuda()
+# loss_func = MSELoss().cuda()
+
+optimizer = torch.optim.Adam(
+    list(brain_encoder.parameters()) + list(loss_func.parameters()),
+    lr=args.lr,
+)
 if args.lr_scheduler == "exponential":
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.lr_exp_gamma)
 elif args.lr_scheduler == "step":
@@ -70,29 +86,19 @@ test_size = dataset.X.shape[0] - train_size
 train_set, test_set = torch.utils.data.random_split(
     dataset,
     lengths=[train_size, test_size],
-    generator=torch.Generator().manual_seed(1234),
+    generator=g if args.reproducible else None,
 )
 
-train_loader = torch.utils.data.DataLoader(
-    dataset=train_set,
-    batch_size=args.batch_size,
-    shuffle=True,
-    drop_last=True,
-)
-test_loader = torch.utils.data.DataLoader(
-    dataset=test_set,
-    batch_size=args.batch_size,
-    shuffle=False,
-    drop_last=True,
-)
-
-# ---------------
-#      Loss
-# ---------------
-# loss_func = CLIPLossVer3(args).cuda()
-loss_func = CLIPLoss(args)
-# loss_func = CLIPLossVer1(args).cuda()
-# loss_func = MSELoss().cuda()
+if args.reproducible:
+    train_loader, test_loader = get_dataloaders(
+        train_set,
+        test_set,
+        args,
+        seed_worker,
+        g,
+    )
+else:
+    train_loader, test_loader = get_dataloaders(train_set, test_set, args)
 
 for epoch in range(args.epochs):
     train_losses = []
@@ -150,6 +156,7 @@ for epoch in range(args.epochs):
         f"train a: {np.mean(train_accs):.3f} | ",
         f"test a: {np.mean(test_accs):.3f} | ",
         f"lr: {optimizer.param_groups[0]['lr']:.5f}",
+        f"temp: {loss_func.temp.item():.3f}",
     )
 
     if args.wandb:
@@ -160,6 +167,7 @@ for epoch in range(args.epochs):
             'train_acc': np.mean(train_accs),
             'test_acc': np.mean(test_accs),
             'lrate': optimizer.param_groups[0]['lr'],
+            'temp': loss_func.temp.item()
         }
         wandb.log(performance_now)
 
