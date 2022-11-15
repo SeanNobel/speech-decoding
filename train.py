@@ -48,7 +48,7 @@ loss_func.train()
 
 optimizer = torch.optim.Adam(
     list(brain_encoder.parameters()) + list(loss_func.parameters()),
-    lr=args.lr,
+    lr=float(args.lr),
 )
 if args.lr_scheduler == "exponential":
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.lr_exp_gamma)
@@ -62,9 +62,9 @@ elif args.lr_scheduler == "multistep":
 else:
     raise ValueError()
 
-# speech model
-wav2vec = load_wav2vec_model(args.wav2vec_model).to(device)
-wav2vec.eval()
+# NOTE: we don't need to load it if we already have precomputed audio embeddings
+# wav2vec = load_wav2vec_model(args.wav2vec_model).to(device)
+# wav2vec.eval()
 
 # classifier
 classifier = Classifier(args)
