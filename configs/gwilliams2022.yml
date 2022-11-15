@@ -27,6 +27,8 @@ d_drop: 0.3
 wav2vec_model: xlsr_53_56k
 
 # == Hyperparameters that datasets should share === #
+force_recompute_y: False
+
 preprocs:
   audio_resample_rate: 16000 # before wav2vec
   lowpass_filter_width: 128
