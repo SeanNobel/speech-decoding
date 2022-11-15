@@ -74,13 +74,13 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
         # -------------------------------------------
         #     Make Y if it doesn't already exist
         # -------------------------------------------
-        if args.preprocs["y_done"]:
-            self.Y = np.load(self.y_path, allow_pickle=True).item()
-        else:
+        if args.force_recompute_y or not args.preprocs['y_done']:
             self.Y = self.audio_preproc()
             args.preprocs.update({"y_done": True})
             with open(preproc_dir + "settings.json", 'w') as f:
                 json.dump(args.preprocs, f)
+        else:
+            self.Y = np.load(self.y_path, allow_pickle=True).item()
 
         self.X, self.Y, self.subject_idxs, self.task_idxs, self.idxs_in_task = self.batchfy()
 
@@ -247,10 +247,10 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
                 else:
                     print(yellow("No audio cutoff"))
 
-                # Upsample
+                # Upsample to 16000Hz
                 waveform = F.resample(waveform,
-                                      sample_rate,
-                                      self.audio_resample_rate,
+                                      orig_freq=sample_rate,
+                                      new_freq=self.audio_resample_rate,
                                       lowpass_filter_width=self.lowpass_filter_width)
                 cprint(f"Audio after resampling: {waveform.shape}", color="cyan")
 
@@ -264,9 +264,6 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
                 cprint(rate_after_wav2vec, color="cyan")
 
                 # NOTE: torchaudio resample doesn't accept float freqs
-                # embeddings = F.resample(embeddings,
-                #                         orig_freq=rate_after_wav2vec,
-                #                         new_freq=self.brain_resample_rate)
                 # To 120 Hz
                 embeddings = mne.filter.resample(embeddings.numpy().astype(np.float64),
                                                  up=self.brain_resample_rate / rate_after_wav2vec,
