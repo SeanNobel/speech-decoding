@@ -1,18 +1,18 @@
 # ==== Dataset ==== #
 dataset: Gwilliams2022
-num_subjects: 27 # NOTE: I've limited the number of subjects to 3 to save time for now
+num_subjects: 27
 
 # ==== Training ==== #
 # 🔥 FIXME: with too large a batchsize there isn't enough 
 # 🔥 FIXME: samples in the eval set, and the CLIPLoss produces nans silently
-batch_size: 128
+batch_size: 64
 lr: 0.001
 lr_scheduler: multistep
 lr_exp_gamma: 0.99
 lr_step_numsteps: 5
 lr_multistep_mlstns: [0.4, 0.6, 0.8, 0.9]
 lr_step_gamma: 0.5
-epochs: 500
+epochs: 1000
 reduction: "mean"
 
 # ==== Architecture ==== #
@@ -35,10 +35,14 @@ preprocs:
   brain_filter_low: 1.0 # Hz
   brain_filter_high: 60 # Hz
 
-  seq_len: 3 # segment length in seconds
-
+  seq_len_sec: 3 # segment length in seconds
+  baseline_len_sec: 0.5
+  preceding_chunk_for_baseline: False # False to calc baseline based on the current epoch
   shift_brain: True
   shift_len: 150 # ms
 
   last4layers: True
   before: True
+
+  clamp: True
+  clamp_lim: 20
