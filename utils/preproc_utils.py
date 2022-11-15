@@ -14,6 +14,8 @@ def check_preprocs(args, data_dir):
     preproc_dirs = glob.glob(data_dir + "*/")
 
     for preproc_dir in preproc_dirs:
+        preproc_name = os.path.basename(os.path.dirname(preproc_dir))
+
         try:
             with open(preproc_dir + "settings.json") as f:
                 settings = json.load(f)
@@ -27,10 +29,10 @@ def check_preprocs(args, data_dir):
         try:
             is_processed = np.all([v == args.preprocs[k] for k, v in settings.items()])
             if is_processed:
-                cprint(f"Using preprocessing {preproc_dir}", color="cyan")
+                cprint(f"All preproc params matched to {preproc_name} -> using", color="cyan")
                 break
         except:
-            cprint("Preproc hyperparameter name mismatch", color="yellow")
+            cprint(f"Preproc param name mismatch for {preproc_name}", color="yellow")
             continue
 
     if not is_processed:
@@ -66,6 +68,21 @@ def scaleAndClamp(X, clamp_lim, clamp):
     return torch.stack(res).permute(0, 2, 1)  # NOTE: make (subj, ch, time) again
 
 
+def scaleAndClamp_single(X: np.ndarray, clamp_lim, clamp) -> torch.Tensor:
+    """ args:
+            X: ( ch, time )
+    """
+    X = X.T
+
+    X = RobustScaler().fit_transform(X)  # NOTE: must be samples x features
+    X = torch.from_numpy(X).to(torch.float)
+
+    if clamp:
+        X.clamp_(min=-clamp_lim, max=clamp_lim)
+
+    return X.T  # NOTE: make ( ch, time ) again
+
+
 def baseline_correction(X, baseline_len_samp, preceding_chunk_for_baseline):
     """ subject-wise baselining
         args:
@@ -87,3 +104,25 @@ def baseline_correction(X, baseline_len_samp, preceding_chunk_for_baseline):
                 X[subj_id, :, chunk_id, :] -= baseline.view(-1, 1)
             cprint(f'subj_id: {subj_id} {X[subj_id].max().item()}', color='magenta')
     return X
+
+
+@torch.no_grad()
+def baseline_correction_single(X: torch.Tensor, baseline_len_samp, use_preceding):
+    """ args:
+            X: ( chunks, ch, time )
+        returns:
+            X ( chunks, ch, time ) baseline-corrected channel-wise
+    """
+    X = X.permute(1, 0, 2).clone()  # ( ch, chunks, time )
+
+    for chunk_id in range(X.shape[1]):
+        if use_preceding:
+            if chunk_id == 0:
+                continue
+            baseline = X[:, chunk_id - 1, -baseline_len_samp:].mean(axis=1)
+        else:
+            baseline = X[:, chunk_id, :baseline_len_samp].mean(axis=1)
+
+        X[:, chunk_id, :] -= baseline.view(-1, 1)
+
+    return X.permute(1, 0, 2)
