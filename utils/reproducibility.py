@@ -1,6 +1,7 @@
-import torch, random
+import os, torch, random
 import numpy as np
 
+os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 torch.use_deterministic_algorithms(True)
 random.seed(0)
 np.random.seed(0)
