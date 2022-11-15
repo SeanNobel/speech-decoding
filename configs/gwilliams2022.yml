@@ -6,7 +6,7 @@ num_subjects: 27
 # 🔥 FIXME: with too large a batchsize there isn't enough 
 # 🔥 FIXME: samples in the eval set, and the CLIPLoss produces nans silently
 batch_size: 64
-lr: 0.001
+lr: 3e-4
 lr_scheduler: multistep
 lr_exp_gamma: 0.99
 lr_step_numsteps: 5
@@ -24,7 +24,7 @@ d_drop: 0.3
 # When calculating softmax for spatial attention in each iteration, we drop
 # channels that are within the distance d_drop from a randomly selected channel
 
-wav2vec_model: xlsr_53_56k
+wav2vec_model: facebook/wav2vec2-large-xlsr-53 # (HuggingFace) # xlsr_53_56k (FAIR)
 
 # == Hyperparameters that datasets should share === #
 force_recompute_y: False
@@ -44,7 +44,7 @@ preprocs:
   shift_len: 150 # ms
 
   last4layers: True
-  before: True
+  mode: huggingface # (if last4layers: {'huggingface', 'before', 'after'}). If not huggingface, used FAIR's W2V impl.
 
   clamp: True
   clamp_lim: 20

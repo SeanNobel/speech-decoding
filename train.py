@@ -56,7 +56,7 @@ loss_func.train()
 # --------------------
 optimizer = torch.optim.Adam(
     list(brain_encoder.parameters()) + list(loss_func.parameters()),
-    lr=args.lr,
+    lr=float(args.lr),
 )
 
 if args.lr_scheduler == "exponential":
