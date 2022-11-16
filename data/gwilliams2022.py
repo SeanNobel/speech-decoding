@@ -35,7 +35,11 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
         self.brain_resample_rate = args.preprocs["brain_resample_rate"]
         self.brain_filter_low = args.preprocs["brain_filter_low"]
         self.brain_filter_high = args.preprocs["brain_filter_high"]
-        self.segment_len = self.brain_resample_rate * args.preprocs["seq_len"]
+        self.seq_len_samp = self.brain_resample_rate * args.preprocs["seq_len_sec"]
+        self.clamp = args.preprocs["clamp"]
+        self.clamp_lim = args.preprocs["clamp_lim"]
+        self.preceding_chunk_for_baseline = args.preprocs["preceding_chunk_for_baseline"]
+        self.baseline_len_samp = int(self.brain_resample_rate * args.preprocs["baseline_len_sec"])
 
         self.audio_resample_rate = args.preprocs["audio_resample_rate"]
         self.lowpass_filter_width = args.preprocs["lowpass_filter_width"]
@@ -52,110 +56,105 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
         self.y_path = preproc_dir + "y_dict.npy"
         real_dur_path = preproc_dir + "real_durations.npy"
 
-        # Make X
+        # ------------
+        #    Make X
+        # ------------
         if args.preprocs["x_done"]:
-            cprint("Found x_dict.npy. Skipping preprocessing.", color="cyan")
             self.X = np.load(self.x_path, allow_pickle=True).item()
             self.real_durations = np.load(real_dur_path, allow_pickle=True).item()
         else:
             self.real_durations = {}  # will be updated in self.brain_preproc
             self.X = self.brain_preproc(args.num_subjects)  # ???
+
             np.save(real_dur_path, self.real_durations)
             args.preprocs.update({"x_done": True})
             with open(preproc_dir + "settings.json", 'w') as f:
                 json.dump(args.preprocs, f)
 
-        # Make Y if it doesn't already exist
-        if args.preprocs["y_done"]:
-            cprint("Found y_dict.npy. Skipping preprocessing.", color="cyan")
-            self.Y = np.load(self.y_path, allow_pickle=True).item()
-        else:
+        # -------------------------------------------
+        #     Make Y if it doesn't already exist
+        # -------------------------------------------
+        if args.force_recompute_y or not args.preprocs['y_done']:
             self.Y = self.audio_preproc()
             args.preprocs.update({"y_done": True})
             with open(preproc_dir + "settings.json", 'w') as f:
                 json.dump(args.preprocs, f)
+        else:
+            self.Y = np.load(self.y_path, allow_pickle=True).item()
 
-        # NOTE: this also updates self.X, self.Y. self.Y becomes a list
-        self.subject_idxs, self.task_id_list = self.batchfy()
+        self.X, self.Y, self.subject_idxs, self.task_idxs, self.idxs_in_task = self.batchfy()
 
-        # self.Y.requires_grad = False
-
-        print(
-            f"X: {self.X.shape}, Y (list): {len(self.Y)}, subject_idxs: {self.subject_idxs.shape}, task_id_list: {len(self.task_id_list)}"
-        )
+        cprint(f"X: {self.X.shape}", color='cyan')
+        cprint(f"Y: {[y.shape for y in self.Y]}", color='cyan')
+        cprint(
+            f"subject_idxs: {self.subject_idxs.shape}, task_idxs: {self.task_idxs.shape}, idxs_in_task: {self.idxs_in_task.shape}",
+            color='cyan')
 
     def __len__(self):
         return len(self.X)
 
     def __getitem__(self, i):
-        task_id = self.task_id_list[i]
-        i_in_task = self.get_i_in_task(i, task_id)
+        task_id = self.task_idxs[i].item()
+        i_in_task = self.idxs_in_task[i].item()
 
         return self.X[i], self.Y[task_id][i_in_task], self.subject_idxs[i]
 
-    # NOTE: this is very hard coding but should be correct.
-    def get_i_in_task(self, i, task_id):
-        i_in_task = 0
-        while i > 0 and self.task_id_list[i] == self.task_id_list[i - 1]:
-            i_in_task += 1
-            i -= 1
-
-        # avoid error by same task sucsession by missing session
-        return i_in_task % self.Y[task_id].shape[0]
-
     @staticmethod
-    def data_reform(data: np.ndarray, segment_len) -> torch.Tensor:
+    def data_reform(data: torch.Tensor, segment_len) -> torch.Tensor:
         trim_len = data.shape[-1] % segment_len
         data = data[:, :-trim_len]
-        data = data.reshape(data.shape[0], -1, segment_len).transpose(1, 0, 2)
+        data = data.reshape(data.shape[0], -1, segment_len).permute(1, 0, 2)
 
-        return torch.from_numpy(data.astype(np.float32))
+        return data
 
     def batchfy(self):
         X_list = []
         Y_list = []
         subject_idxs_list = []
-        task_id_list = []
+        task_idxs_list = []
+        i_in_task_list = []
 
-        cprint("Batchfying X", color="cyan")
+        # self.X.keys() -> ['subject01_sess0_task0', ..., 'subject27_sess1_task3']
+        # self.Y.keys() -> ['task0', 'task1', 'task2', 'task3']
+
+        cprint("=> Batchfying X", color="cyan")
         for key, X in tqdm(self.X.items()):
-            # Y = self.Y[key.split("_")[-1]]
             if self.shift_brain:
-                # X, Y = self.shift_brain_signal(X, Y)
                 X = self.shift_brain_signal(X, is_Y=False)
 
-            X = self.data_reform(X, self.segment_len)
+            X = scaleAndClamp_single(X, self.clamp_lim, self.clamp)  # ( ch=208, len=37835 )
+
+            X = self.data_reform(X, self.seq_len_samp)  # ( num_segment=~500, ch=208, len=360 )
+
+            X = baseline_correction_single(X, self.baseline_len_samp, self.preceding_chunk_for_baseline)
 
             X_list.append(X)
-            # Y_list.append(self.data_reform(Y, self.segment_len))
-
-            # assert X_list[-1].shape[0] == Y_list[-1].shape[0]
-            # if i > 0 and i % 4 == 0:
-            #     print(
-            #         f"Shapes: {Y_list[-1].shape}, {Y_list[-5].shape} | equal: {torch.equal(Y_list[-1], Y_list[-5])}"
-            #     )
+            num_segments = X.shape[0]
 
             subj_idx = int(key.split("_")[0][-2:]) - 1  # 0, 1,...
-            subj_idx *= torch.ones(X.shape[0], dtype=torch.uint8)
+            subj_idx *= torch.ones(num_segments, dtype=torch.int64)
             subject_idxs_list.append(subj_idx)
 
-            task_id = int(key[-1])  # 0 or 1 or 2 or 3
-            task_id_list += [task_id] * X.shape[0]
+            task_idx = int(key[-1])  # 0 or 1 or 2 or 3
+            task_idxs_list += [task_idx] * num_segments
 
-        cprint("Batchfying Y", color="cyan")
+            i_in_task_list.append(torch.arange(num_segments))  # torch.int64
+
+        cprint("=> Batchfying Y", color="cyan")
         for key, Y in tqdm(self.Y.items()):
+            # Y: ( F=1024, len=37835 )
             if self.shift_brain:
+                # NOTE: This doesn't shift audio. Just crops the end.
                 Y = self.shift_brain_signal(Y, is_Y=True)
 
-            Y = self.data_reform(Y, self.segment_len)
+            Y = torch.from_numpy(Y.astype(np.float32))
+
+            Y = self.data_reform(Y, self.seq_len_samp)  # ( num_segment=~500, F=1024, len=360 )
 
             Y_list.append(Y)
 
-        self.X = torch.cat(X_list, dim=0)
-        # self.Y = torch.cat(Y_list, dim=0)
-        self.Y = Y_list
-
-        return torch.cat(subject_idxs_list), task_id_list
+        return (torch.cat(X_list, dim=0), Y_list, torch.cat(subject_idxs_list),
+                torch.tensor(task_idxs_list, dtype=torch.int64), torch.cat(i_in_task_list))
 
     def shift_brain_signal(self, data, is_Y: bool):
         """
@@ -172,7 +171,7 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
     def brain_preproc(self, num_subjects, num_channels=208):
         np.save(self.x_path, {})
         for subject_idx in range(num_subjects):
-            for session_idx in range(2):  # 2 sessions for each subject
+            for session_idx in range(2):  # 2 sessions for each subject (but sometimes only 1 or even 0)
                 for task_idx in range(4):  # 4 tasks for each subject
 
                     description = f"subject{str(subject_idx+1).zfill(2)}_sess{session_idx}_task{task_idx}"
@@ -194,7 +193,7 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
 
                     df = raw.to_data_frame()
                     meg_raw = np.stack([df[key] for key in df.keys() if "MEG" in key])  # ( 224, 396000 )
-                    # TODO: 16 channels are references, but need to confirm that last 16 are
+                    # NOTE: (kind of) confirmed that last 16 channels are REF
                     meg_raw = meg_raw[:num_channels]  # ( 208, 396000 )
 
                     df_annot = raw.annotations.to_data_frame()
@@ -213,13 +212,13 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
                                                         down=self.brain_orig_rate /
                                                         self.brain_resample_rate)  # ( 208, 37853 )
 
-                    scaler = RobustScaler().fit(meg_resampled)
-                    meg_scaled = scaler.transform(meg_resampled)
-                    cprint(meg_scaled.shape, color="cyan")
+                    # scaler = RobustScaler().fit(meg_resampled)
+                    # meg_scaled = scaler.transform(meg_resampled)
+                    # cprint(meg_scaled.shape, color="cyan")
 
                     # save to disk
                     X = np.load(self.x_path, allow_pickle=True).item()
-                    X.update({description: meg_scaled})
+                    X.update({description: meg_resampled})
                     np.save(self.x_path, X)
 
         return X
@@ -248,15 +247,15 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
                 else:
                     print(yellow("No audio cutoff"))
 
-                # Upsample
+                # Upsample to 16000Hz
                 waveform = F.resample(waveform,
-                                      sample_rate,
-                                      self.audio_resample_rate,
+                                      orig_freq=sample_rate,
+                                      new_freq=self.audio_resample_rate,
                                       lowpass_filter_width=self.lowpass_filter_width)
                 cprint(f"Audio after resampling: {waveform.shape}", color="cyan")
 
                 if self.last4layers:
-                    embeddings = getW2VLastFourLayersAvg(wav2vec, waveform, mode=self.mode)
+                    embeddings = getW2VLastFourLayersAvg(wav2vec, waveform, mode=mode)
                 else:
                     embeddings = wav2vec.feature_extractor(waveform).squeeze()
                 cprint(f"Audio embedding: {embeddings.shape}", color="cyan")
@@ -265,9 +264,7 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
                 cprint(rate_after_wav2vec, color="cyan")
 
                 # NOTE: torchaudio resample doesn't accept float freqs
-                # embeddings = F.resample(embeddings,
-                #                         orig_freq=rate_after_wav2vec,
-                #                         new_freq=self.brain_resample_rate)
+                # To 120 Hz
                 embeddings = mne.filter.resample(embeddings.numpy().astype(np.float64),
                                                  up=self.brain_resample_rate / rate_after_wav2vec,
                                                  axis=-1)
