@@ -45,7 +45,7 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
         self.lowpass_filter_width = args.preprocs["lowpass_filter_width"]
 
         self.last4layers = args.preprocs["last4layers"]
-        self.before = args.preprocs["before"]
+        self.mode = args.preprocs["mode"]
 
         self.shift_brain = args.preprocs["shift_brain"]
         self.shift_len = args.preprocs["shift_len"]
@@ -255,7 +255,7 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
                 cprint(f"Audio after resampling: {waveform.shape}", color="cyan")
 
                 if self.last4layers:
-                    embeddings = getW2VLastFourLayersAvg(wav2vec, waveform, before=self.before)
+                    embeddings = getW2VLastFourLayersAvg(wav2vec, waveform, mode=mode)
                 else:
                     embeddings = wav2vec.feature_extractor(waveform).squeeze()
                 cprint(f"Audio embedding: {embeddings.shape}", color="cyan")

@@ -38,7 +38,7 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         wav2vec_model = args.wav2vec_model
         force_recompute = args.force_recompute,
         last4layers = args.preprocs["last4layers"]
-        before = args.preprocs["before"]
+        mode = args.preprocs["mode"]
 
         Y_path = f"data/Brennan2018/Y_embeds/embd_{wav2vec_model}.pt"
 
@@ -46,7 +46,7 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
             torch.save(self.audio_preproc(
                 wav2vec_model,
                 last4layers=last4layers,
-                before=before,
+                mode=mode,
             ), Y_path)
 
         self.Y = torch.load(Y_path)  # load the upsampled (to 120 Hz) embeddings (of the entire recording)
@@ -60,16 +60,16 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
                 'X': self.X,
                 'srate': srate,
             }, X_path)
-        else:
-            cprint(f'Loading existing preprocessed EEG...', color='green')
-            preprocessed_eeg = torch.load(X_path)
-            self.X = preprocessed_eeg['X']
-            srate = preprocessed_eeg['srate']  # ( 33, 60, 99712 )
-            cprint(f"Using existing pre-processed data {self.X.shape}, srate={srate}", 'red', 'on_yellow')
+
+        cprint(f'Loading preprocessed EEG...', color='green', attrs=['bold'])
+        preprocessed_eeg = torch.load(X_path)
+        self.X = preprocessed_eeg['X']
+        srate = preprocessed_eeg['srate']  # ( 33, 60, 99712 )
+        cprint(f"Using existing pre-processed data {self.X.shape}, srate={srate}", 'red', 'on_yellow')
 
         self.X, self.Y = self.shift_brain_signal(self.X, self.Y, srate=srate)
 
-        print(f"X: {self.X.shape}, Y: {self.Y.shape}")
+        cprint(f"X: {self.X.shape}, Y: {self.Y.shape}", color='red', attrs=['bold'])
         # X: ( 33, 60, 86791 ) -> ( B, 60, 1024 )
         # Y: ( 1024, 86791 ) -> ( B, 1024, 1024 ) # w2v embeddings
 
@@ -123,7 +123,7 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
     def audio_preproc(
         wav2vec_model: str,
         last4layers: bool,
-        before: bool,
+        mode: str,
     ):
         # waveform: ( 1, 31908132 ), sample_rate: 44100
 
@@ -140,17 +140,18 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         model = load_wav2vec_model(wav2vec_model)
         model.eval()
 
-        # FIXME: in the paper, activations of the last four transformer layers were averaged
+        # NOTE: for the large W2V2, the embedding dim is 1024
         if last4layers:
             cprint(f'Generating audio embeddings', 'yellow', 'on_red')
-            embeddings = getW2VLastFourLayersAvg(model, waveform, before=before)
+            embeddings = getW2VLastFourLayersAvg(model, waveform, mode=mode)  # torch.Size([1024, 36170])
         else:
             embeddings = model.feature_extractor(waveform).squeeze()  # (512, 36176 @16kHz) ( 512, 99712 @44.1kHz)
 
         embedding_srate = embeddings.shape[-1] / len_audio_s
-        print(f'Original  embedding shape {embeddings.shape} | srate (out out w2v): {embedding_srate}')
+        cprint(f'Original  embedding shape {embeddings.shape} | srate (out out w2v): {embedding_srate:.3f} Hz', 'red')
+
         res_embeddings = F.resample(embeddings, orig_freq=10, new_freq=24)  # to upsample from ~50 to ~120 Hz
-        print(f'Resampled embedding shape {res_embeddings.shape} | srate: {120}')
+        cprint(f'Resampled embedding shape {res_embeddings.shape} | srate: {120}', color='red', attrs=['bold'])
         return res_embeddings
 
     @staticmethod
@@ -224,15 +225,3 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         Y = Y[:, :-shift]  # ( 512, 99692 )
 
         return X, Y
-
-
-if __name__ == '__main__':
-
-    dataset = Brennan2018Dataset(seq_len=256)
-    print(dataset.Y.requires_grad)
-
-    # dataset = ToyDataset()
-    # print(dataset.Y.shape)
-
-    # from configs.args import args
-    # dataset = Gwilliams2022Dataset(args)
