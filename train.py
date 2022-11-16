@@ -6,7 +6,8 @@ import torch.nn as nn
 from time import time
 from tqdm import tqdm
 from configs.args import args
-from data.datasets import Gwilliams2022Dataset, Brennan2018Dataset, ToyDataset
+from data.brennan2018 import Brennan2018Dataset
+from data.gwilliams2022 import Gwilliams2022Dataset
 from models.brain_encoder import BrainEncoder
 from models.classifier import Classifier
 from utils.get_dataloaders import get_dataloaders
@@ -37,19 +38,27 @@ if args.wandb:
 # ---------------------
 brain_encoder = BrainEncoder(args).to(device)
 
+# speech model
+wav2vec = load_wav2vec_model(args.wav2vec_model).to(device)
+wav2vec.eval()
+
+# classifier
+classifier = Classifier(args)
+
 # ---------------
 #      Loss
 # ---------------
-# loss_func = CLIPLossVer3(args).cuda()
 loss_func = CLIPLoss(args).to(device)
 loss_func.train()
-# loss_func = CLIPLossVer1(args).cuda()
-# loss_func = MSELoss().cuda()
 
+# --------------------
+#      Optimizer
+# --------------------
 optimizer = torch.optim.Adam(
     list(brain_encoder.parameters()) + list(loss_func.parameters()),
     lr=float(args.lr),
 )
+
 if args.lr_scheduler == "exponential":
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.lr_exp_gamma)
 elif args.lr_scheduler == "step":
@@ -61,13 +70,6 @@ elif args.lr_scheduler == "multistep":
         optimizer, milestones=[int(m * args.epochs) for m in args.lr_multistep_mlstns], gamma=args.lr_step_gamma)
 else:
     raise ValueError()
-
-# NOTE: we don't need to load it if we already have precomputed audio embeddings
-# wav2vec = load_wav2vec_model(args.wav2vec_model).to(device)
-# wav2vec.eval()
-
-# classifier
-classifier = Classifier(args)
 
 # -----------------------
 #       Dataloader
