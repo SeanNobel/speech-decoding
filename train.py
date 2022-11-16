@@ -10,11 +10,10 @@ from data.brennan2018 import Brennan2018Dataset
 from data.gwilliams2022 import Gwilliams2022Dataset
 from models.brain_encoder import BrainEncoder
 from models.classifier import Classifier
-from utils.get_dataloaders import get_dataloaders
+from utils.get_dataloaders import get_dataloaders, get_samplers
 from utils.loss import *
 if args.reproducible:
     from utils.reproducibility import g, seed_worker
-from utils.wav2vec_util import load_wav2vec_model
 from tqdm import trange
 from termcolor import cprint
 import wandb
@@ -33,14 +32,63 @@ if args.wandb:
         save_code=True,
     )
 
+# -----------------------
+#       Dataloader
+# -----------------------
+# NOTE: For Gwilliams dataset, dataset size is the number of speech segments
+# so that no overlapping segments are included in a single batch
+if args.dataset == 'Gwilliams2022':
+    dataset = Gwilliams2022Dataset(args)
+
+    args.num_subjects = dataset.num_subjects
+
+    train_size = int(dataset.Y.shape[0] * 0.8)
+    test_size = dataset.Y.shape[0] - train_size
+    train_set, test_set = torch.utils.data.random_split(
+        dataset,
+        lengths=[train_size, test_size],
+        generator=g if args.reproducible else None,
+    )
+
+elif args.dataset == 'Brennan2018':
+    # NOTE: now the DS take not the number of samples, but the seconds to make windows
+    # NOTE: takes an optional debug param force_recompute to pre-process the EEG even if it exists
+    dataset = Brennan2018Dataset(args)
+
+    train_size = int(dataset.X.shape[0] * 0.8)
+    test_size = dataset.X.shape[0] - train_size
+    train_set, test_set = torch.utils.data.random_split(
+        dataset,
+        lengths=[train_size, test_size],
+        generator=g if args.reproducible else None,
+    )
+
+else:
+    raise ValueError('Unknown dataset')
+
+if args.use_sampler:
+    # NOTE: currently not supporting reproducibility
+    train_loader, test_loader = get_samplers(
+        train_set,
+        test_set,
+        args,
+    )
+else:
+    if args.reproducible:
+        train_loader, test_loader = get_dataloaders(
+            train_set,
+            test_set,
+            args,
+            seed_worker,
+            g,
+        )
+    else:
+        train_loader, test_loader = get_dataloaders(train_set, test_set, args)
+
 # ---------------------
 #        Models
 # ---------------------
 brain_encoder = BrainEncoder(args).to(device)
-
-# speech model
-wav2vec = load_wav2vec_model(args.wav2vec_model).to(device)
-wav2vec.eval()
 
 # classifier
 classifier = Classifier(args)
@@ -71,37 +119,7 @@ elif args.lr_scheduler == "multistep":
 else:
     raise ValueError()
 
-# -----------------------
-#       Dataloader
-# -----------------------
-if args.dataset == 'Gwilliams2022':
-    dataset = Gwilliams2022Dataset(args)
-elif args.dataset == 'Brennan2018':
-    # NOTE: now the DS take not the number of samples, but the seconds to make windows
-    # NOTE: takes an optional debug param force_recompute to pre-process the EEG even if it exists
-    dataset = Brennan2018Dataset(args)
-else:
-    raise ValueError('Unknown dataset')
-
-train_size = int(dataset.X.shape[0] * 0.8)
-test_size = dataset.X.shape[0] - train_size
-train_set, test_set = torch.utils.data.random_split(
-    dataset,
-    lengths=[train_size, test_size],
-    generator=g if args.reproducible else None,
-)
-
-if args.reproducible:
-    train_loader, test_loader = get_dataloaders(
-        train_set,
-        test_set,
-        args,
-        seed_worker,
-        g,
-    )
-else:
-    train_loader, test_loader = get_dataloaders(train_set, test_set, args)
-
+# ======================================
 for epoch in range(args.epochs):
     train_losses = []
     test_losses = []
@@ -139,8 +157,6 @@ for epoch in range(args.epochs):
         X, Y = X.to(device), Y.to(device)
 
         with torch.no_grad():
-            # NOTE: we don't need it. We already have precomputed W2V2 embeddings.
-            # Y = wav2vec.feature_extractor(Y)
             Z = brain_encoder(X, subject_idxs)
 
         loss = loss_func(Y, Z)
