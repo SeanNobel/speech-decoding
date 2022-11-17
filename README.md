@@ -43,16 +43,12 @@ Works for Gwilliams2022 dataset and Brennan2018 dataset.
 - [x] CLIPLoss: learnable temperature parameter (as per Radford et al.)
 - [x] CLIPLoss: brain and speech embedding normalization (as per Radford et al.)
 
+- [ ] Classifier needs to predict "out of more than 1000 possible ones, with a top-10 accuracy"
+
 
 ## Reproducibility
 Use the `--reproducible` CLI argument. You might need to run `export CUBLAS_WORKSPACE_CONFIG=:4096:8` in the terminal just before you run `train.py`. 
 
-
-
-### Sensho Gwilliams2022
-
-- [ ] last4layers
-- [ ] 16 channels are references, but need to confirm that last 16 are
 
 # Usage
 
