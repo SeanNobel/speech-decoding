@@ -82,22 +82,21 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
         else:
             self.Y = np.load(self.y_path, allow_pickle=True).item()
 
-        self.X, self.Y, self.subject_idxs, self.task_idxs, self.idxs_in_task = self.batchfy()
+        self.X_list, self.Y = self.batchfy()
 
-        cprint(f"X: {self.X.shape}", color='cyan')
-        cprint(f"Y: {[y.shape for y in self.Y]}", color='cyan')
-        cprint(
-            f"subject_idxs: {self.subject_idxs.shape}, task_idxs: {self.task_idxs.shape}, idxs_in_task: {self.idxs_in_task.shape}",
-            color='cyan')
+        self.num_subjects = len(self.X_list)
 
     def __len__(self):
-        return len(self.X)
+        return len(self.Y)
 
-    def __getitem__(self, i):
-        task_id = self.task_idxs[i].item()
-        i_in_task = self.idxs_in_task[i].item()
+    def __getitem__(self, i):  # NOTE: i is id of a speech segment
+        subject_idx = np.random.randint(self.num_subjects)
 
-        return self.X[i], self.Y[task_id][i_in_task], self.subject_idxs[i]
+        subject_X = self.X_list[subject_idx]
+        num_sessions = subject_X.shape[0]  # 1 or 2
+        session_idx = np.random.randint(num_sessions)
+
+        return subject_X[session_idx, i], self.Y[i], subject_idx
 
     @staticmethod
     def data_reform(data: torch.Tensor, segment_len) -> torch.Tensor:
@@ -108,16 +107,18 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
         return data
 
     def batchfy(self):
-        X_list = []
-        Y_list = []
-        subject_idxs_list = []
-        task_idxs_list = []
-        i_in_task_list = []
-
         # self.X.keys() -> ['subject01_sess0_task0', ..., 'subject27_sess1_task3']
         # self.Y.keys() -> ['task0', 'task1', 'task2', 'task3']
 
+        assert natsorted(self.X.keys()) == list(self.X.keys()), 'self.X.keys() is not sorted'
+
+        # ------------------------------------------------------
+        #     Make X_dict (MEG are concatenated along tasks)
+        # ------------------------------------------------------
         cprint("=> Batchfying X", color="cyan")
+
+        X_dict = {}
+
         for key, X in tqdm(self.X.items()):
             if self.shift_brain:
                 X = self.shift_brain_signal(X, is_Y=False)
@@ -128,19 +129,20 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
 
             X = baseline_correction_single(X, self.baseline_len_samp, self.preceding_chunk_for_baseline)
 
-            X_list.append(X)
-            num_segments = X.shape[0]
+            key_wo_task = '_'.join(key.split('_')[:-1])  # e.g. 'subject01_sess0_task0' -> 'subject01_sess0'
+            if not key_wo_task in X_dict.keys():
+                X_dict.update({key_wo_task: X})
+            else:
+                _X = torch.cat((X_dict[key_wo_task], X))
+                X_dict.update({key_wo_task: _X})
 
-            subj_idx = int(key.split("_")[0][-2:]) - 1  # 0, 1,...
-            subj_idx *= torch.ones(num_segments, dtype=torch.int64)
-            subject_idxs_list.append(subj_idx)
-
-            task_idx = int(key[-1])  # 0 or 1 or 2 or 3
-            task_idxs_list += [task_idx] * num_segments
-
-            i_in_task_list.append(torch.arange(num_segments))  # torch.int64
-
+        # ----------------------------------------------------
+        #    Make Y (speech are concatenated along tasks)
+        # ----------------------------------------------------
         cprint("=> Batchfying Y", color="cyan")
+
+        Y_list = []
+
         for key, Y in tqdm(self.Y.items()):
             # Y: ( F=1024, len=37835 )
             if self.shift_brain:
@@ -153,8 +155,38 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
 
             Y_list.append(Y)
 
-        return (torch.cat(X_list, dim=0), Y_list, torch.cat(subject_idxs_list),
-                torch.tensor(task_idxs_list, dtype=torch.int64), torch.cat(i_in_task_list))
+        Y = torch.cat(Y_list)
+
+        # -----------------------------------------------------------------------
+        #   Drop sessions in which some tasks are missing -> X_dict to X_list
+        # -----------------------------------------------------------------------
+        X_list = []
+
+        subj_strs = natsorted(set(k.split('_')[0] for k in X_dict.keys()))
+        for subj_str in subj_strs:
+            # subj_str = k.split('_')[0]
+            # num_sessions_subj = sum([(subj_str in k) for k in X_dict.keys()])
+
+            sess_list = []
+            for k, X in X_dict.items():
+                if subj_str in k:
+                    if X.shape[0] == Y.shape[0]:
+                        cprint(f"{k}: {X_dict[k].shape}", color='cyan')
+                        sess_list.append(X)
+                    else:
+                        cprint(f"{k}: {X_dict[k].shape} -> dropped", color='yellow')
+
+            if len(sess_list) > 0:
+                X_list.append(torch.stack(sess_list))
+
+        print('---------------------------')
+        cprint(f"Using {len(X_list)} subjects (some of them have only 1 session)", color='cyan')
+        cprint(str([x.shape[0] for x in X_list]), color='cyan')
+
+        print('---------------------------')
+        cprint(f"Audio: {Y.shape}", color='cyan')
+
+        return X_list, Y  #, torch.cat(subject_idxs_list)
 
     def shift_brain_signal(self, data, is_Y: bool):
         """
@@ -255,7 +287,7 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
                 cprint(f"Audio after resampling: {waveform.shape}", color="cyan")
 
                 if self.last4layers:
-                    embeddings = getW2VLastFourLayersAvg(wav2vec, waveform, mode=mode)
+                    embeddings = getW2VLastFourLayersAvg(wav2vec, waveform, mode=self.mode)
                 else:
                     embeddings = wav2vec.feature_extractor(waveform).squeeze()
                 cprint(f"Audio embedding: {embeddings.shape}", color="cyan")
@@ -322,6 +354,58 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
                 print(yellow(self.real_durations[task_str]))
 
         self.real_durations.update({task_str: real_durations})
+
+    def _batchfy(self):
+        """
+        Legacy. In this way there are more than two overlapping segments in a single batch.
+        """
+        X_list = []
+        Y_list = []
+        subject_idxs_list = []
+        task_idxs_list = []
+        i_in_task_list = []
+
+        # self.X.keys() -> ['subject01_sess0_task0', ..., 'subject27_sess1_task3']
+        # self.Y.keys() -> ['task0', 'task1', 'task2', 'task3']
+
+        cprint("=> Batchfying X", color="cyan")
+        for key, X in tqdm(self.X.items()):
+            if self.shift_brain:
+                X = self.shift_brain_signal(X, is_Y=False)
+
+            X = scaleAndClamp_single(X, self.clamp_lim, self.clamp)  # ( ch=208, len=37835 )
+
+            X = self.data_reform(X, self.seq_len_samp)  # ( num_segment=~500, ch=208, len=360 )
+
+            X = baseline_correction_single(X, self.baseline_len_samp, self.preceding_chunk_for_baseline)
+
+            X_list.append(X)
+            num_segments = X.shape[0]
+
+            subj_idx = int(key.split("_")[0][-2:]) - 1  # 0, 1,...
+            subj_idx *= torch.ones(num_segments, dtype=torch.int64)
+            subject_idxs_list.append(subj_idx)
+
+            task_idx = int(key[-1])  # 0 or 1 or 2 or 3
+            task_idxs_list += [task_idx] * num_segments
+
+            i_in_task_list.append(torch.arange(num_segments))  # torch.int64
+
+        cprint("=> Batchfying Y", color="cyan")
+        for key, Y in tqdm(self.Y.items()):
+            # Y: ( F=1024, len=37835 )
+            if self.shift_brain:
+                # NOTE: This doesn't shift audio. Just crops the end.
+                Y = self.shift_brain_signal(Y, is_Y=True)
+
+            Y = torch.from_numpy(Y.astype(np.float32))
+
+            Y = self.data_reform(Y, self.seq_len_samp)  # ( num_segment=~500, F=1024, len=360 )
+
+            Y_list.append(Y)
+
+        return (torch.cat(X_list, dim=0), Y_list, torch.cat(subject_idxs_list),
+                torch.tensor(task_idxs_list, dtype=torch.int64), torch.cat(i_in_task_list))
 
 
 if __name__ == "__main__":

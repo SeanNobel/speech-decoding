@@ -36,6 +36,8 @@ def check_preprocs(args, data_dir):
             continue
 
     if not is_processed:
+        cprint("No matching preprocessing. Starting a new one.")
+
         preproc_dir = data_dir + str(len(preproc_dirs)) + "/"
         os.mkdir(preproc_dir)
 
