@@ -104,7 +104,7 @@ def baseline_correction(X, baseline_len_samp, preceding_chunk_for_baseline):
                 else:
                     baseline = X[subj_id, :, chunk_id, :baseline_len_samp].mean(axis=1)
                 X[subj_id, :, chunk_id, :] -= baseline.view(-1, 1)
-            cprint(f'subj_id: {subj_id} {X[subj_id].max().item()}', color='magenta')
+            cprint(f'subj_id: {subj_id} | max amlitude: {X[subj_id].max().item():.4f}', color='magenta')
     return X
 
 

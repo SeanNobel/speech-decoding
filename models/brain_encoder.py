@@ -103,10 +103,9 @@ class SubjectBlock(nn.Module):
         X = self.spatial_attention(X)  # ( B, 270, 256 )
         X = self.conv(X)  # ( B, 270, 256 )
 
-        # TODO: make this more efficient
-        if not isinstance(subject_idxs, list):
-            subject_idxs = subject_idxs.tolist()
-        X = self.subject_matrix[subject_idxs] @ X  # ( 270, 270 ) @ ( B , 270, 256 ) -> ( B, 270, 256 )
+        # NOTE to Sensho: this has caused problems. I slighly changed it here. Hope it doesn't break anything for you
+        _subject_idxs = subject_idxs.tolist()
+        X = self.subject_matrix[_subject_idxs] @ X  # ( 270, 270 ) @ ( B , 270, 256 ) -> ( B, 270, 256 )
         # _X = []
         # for i, x in enumerate(X):  # x: ( 270, 256 )
         #     x = self.subject_layer[subject_idxs[i]](x.unsqueeze(0))  # ( 1, 270, 256 )
@@ -196,7 +195,7 @@ class BrainEncoder(nn.Module):
         )
 
     def forward(self, X, subject_idxs):
-        X = self.subject_block(X, subject_idxs.tolist())
+        X = self.subject_block(X, subject_idxs)
         X = self.conv_blocks(X)
         X = F.gelu(self.conv_final1(X))
         X = F.gelu(self.conv_final2(X))

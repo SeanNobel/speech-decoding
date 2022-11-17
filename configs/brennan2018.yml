@@ -1,11 +1,15 @@
 # ==== Dataset ==== #
 dataset: Brennan2018
+num_subjects: 49 # FIXME: this is not good if we want to subset subejects
 
 # ==== Training ==== #
 # 🔥 FIXME: with too large a batchsize there isn't enough 
 # 🔥 FIXME: samples in the eval set, and the CLIPLoss produces nans silently
-batch_size: 64 
-
+use_sampler: True
+reproducible: False
+num_workers: 8
+batch_size: 64
+updates: 1200
 lr: 3e-4
 lr_scheduler: multistep
 lr_exp_gamma: 0.99
@@ -44,5 +48,6 @@ preprocs:
   last4layers: True # if True, the brain_encoder's emsize will be 1024, not 512
   mode: huggingface # (if last4layers: {'huggingface', 'before', 'after'}). If not huggingface, used FAIR's W2V impl.
 
+  subject_wise: False
   clamp: True
   clamp_lim: 20
