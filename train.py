@@ -175,8 +175,8 @@ for epoch in range(args.epochs):
         f"Ep {epoch}/{args.epochs} | ",
         f"train l: {np.mean(train_losses):.3f} | ",
         f"test l: {np.mean(test_losses):.3f} | ",
-        f"trainTop10accs: {np.mean(trainTop10accs):.3f} | ",
-        f"testTop10accs: {np.mean(testTop10accs):.3f} | ",
+        f"trainTop10acc: {np.mean(trainTop10accs):.3f} | ",
+        f"testTop10acc: {np.mean(testTop10accs):.3f} | ",
         f"lr: {optimizer.param_groups[0]['lr']:.5f}",
         f"temp: {loss_func.temp.item():.3f}",
     )

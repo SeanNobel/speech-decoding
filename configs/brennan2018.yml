@@ -5,7 +5,7 @@ num_subjects: 49 # FIXME: this is not good if we want to subset subejects
 # ==== Training ==== #
 # 🔥 FIXME: with too large a batchsize there isn't enough 
 # 🔥 FIXME: samples in the eval set, and the CLIPLoss produces nans silently
-use_sampler: True
+use_sampler: False
 reproducible: False
 num_workers: 8
 batch_size: 64
