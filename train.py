@@ -123,8 +123,10 @@ else:
 for epoch in range(args.epochs):
     train_losses = []
     test_losses = []
-    test_accs = []
-    train_accs = []
+    trainTop1accs = []
+    trainTop10accs = []
+    testTop1accs = []
+    testTop10accs = []
 
     # weight_prev = brain_encoder.subject_block.spatial_attention.z_re.clone()
 
@@ -138,10 +140,11 @@ for epoch in range(args.epochs):
         loss = loss_func(Y, Z)
 
         with torch.no_grad():
-            train_acc = classifier(Z, Y)
+            trainTop1acc, trainTop10acc = classifier(Z, Y)
 
         train_losses.append(loss.item())
-        train_accs.append(train_acc.item())
+        trainTop1accs.append(trainTop1acc)
+        trainTop10accs.append(trainTop10acc)
 
         optimizer.zero_grad()
         loss.backward()
@@ -162,17 +165,18 @@ for epoch in range(args.epochs):
         loss = loss_func(Y, Z)
 
         with torch.no_grad():
-            test_acc = classifier(Z, Y)
+            testTop1acc, testTop10acc = classifier(Z, Y)
 
         test_losses.append(loss.item())
-        test_accs.append(test_acc.item())
+        testTop1accs.append(testTop1acc)
+        testTop10accs.append(testTop10acc)
 
     print(
         f"Ep {epoch}/{args.epochs} | ",
         f"train l: {np.mean(train_losses):.3f} | ",
         f"test l: {np.mean(test_losses):.3f} | ",
-        f"train a: {np.mean(train_accs):.3f} | ",
-        f"test a: {np.mean(test_accs):.3f} | ",
+        f"trainTop10accs: {np.mean(trainTop10accs):.3f} | ",
+        f"testTop10accs: {np.mean(testTop10accs):.3f} | ",
         f"lr: {optimizer.param_groups[0]['lr']:.5f}",
         f"temp: {loss_func.temp.item():.3f}",
     )
@@ -182,8 +186,10 @@ for epoch in range(args.epochs):
             'epoch': epoch,
             'train_loss': np.mean(train_losses),
             'test_loss': np.mean(test_losses),
-            'train_acc': np.mean(train_accs),
-            'test_acc': np.mean(test_accs),
+            'trainTop1acc': np.mean(trainTop1accs),
+            'trainTop10acc': np.mean(trainTop10accs),
+            'testTop1acc': np.mean(testTop1accs),
+            'testTop10acc': np.mean(testTop10accs),
             'lrate': optimizer.param_groups[0]['lr'],
             'temp': loss_func.temp.item()
         }

@@ -18,10 +18,13 @@ class Classifier(nn.Module):
         self.diags = torch.arange(self.batch_size).to(device)
 
     def forward(self, Z: torch.Tensor, Y: torch.Tensor) -> torch.Tensor:
-        x = Z.view(self.batch_size, -1)
-        y = Y.view(self.batch_size, -1)
-        similarity = torch.matmul(x, y.T)  # NOTE: no need to normalize the dot products
-        # similarity = torch.einsum('bft,bft -> bb', X, Y)  # NOTE: no need to normalize the dot products
-        # NOTE: max similarity of speech and M/EEG representations is expected for corresponding windows
-        accuracy = (similarity.argmax(axis=1) == self.diags).to(torch.float).mean()
-        return accuracy
+        with torch.no_grad():
+            x = Z.view(self.batch_size, -1)
+            y = Y.view(self.batch_size, -1)
+            similarity = torch.matmul(x, y.T)  # NOTE: no need to normalize the dot products
+            # similarity = torch.einsum('bft,bft -> bb', X, Y)  # NOTE: no need to normalize the dot products
+            # NOTE: max similarity of speech and M/EEG representations is expected for corresponding windows
+            top1accuracy = (similarity.argmax(axis=1) == self.diags).to(torch.float).mean().item()
+            top10accuracy = np.mean(
+                [label in row for row, label in zip(torch.topk(similarity, 10, dim=1, largest=True)[1], self.diags)])
+        return top1accuracy, top10accuracy
