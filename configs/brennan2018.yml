@@ -2,6 +2,7 @@
 dataset: Brennan2018
 
 # ==== Training ==== #
+use_sampler: False
 # 🔥 FIXME: with too large a batchsize there isn't enough 
 # 🔥 FIXME: samples in the eval set, and the CLIPLoss produces nans silently
 batch_size: 64 
