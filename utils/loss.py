@@ -36,7 +36,7 @@ class CLIPLoss(nn.Module):
         # self.targets = torch.zeros(size=(batch_size, )).long() # that's for the slow method
         self.registered_targets = False
         self.batch_size = args.batch_size
-        self.temp = nn.Parameter(torch.rand(size=(1,)))
+        self.temp = nn.Parameter(torch.tensor([5.1]))  # NOTE: tried to init to 5.1
 
     def forward(self, x, y, fast=True, return_logits=False):
         # batch_size = x.size(0)

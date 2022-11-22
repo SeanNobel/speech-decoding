@@ -15,11 +15,12 @@ import ast
 from typing import Union
 from utils.bcolors import cyan, yellow
 from utils.wav2vec_util import load_wav2vec_model, getW2VLastFourLayersAvg
-from utils.preproc_utils import check_preprocs, scaleAndClamp, baseline_correction
+from utils.preproc_utils import baseline_correction_single, baseline_correction
+from utils.preproc_utils import scaleAndClamp_single, scaleAndClamp
 from termcolor import cprint
 from pprint import pprint
 from einops import rearrange
-from sklearn.preprocessing import RobustScaler
+from sklearn.preprocessing import RobustScaler, StandardScaler
 
 mne.set_log_level(verbose="WARNING")
 
@@ -39,6 +40,7 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         force_recompute = args.force_recompute,
         last4layers = args.preprocs["last4layers"]
         mode = args.preprocs["mode"]
+        self.subject_wise = args.preprocs['subject_wise']
 
         Y_path = f"data/Brennan2018/Y_embeds/embd_{wav2vec_model}.pt"
 
@@ -97,12 +99,18 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
 
         X = X[:, :, :trim_len]  # ( 33, 60, 99584 ) (subj, chans, num_embeddings)
         # NOTE: the previous implementation was hard to understand and possibly wrong
-        X = scaleAndClamp(X, self.clamp_lim, self.clamp)
+        if not self.subject_wise:
+            X = scaleAndClamp(X, self.clamp_lim, self.clamp)
+        else:
+            X = scaleAndClamp_single(X, self.clamp_lim, self.clamp)
 
         Y = Y[:, :trim_len]  # ( 512, 99584 )       (emsize, num_embeddings)
 
         X = X.reshape(X.shape[0], X.shape[1], -1, self.seq_len_samp)  # ( 8, 60, 243, 356 ) (sub, ch, chunks, bptt)
-        X = baseline_correction(X, self.baseline_len_samp, self.preceding_chunk_for_baseline)
+        if not self.subject_wise:
+            X = baseline_correction(X, self.baseline_len_samp, self.preceding_chunk_for_baseline)
+        else:
+            X = baseline_correction_single(X, self.baseline_len_samp, self.preceding_chunk_for_baseline)
 
         Y = Y.reshape(Y.shape[0], -1, self.seq_len_samp)  # ( 1024, 243, 356 )  (emsize, chunks, bptt)
 
@@ -152,7 +160,10 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
 
         res_embeddings = F.resample(embeddings, orig_freq=10, new_freq=24)  # to upsample from ~50 to ~120 Hz
         cprint(f'Resampled embedding shape {res_embeddings.shape} | srate: {120}', color='red', attrs=['bold'])
-        return res_embeddings
+
+        # NOTE: "Paper says: we use standard normalization for both representations"
+        scaler = StandardScaler().fit(res_embeddings.T)
+        return torch.from_numpy(scaler.transform(res_embeddings.T).T).float()
 
     @staticmethod
     def brain_preproc(audio_embd_len):
@@ -161,8 +172,8 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
 
         matfile_paths = natsorted(glob.glob("data/Brennan2018/raw/*.mat"))
         # matfile_paths = [matfile_paths[i] for i in range(21) if not i in [1, 6, 8]]
-        matfile_paths = [matfile_paths[i] for i in [0, 1, 3, 4, 5, 6, 7, 48]]
-        cprint('using only subjects #[0, 1, 3, 4, 5, 6, 7, 48]', "blue", "on_yellow", attrs=['bold'])
+        # matfile_paths = [matfile_paths[i] for i in [i for i in range(40)]]
+        # cprint('using only subjects #[0, 1, 3, 4, 5, 6, 7, 48]', "blue", "on_yellow", attrs=['bold'])
         pprint(matfile_paths)
         # matfile_paths = np.delete(matfile_paths, excluded_subjects)
 
