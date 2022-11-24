@@ -1,9 +1,8 @@
 from torch.utils.data import DataLoader, RandomSampler, BatchSampler
 from data.brennan2018 import CustomBatchSampler
-from utils.reproducibility import g, seed_worker
 
 
-def get_dataloaders(train_set, test_set, args):
+def get_dataloaders(train_set, test_set, args, g, seed_worker):
 
     if args.use_sampler:
         train_batch_sampler = CustomBatchSampler(train_set, args)
@@ -19,8 +18,8 @@ def get_dataloaders(train_set, test_set, args):
             batch_sampler=train_batch_sampler,
             num_workers=6,
             pin_memory=True,
-            worker_init_fn=seed_worker if args.reproducible else None,
-            generator=g if args.reproducible else None,
+            worker_init_fn=seed_worker,
+            generator=g,
         )
         test_loader = DataLoader(
             test_set,
@@ -28,8 +27,8 @@ def get_dataloaders(train_set, test_set, args):
             batch_sampler=test_batch_sampler,
             num_workers=6,
             pin_memory=True,
-            worker_init_fn=seed_worker if args.reproducible else None,
-            generator=g if args.reproducible else None,
+            worker_init_fn=seed_worker,
+            generator=g,
         )
     else:
         train_loader = DataLoader(
@@ -38,8 +37,8 @@ def get_dataloaders(train_set, test_set, args):
             batch_size=args.batch_size,
             num_workers=6,
             pin_memory=False,
-            worker_init_fn=seed_worker if args.reproducible else None,
-            generator=g if args.reproducible else None,
+            worker_init_fn=seed_worker,
+            generator=g,
         )
         test_loader = DataLoader(
             test_set,
@@ -47,8 +46,8 @@ def get_dataloaders(train_set, test_set, args):
             batch_size=args.batch_size,
             num_workers=6,
             pin_memory=False,
-            worker_init_fn=seed_worker if args.reproducible else None,
-            generator=g if args.reproducible else None,
+            worker_init_fn=seed_worker,
+            generator=g,
         )
 
     return train_loader, test_loader

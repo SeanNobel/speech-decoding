@@ -1,18 +1,22 @@
 from constants import bar_format, device
+from configs.args import args
+if args.reproducible:
+    from utils.reproducibility import g, seed_worker
+else:
+    g = None
+    seed_worker = None
 import os, sys
 import numpy as np
 import torch
 import torch.nn as nn
 from time import time
 from tqdm import tqdm
-from configs.args import args
 from data.brennan2018 import Brennan2018Dataset
 from data.gwilliams2022 import Gwilliams2022Dataset
 from models.brain_encoder import BrainEncoder
 from models.classifier import Classifier
 from utils.get_dataloaders import get_dataloaders, get_samplers
 from utils.loss import *
-from utils.reproducibility import g, seed_worker
 from tqdm import trange
 from termcolor import cprint
 import wandb
@@ -87,7 +91,7 @@ elif args.dataset == 'Brennan2018':
     #     generator=g if args.reproducible else None,
     # )
 
-    train_loader, test_loader = get_dataloaders(train_set, test_set, args)
+    train_loader, test_loader = get_dataloaders(train_set, test_set, args, g, seed_worker)
 
 else:
     raise ValueError('Unknown dataset')
