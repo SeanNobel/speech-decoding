@@ -1,6 +1,6 @@
 # ==== Dataset ==== #
 dataset: Gwilliams2022
-# num_subjects: 27
+multicore: true # run pre-processing on 20 cores
 
 # ==== Training ==== #
 # 🔥 FIXME: with too large a batchsize there isn't enough 
