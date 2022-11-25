@@ -28,7 +28,7 @@ from pprint import pprint
 mne.set_log_level(verbose="WARNING")
 
 manager = Manager()
-__real_durations = manager.dict()
+glob_real_durations = manager.dict()
 
 
 def to_second(onset):  # pandas Timestamp object
@@ -323,7 +323,7 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
         for subj in range(num_subjects):
             for session_idx in range(2):
                 for task_idx in range(4):
-                    subj_list.append((subj, consts, __real_durations, session_idx, task_idx))
+                    subj_list.append((subj, consts, glob_real_durations, session_idx, task_idx))
 
         # subj_list = [(i, c, rd) for i, c, rd in zip(range(num_subjects), repeat(consts), repeat(real_durations))]
         with Pool(20) as p:
@@ -335,8 +335,8 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
                 ))
         print('no_errors')
 
-        # NOTE: return __real_durations (which is a global shared struct) into self.real_durations
-        self.real_durations = dict(__real_durations)
+        # NOTE: return glob_real_durations (which is a global shared struct) into self.real_durations
+        self.real_durations = dict(glob_real_durations)
 
         # NOTE: assemble files into one and clean up
         fnames = [f for f in os.listdir('data/Gwilliams2022/preprocessed/0/') if f.startswith('__')]
