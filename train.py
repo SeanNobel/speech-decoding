@@ -12,8 +12,10 @@ import torch.nn as nn
 from time import time
 from tqdm import tqdm
 from data.brennan2018 import Brennan2018Dataset
-# from data.gwilliams2022 import Gwilliams2022Dataset
-from data.gwilliams2022_multicore import Gwilliams2022Dataset
+if args.multicore:
+    from data.gwilliams2022_multicore import Gwilliams2022Dataset
+else:
+    from data.gwilliams2022 import Gwilliams2022Dataset
 
 from models.brain_encoder import BrainEncoder
 from models.classifier import Classifier
@@ -144,7 +146,12 @@ for epoch in range(args.epochs):
     # weight_prev = brain_encoder.subject_block.spatial_attention.z_re.clone()
 
     brain_encoder.train()
-    for i, (X, Y, subject_idxs, chunkIDs) in enumerate(tqdm(train_loader)):
+    for i, batch in enumerate(tqdm(train_loader)):
+        X = batch[0]
+        Y = batch[1]
+        subject_idxs = batch[2]
+        if not isinstance(train_loader.dataset.dataset, Gwilliams2022Dataset):
+            chunkIDs = batch[3]
 
         X, Y = X.to(device), Y.to(device)
         # print([(s.item(), chid.item()) for s, chid in zip(subject_idxs, chunkIDs)])
@@ -168,7 +175,12 @@ for epoch in range(args.epochs):
 
     # NOTE: maybe testing in this way is meaningless for contrastive loss
     brain_encoder.eval()
-    for X, Y, subject_idxs, chunkIDs in test_loader:
+    for batch in test_loader:
+        X = batch[0]
+        Y = batch[1]
+        subject_idxs = batch[2]
+        if not isinstance(test_loader.dataset.dataset, Gwilliams2022Dataset):
+            chunkIDs = batch[3]
 
         X, Y = X.to(device), Y.to(device)
 
