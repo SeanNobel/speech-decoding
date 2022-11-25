@@ -3,6 +3,7 @@ from re import sub
 import torch
 import torchaudio
 import torchaudio.functional as F
+from torch.utils.data import Sampler
 import numpy as np
 import pandas as pd
 import glob
@@ -15,18 +16,52 @@ import ast
 from typing import Union
 from utils.bcolors import cyan, yellow
 from utils.wav2vec_util import load_wav2vec_model, getW2VLastFourLayersAvg
-from utils.preproc_utils import check_preprocs, scaleAndClamp, baseline_correction
+from utils.preproc_utils import baseline_correction_single, baseline_correction
+from utils.preproc_utils import scaleAndClamp_single, scaleAndClamp
 from termcolor import cprint
 from pprint import pprint
 from einops import rearrange
-from sklearn.preprocessing import RobustScaler
+from sklearn.preprocessing import RobustScaler, StandardScaler
 
 mne.set_log_level(verbose="WARNING")
 
 
+class CustomBatchSampler(Sampler):
+    """
+    samples chunks from the dataset corresponding to unique audio (EEG) chunks (regardles of subject)
+    """
+
+    def __init__(self, ds, config):
+        self.batch_size = config.batch_size  #config.batchsize
+        # self.unique_chunk_ids = len(ds.subject_idxs.unique())
+        self.length = ds.chunk_ids.size(0)
+        self.numSubjects = len(ds.subject_idxs.unique())
+        self.chunksPerSubject = len(ds.chunk_ids.unique())
+        self.index = torch.arange(len(ds)).reshape(self.numSubjects, self.chunksPerSubject)
+        for i in range(self.chunksPerSubject):
+            self.index[:, i] = self.index[torch.randperm(self.numSubjects), i]
+        self.index = self.index.flatten().tolist()
+        self.num_batches = self.length // self.batch_size
+
+    def __iter__(self):
+        # this gets called when the object is used with for
+        # for every epoch, in the global index, permute the subjects, but not the chunk_ids
+
+        i = 0
+        while i < self.num_batches:
+            st = i * self.batch_size
+            en = st + self.batch_size
+            sampled_chunks = self.index[st:en]
+            yield sampled_chunks  # yeild makes a stateful function
+            i += 1
+
+    def __len__(self):
+        return self.num_batches
+
+
 class Brennan2018Dataset(torch.utils.data.Dataset):
 
-    def __init__(self, args):
+    def __init__(self, args, train=True):
         super().__init__()
 
         self.seq_len_sec = args.preprocs["seq_len_sec"]
@@ -39,6 +74,7 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         force_recompute = args.force_recompute,
         last4layers = args.preprocs["last4layers"]
         mode = args.preprocs["mode"]
+        self.subject_wise = args.preprocs['subject_wise']
 
         Y_path = f"data/Brennan2018/Y_embeds/embd_{wav2vec_model}.pt"
 
@@ -80,14 +116,23 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         self.baseline_len_samp = int(self.seq_len_samp * self.baseline_len_sec / self.seq_len_sec)
 
         cprint(f'Building batches of {self.seq_len_sec} s ({self.seq_len_samp} samples).', color='blue')
-        self.X, self.Y, self.subject_idxs = self.batchfy(self.X, self.Y)
+        if train:
+            self.Y = self.Y[..., :int(self.Y.shape[-1] * 0.7)]
+            self.X = self.X[..., :int(self.X.shape[-1] * 0.7)]
+        else:
+            self.Y = self.Y[..., int(self.Y.shape[-1] * 0.7):]
+            self.X = self.X[..., int(self.X.shape[-1] * 0.7):]
+        self.X, self.Y, self.subject_idxs, self.chunk_ids = self.batchfy(self.X, self.Y)
         cprint(f'X: {self.X.shape} | Y: {self.Y.shape} | {self.subject_idxs.shape}', color='blue')
 
     def __len__(self):
         return len(self.X)
 
-    def __getitem__(self, i):
-        return self.X[i], self.Y[i], self.subject_idxs[i]
+    def __getitem__(self, i, return_chunkids=True):
+        if return_chunkids:
+            return self.X[i], self.Y[i], self.subject_idxs[i], self.chunk_ids[i]
+        else:
+            return self.X[i], self.Y[i], self.subject_idxs[i]
 
     def batchfy(self, X: torch.Tensor, Y: torch.Tensor):
         # NOTE: self.seq_len_samp is `bptt`
@@ -97,27 +142,36 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
 
         X = X[:, :, :trim_len]  # ( 33, 60, 99584 ) (subj, chans, num_embeddings)
         # NOTE: the previous implementation was hard to understand and possibly wrong
-        X = scaleAndClamp(X, self.clamp_lim, self.clamp)
+        if not self.subject_wise:
+            X = scaleAndClamp(X, self.clamp_lim, self.clamp)
+        else:
+            X = scaleAndClamp_single(X, self.clamp_lim, self.clamp)
 
         Y = Y[:, :trim_len]  # ( 512, 99584 )       (emsize, num_embeddings)
 
         X = X.reshape(X.shape[0], X.shape[1], -1, self.seq_len_samp)  # ( 8, 60, 243, 356 ) (sub, ch, chunks, bptt)
-        X = baseline_correction(X, self.baseline_len_samp, self.preceding_chunk_for_baseline)
+        if not self.subject_wise:
+            X = baseline_correction(X, self.baseline_len_samp, self.preceding_chunk_for_baseline)
+        else:
+            X = baseline_correction_single(X, self.baseline_len_samp, self.preceding_chunk_for_baseline)
 
         Y = Y.reshape(Y.shape[0], -1, self.seq_len_samp)  # ( 1024, 243, 356 )  (emsize, chunks, bptt)
-
         Y = Y.unsqueeze(0).expand(X.shape[0], *Y.shape)  # ( 33, 512, 389, 256 )
+        # Y = torch.stack(Y.chunk(Y.shape[1] // self.seq_len_samp, dim=1)).permute(1,0,2)
+        # Y = Y.unsqueeze(0)
 
         X = X.permute(0, 2, 1, 3)  # (8, 243, 60, 356) (sub, chunks, ch, bptt)
         Y = Y.permute(0, 2, 1, 3)  # (8, 243, 1024, 356) (sub, chunks, emsz, bptt)
 
+        chunk_ids = torch.arange(Y.shape[1]).unsqueeze(0).expand(Y.shape[0], -1)  # (subj x chunk_id)
         subject_idxs = torch.arange(X.shape[0]).unsqueeze(1).expand(-1, X.shape[1])  # ( 33, 389 )
-        subject_idxs = subject_idxs.flatten()  # ( 19061, )
+        subject_idxs = subject_idxs.flatten()  # ( samples, )
+        chunk_ids = chunk_ids.flatten()  # ( samples, )
 
         X = X.reshape(-1, X.shape[-2], X.shape[-1])  # ( 19061, 60, 256 ) (samples, ch, emsize)
         Y = Y.reshape(-1, Y.shape[-2], Y.shape[-1])  # ( 19061, 512, 256 ) (samples, ch, emsize)
 
-        return X, Y, subject_idxs
+        return X, Y, subject_idxs, chunk_ids
 
     @staticmethod
     def audio_preproc(
@@ -152,7 +206,10 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
 
         res_embeddings = F.resample(embeddings, orig_freq=10, new_freq=24)  # to upsample from ~50 to ~120 Hz
         cprint(f'Resampled embedding shape {res_embeddings.shape} | srate: {120}', color='red', attrs=['bold'])
-        return res_embeddings
+
+        # NOTE: "Paper says: we use standard normalization for both representations"
+        scaler = StandardScaler().fit(res_embeddings.T)
+        return torch.from_numpy(scaler.transform(res_embeddings.T).T).float()
 
     @staticmethod
     def brain_preproc(audio_embd_len):
@@ -161,8 +218,8 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
 
         matfile_paths = natsorted(glob.glob("data/Brennan2018/raw/*.mat"))
         # matfile_paths = [matfile_paths[i] for i in range(21) if not i in [1, 6, 8]]
-        matfile_paths = [matfile_paths[i] for i in [0, 1, 3, 4, 5, 6, 7, 48]]
-        cprint('using only subjects #[0, 1, 3, 4, 5, 6, 7, 48]', "blue", "on_yellow", attrs=['bold'])
+        # matfile_paths = [matfile_paths[i] for i in [i for i in range(40)]]
+        # cprint('using only subjects #[0, 1, 3, 4, 5, 6, 7, 48]', "blue", "on_yellow", attrs=['bold'])
         pprint(matfile_paths)
         # matfile_paths = np.delete(matfile_paths, excluded_subjects)
 
