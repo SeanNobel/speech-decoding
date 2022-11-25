@@ -12,8 +12,10 @@ import torch.nn as nn
 from time import time
 from tqdm import tqdm
 from data.brennan2018 import Brennan2018Dataset
-# from data.gwilliams2022 import Gwilliams2022Dataset
-from data.gwilliams2022_multicore import Gwilliams2022Dataset
+if args.multicore:
+    from data.gwilliams2022_multicore import Gwilliams2022Dataset
+else:
+    from data.gwilliams2022 import Gwilliams2022Dataset
 
 from models.brain_encoder import BrainEncoder
 from models.classifier import Classifier
