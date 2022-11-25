@@ -1,19 +1,24 @@
 from constants import bar_format, device
+from configs.args import args
+if args.reproducible:
+    from utils.reproducibility import g, seed_worker
+else:
+    g = None
+    seed_worker = None
 import os, sys
 import numpy as np
 import torch
 import torch.nn as nn
 from time import time
 from tqdm import tqdm
-from configs.args import args
 from data.brennan2018 import Brennan2018Dataset
-from data.gwilliams2022 import Gwilliams2022Dataset
+# from data.gwilliams2022 import Gwilliams2022Dataset
+from data.gwilliams2022_multicore import Gwilliams2022Dataset
+
 from models.brain_encoder import BrainEncoder
 from models.classifier import Classifier
 from utils.get_dataloaders import get_dataloaders, get_samplers
 from utils.loss import *
-if args.reproducible:
-    from utils.reproducibility import g, seed_worker
 from tqdm import trange
 from termcolor import cprint
 import wandb
@@ -50,40 +55,48 @@ if args.dataset == 'Gwilliams2022':
         generator=g if args.reproducible else None,
     )
 
-elif args.dataset == 'Brennan2018':
-    # NOTE: now the DS take not the number of samples, but the seconds to make windows
-    # NOTE: takes an optional debug param force_recompute to pre-process the EEG even if it exists
-    dataset = Brennan2018Dataset(args)
-
-    train_size = int(dataset.X.shape[0] * 0.8)
-    test_size = dataset.X.shape[0] - train_size
-    train_set, test_set = torch.utils.data.random_split(
-        dataset,
-        lengths=[train_size, test_size],
-        generator=g if args.reproducible else None,
-    )
-
-else:
-    raise ValueError('Unknown dataset')
-
-if args.use_sampler:
-    # NOTE: currently not supporting reproducibility
-    train_loader, test_loader = get_samplers(
-        train_set,
-        test_set,
-        args,
-    )
-else:
-    if args.reproducible:
-        train_loader, test_loader = get_dataloaders(
+    if args.use_sampler:
+        # NOTE: currently not supporting reproducibility
+        train_loader, test_loader = get_samplers(
             train_set,
             test_set,
             args,
-            seed_worker,
-            g,
         )
     else:
-        train_loader, test_loader = get_dataloaders(train_set, test_set, args)
+        if args.reproducible:
+            train_loader, test_loader = get_dataloaders(
+                train_set,
+                test_set,
+                args,
+                seed_worker,
+                g,
+            )
+        else:
+            train_loader, test_loader = get_dataloaders(
+                train_set,
+                test_set,
+                args,
+            )
+
+elif args.dataset == 'Brennan2018':
+    # NOTE: now the DS take not the number of samples, but the seconds to make windows
+    # NOTE: takes an optional debug param force_recompute to pre-process the EEG even if it exists
+    # dataset = Brennan2018Dataset(args)
+    train_set = Brennan2018Dataset(args, train=True)
+    test_set = Brennan2018Dataset(args, train=False)
+
+    # train_size = int(dataset.X.shape[0] * 0.8)
+    # test_size = dataset.X.shape[0] - train_size
+    # train_set, test_set = torch.utils.data.random_split(
+    #     dataset,
+    #     lengths=[train_size, test_size],
+    #     generator=g if args.reproducible else None,
+    # )
+
+    train_loader, test_loader = get_dataloaders(train_set, test_set, args, g, seed_worker)
+
+else:
+    raise ValueError('Unknown dataset')
 
 # ---------------------
 #        Models
@@ -131,10 +144,10 @@ for epoch in range(args.epochs):
     # weight_prev = brain_encoder.subject_block.spatial_attention.z_re.clone()
 
     brain_encoder.train()
-    for i, (X, Y, subject_idxs) in enumerate(tqdm(train_loader)):
+    for i, (X, Y, subject_idxs, chunkIDs) in enumerate(tqdm(train_loader)):
 
         X, Y = X.to(device), Y.to(device)
-
+        # print([(s.item(), chid.item()) for s, chid in zip(subject_idxs, chunkIDs)])
         Z = brain_encoder(X, subject_idxs)
 
         loss = loss_func(Y, Z)
@@ -155,7 +168,7 @@ for epoch in range(args.epochs):
 
     # NOTE: maybe testing in this way is meaningless for contrastive loss
     brain_encoder.eval()
-    for X, Y, subject_idxs in test_loader:
+    for X, Y, subject_idxs, chunkIDs in test_loader:
 
         X, Y = X.to(device), Y.to(device)
 

@@ -5,7 +5,7 @@ num_subjects: 49 # FIXME: this is not good if we want to subset subejects
 # ==== Training ==== #
 # 🔥 FIXME: with too large a batchsize there isn't enough 
 # 🔥 FIXME: samples in the eval set, and the CLIPLoss produces nans silently
-use_sampler: False
+use_sampler: True # must be True to guarantee unique segments in a batch (a must for CLIP loss to work)
 reproducible: False
 num_workers: 8
 batch_size: 64
@@ -36,8 +36,8 @@ preprocs:
   lowpass_filter_width: 128
 
   brain_resample_rate: 120 # Hz
-  brain_filter_low: 1.0 # Hz
-  brain_filter_high: 60 # Hz
+  brain_filter_low: 0.01 # Hz
+  brain_filter_high: 35 # Hz
 
   seq_len_sec: 3        # segment length in seconds
   baseline_len_sec: 0.5 # baseline period in seconds

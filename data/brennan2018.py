@@ -3,6 +3,7 @@ from re import sub
 import torch
 import torchaudio
 import torchaudio.functional as F
+from torch.utils.data import Sampler
 import numpy as np
 import pandas as pd
 import glob
@@ -25,9 +26,42 @@ from sklearn.preprocessing import RobustScaler, StandardScaler
 mne.set_log_level(verbose="WARNING")
 
 
+class CustomBatchSampler(Sampler):
+    """
+    samples chunks from the dataset corresponding to unique audio (EEG) chunks (regardles of subject)
+    """
+
+    def __init__(self, ds, config):
+        self.batch_size = config.batch_size  #config.batchsize
+        # self.unique_chunk_ids = len(ds.subject_idxs.unique())
+        self.length = ds.chunk_ids.size(0)
+        self.numSubjects = len(ds.subject_idxs.unique())
+        self.chunksPerSubject = len(ds.chunk_ids.unique())
+        self.index = torch.arange(len(ds)).reshape(self.numSubjects, self.chunksPerSubject)
+        for i in range(self.chunksPerSubject):
+            self.index[:, i] = self.index[torch.randperm(self.numSubjects), i]
+        self.index = self.index.flatten().tolist()
+        self.num_batches = self.length // self.batch_size
+
+    def __iter__(self):
+        # this gets called when the object is used with for
+        # for every epoch, in the global index, permute the subjects, but not the chunk_ids
+
+        i = 0
+        while i < self.num_batches:
+            st = i * self.batch_size
+            en = st + self.batch_size
+            sampled_chunks = self.index[st:en]
+            yield sampled_chunks  # yeild makes a stateful function
+            i += 1
+
+    def __len__(self):
+        return self.num_batches
+
+
 class Brennan2018Dataset(torch.utils.data.Dataset):
 
-    def __init__(self, args):
+    def __init__(self, args, train=True):
         super().__init__()
 
         self.seq_len_sec = args.preprocs["seq_len_sec"]
@@ -82,14 +116,23 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         self.baseline_len_samp = int(self.seq_len_samp * self.baseline_len_sec / self.seq_len_sec)
 
         cprint(f'Building batches of {self.seq_len_sec} s ({self.seq_len_samp} samples).', color='blue')
-        self.X, self.Y, self.subject_idxs = self.batchfy(self.X, self.Y)
+        if train:
+            self.Y = self.Y[..., :int(self.Y.shape[-1] * 0.7)]
+            self.X = self.X[..., :int(self.X.shape[-1] * 0.7)]
+        else:
+            self.Y = self.Y[..., int(self.Y.shape[-1] * 0.7):]
+            self.X = self.X[..., int(self.X.shape[-1] * 0.7):]
+        self.X, self.Y, self.subject_idxs, self.chunk_ids = self.batchfy(self.X, self.Y)
         cprint(f'X: {self.X.shape} | Y: {self.Y.shape} | {self.subject_idxs.shape}', color='blue')
 
     def __len__(self):
         return len(self.X)
 
-    def __getitem__(self, i):
-        return self.X[i], self.Y[i], self.subject_idxs[i]
+    def __getitem__(self, i, return_chunkids=True):
+        if return_chunkids:
+            return self.X[i], self.Y[i], self.subject_idxs[i], self.chunk_ids[i]
+        else:
+            return self.X[i], self.Y[i], self.subject_idxs[i]
 
     def batchfy(self, X: torch.Tensor, Y: torch.Tensor):
         # NOTE: self.seq_len_samp is `bptt`
@@ -113,19 +156,22 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
             X = baseline_correction_single(X, self.baseline_len_samp, self.preceding_chunk_for_baseline)
 
         Y = Y.reshape(Y.shape[0], -1, self.seq_len_samp)  # ( 1024, 243, 356 )  (emsize, chunks, bptt)
-
         Y = Y.unsqueeze(0).expand(X.shape[0], *Y.shape)  # ( 33, 512, 389, 256 )
+        # Y = torch.stack(Y.chunk(Y.shape[1] // self.seq_len_samp, dim=1)).permute(1,0,2)
+        # Y = Y.unsqueeze(0)
 
         X = X.permute(0, 2, 1, 3)  # (8, 243, 60, 356) (sub, chunks, ch, bptt)
         Y = Y.permute(0, 2, 1, 3)  # (8, 243, 1024, 356) (sub, chunks, emsz, bptt)
 
+        chunk_ids = torch.arange(Y.shape[1]).unsqueeze(0).expand(Y.shape[0], -1)  # (subj x chunk_id)
         subject_idxs = torch.arange(X.shape[0]).unsqueeze(1).expand(-1, X.shape[1])  # ( 33, 389 )
-        subject_idxs = subject_idxs.flatten()  # ( 19061, )
+        subject_idxs = subject_idxs.flatten()  # ( samples, )
+        chunk_ids = chunk_ids.flatten()  # ( samples, )
 
         X = X.reshape(-1, X.shape[-2], X.shape[-1])  # ( 19061, 60, 256 ) (samples, ch, emsize)
         Y = Y.reshape(-1, Y.shape[-2], Y.shape[-1])  # ( 19061, 512, 256 ) (samples, ch, emsize)
 
-        return X, Y, subject_idxs
+        return X, Y, subject_idxs, chunk_ids
 
     @staticmethod
     def audio_preproc(
