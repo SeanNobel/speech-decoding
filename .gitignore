@@ -31,3 +31,4 @@ wandb
 __pycache__
 train.sh
 README_MY.md
+debug.py

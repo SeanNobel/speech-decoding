@@ -144,7 +144,12 @@ for epoch in range(args.epochs):
     # weight_prev = brain_encoder.subject_block.spatial_attention.z_re.clone()
 
     brain_encoder.train()
-    for i, (X, Y, subject_idxs, chunkIDs) in enumerate(tqdm(train_loader)):
+    for i, batch in enumerate(tqdm(train_loader)):
+        X = batch[0]
+        Y = batch[1]
+        subject_idxs = batch[2]
+        if not isinstance(train_loader.dataset.dataset, Gwilliams2022Dataset):
+            chunkIDs = batch[3]
 
         X, Y = X.to(device), Y.to(device)
         # print([(s.item(), chid.item()) for s, chid in zip(subject_idxs, chunkIDs)])
@@ -168,7 +173,12 @@ for epoch in range(args.epochs):
 
     # NOTE: maybe testing in this way is meaningless for contrastive loss
     brain_encoder.eval()
-    for X, Y, subject_idxs, chunkIDs in test_loader:
+    for batch in test_loader:
+        X = batch[0]
+        Y = batch[1]
+        subject_idxs = batch[2]
+        if not isinstance(test_loader.dataset.dataset, Gwilliams2022Dataset):
+            chunkIDs = batch[3]
 
         X, Y = X.to(device), Y.to(device)
 
