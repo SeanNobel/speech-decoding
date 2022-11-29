@@ -218,19 +218,34 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         embedding_srate = embeddings.shape[-1] / len_audio_s
         cprint(f'Original  embedding shape {embeddings.shape} | srate (out out w2v): {embedding_srate:.3f} Hz', 'red')
 
-        res_embeddings = F.resample(embeddings, orig_freq=10, new_freq=24)  # to upsample from ~50 to ~120 Hz
+        # res_embeddings = F.resample(embeddings, orig_freq=10, new_freq=24)  # to upsample from ~50 to ~120 Hz
+        res_embeddings = mne.filter.resample(
+            embeddings.numpy().astype(np.float64),
+            up=2.4,  #FIXME: this upsamling factor must be computed, not hard-coded
+            axis=-1,
+        )
         cprint(f'Resampled embedding shape {res_embeddings.shape} | srate: {120}', color='red', attrs=['bold'])
 
         # NOTE: "Paper says: we use standard normalization for both representations"
-        scaler = StandardScaler().fit(res_embeddings.T)
-        return torch.from_numpy(scaler.transform(res_embeddings.T).T).float()
+        # scaler = StandardScaler().fit(res_embeddings.T)
+        # return torch.from_numpy(scaler.transform(res_embeddings.T).T).float()
+
+        return torch.from_numpy(res_embeddings).float()
 
     @staticmethod
     def brain_preproc(audio_embd_len):
         # NOTE: look at comprehension-scores.txt
-        # excluded_subjects = [1, 6, 8, 22, 23, 26, 27, 28, 29, 30, 31, 32, 42, 45, 46, 48]
-
+        excluded_subjects = [
+            "S02", "S07", "S09", "S23", "S24", "S27", "S28", "S29", "S30", "S31", "S32", "S33", "S43", "S46", "S47",
+            "S49"
+        ]
+        MP = []
         matfile_paths = natsorted(glob.glob("data/Brennan2018/raw/*.mat"))
+        for i in matfile_paths:
+            if not i.split('.')[0][-3:] in excluded_subjects:
+                MP.append(i)
+        matfile_paths = MP
+
         # matfile_paths = [matfile_paths[i] for i in range(21) if not i in [1, 6, 8]]
         # matfile_paths = [matfile_paths[i] for i in [i for i in range(40)]]
         # cprint('using only subjects #[0, 1, 3, 4, 5, 6, 7, 48]', "blue", "on_yellow", attrs=['bold'])

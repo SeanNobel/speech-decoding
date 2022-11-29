@@ -71,10 +71,10 @@ class CLIPLoss(nn.Module):
             logits = torch.matmul(x, y.T)
 
             # scale by temperature (learned)
-            logits *= torch.exp(self.temp)
+            # logits *= torch.exp(self.temp)
 
-            # NOTE: the old way
-            # I don't know why yet, but normalization seems to be necessary to get sensible similarities (0, 1)
+            # # NOTE: the old way
+            # # I don't know why yet, but normalization seems to be necessary to get sensible similarities (0, 1)
             # logits = logits / (x.norm(dim=-1) * y.norm(dim=-1))
             # loss = self._criterion(logits, targets)
 
