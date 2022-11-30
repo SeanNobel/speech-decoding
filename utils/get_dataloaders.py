@@ -1,5 +1,4 @@
 from torch.utils.data import DataLoader, RandomSampler, BatchSampler
-from data.brennan2018 import CustomBatchSampler
 
 
 def get_dataloaders(train_set, test_set, args, g, seed_worker, test_bsz=None):

@@ -89,7 +89,16 @@ class SubjectBlock(nn.Module):
         self.K = args.K
         self.spatial_attention = SpatialAttention(args)
         self.conv = nn.Conv1d(in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1)
-        self.subject_layer = nn.ModuleList([nn.Conv1d(in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1, device=device) for _ in range(self.num_subjects)])
+        self.subject_layer = nn.ModuleList([
+            nn.Conv1d(
+                in_channels=self.D1,
+                out_channels=self.D1,
+                kernel_size=1,
+                bias=False,
+                stride=1,
+                device=device,
+            ) for _ in range(self.num_subjects)
+        ])
 
     def forward(self, X, subject_idxs):
         X = self.spatial_attention(X)  # ( B, 270, 256 )

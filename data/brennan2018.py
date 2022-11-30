@@ -16,47 +16,13 @@ import ast
 from typing import Union
 from utils.bcolors import cyan, yellow
 from utils.wav2vec_util import load_wav2vec_model, getW2VLastFourLayersAvg
-from utils.preproc_utils import baseline_correction_single, baseline_correction
-from utils.preproc_utils import scaleAndClamp_single, scaleAndClamp
+# from utils.preproc_utils import scaleAndClamp_single, scaleAndClamp
 from termcolor import cprint
 from pprint import pprint
 from einops import rearrange
 from sklearn.preprocessing import RobustScaler, StandardScaler
 
 mne.set_log_level(verbose="WARNING")
-
-
-class CustomBatchSampler(Sampler):
-    """
-    samples chunks from the dataset corresponding to unique audio (EEG) chunks (regardles of subject)
-    """
-
-    def __init__(self, ds, config):
-        self.batch_size = config.batch_size  #config.batchsize
-        # self.unique_chunk_ids = len(ds.subject_idxs.unique())
-        self.length = ds.chunk_ids.size(0)
-        self.numSubjects = len(ds.subject_idxs.unique())
-        self.chunksPerSubject = len(ds.chunk_ids.unique())
-        self.index = torch.arange(len(ds)).reshape(self.numSubjects, self.chunksPerSubject)
-        for i in range(self.chunksPerSubject):
-            self.index[:, i] = self.index[torch.randperm(self.numSubjects), i]
-        self.index = self.index.flatten().tolist()
-        self.num_batches = self.length // self.batch_size
-
-    def __iter__(self):
-        # this gets called when the object is used with for
-        # for every epoch, in the global index, permute the subjects, but not the chunk_ids
-
-        i = 0
-        while i < self.num_batches:
-            st = i * self.batch_size
-            en = st + self.batch_size
-            sampled_chunks = self.index[st:en]
-            yield sampled_chunks  # yeild makes a stateful function
-            i += 1
-
-    def __len__(self):
-        return self.num_batches
 
 
 class Brennan2018Dataset(torch.utils.data.Dataset):
@@ -66,7 +32,6 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
 
         self.seq_len_sec = args.preprocs["seq_len_sec"]
         self.baseline_len_sec = args.preprocs["baseline_len_sec"]
-        self.preceding_chunk_for_baseline = args.preprocs["preceding_chunk_for_baseline"]
         self.clamp = args.preprocs["clamp"]
         self.clamp_lim = args.preprocs["clamp_lim"]
 
@@ -129,12 +94,51 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         self.X = self.X[..., :trim_len]
         self.Y = self.Y[..., :trim_len]
 
+        # scale and clamp either all the subejects taken together, or each subject's data separately
+        self.X = self.scaleAndClamp()
+
         # make segments
+        # NOTE: now X is a tuple of 358 matrices of size torch.Size([subj, ch, time]))
         self.X = self.X.split(num_segments, dim=-1)
         self.Y = self.Y.split(num_segments, dim=-1)
 
-        # self.X, self.Y, self.subject_idxs, self.chunk_ids = self.batchfy(self.X, self.Y)
-        # cprint(f'X: {self.X.shape} | Y: {self.Y.shape} | {self.subject_idxs.shape}', color='blue')
+        # NOTE: baseline corection becomes naturally subject-specific
+        self.X = self.baseline_correction()
+
+    def scaleAndClamp(self):
+        """ subject-wise scaling and clamping of EEG
+            args:
+                clamp_lim: float, abs limit (will be applied for min and max)
+                clamp: bool, whether to clamp or not
+            returns:
+                X (size=subj, chan, time) scaled and clampted channel-wise, subject-wise
+        """
+        if self.subject_wise:
+            res = []
+            for subjID in range(self.X.shape[0]):
+                scaler = RobustScaler().fit(self.X[subjID, :, :].T)  # NOTE: must be samples x features
+                _X = torch.from_numpy(scaler.transform(self.X[subjID, :, :].T)).to(
+                    torch.float)  # must be samples x features !!!
+                if self.clamp:
+                    _X.clamp_(min=-self.clamp_lim, max=self.clamp_lim)
+                res.append(_X.to(torch.float))
+            return torch.stack(res).permute(0, 2, 1)  # NOTE: make (subj, ch, time) again
+        else:
+            num_subjects = self.X.shape[0]
+            T = rearrange(self.X, 's c t -> (t s) c')  # flatten subjects
+            T = RobustScaler().fit_transform(T)  # NOTE: must be samples x features
+            T = torch.from_numpy(T).float()
+            if self.clamp:
+                T.clamp_(min=-self.clamp_lim, max=self.clamp_lim)
+            return rearrange(T, '(t s) c -> s c t', s=num_subjects)
+
+    def baseline_correction(self):
+        baseline_corrected_X = []
+        # NOTE: now X is a tuple of 358 matrices of size torch.Size([subj, ch, time]))
+        for chunk_id in range(len(self.X)):
+            baseline = self.X[chunk_id][..., :self.baseline_len_samp].mean(axis=-1, keepdim=True)
+            baseline_corrected_X.append(self.X[chunk_id] - baseline)
+        return baseline_corrected_X
 
     def __len__(self):
         return len(self.X)
@@ -145,47 +149,6 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
             return self.X[i][random_subject], self.Y[i], random_subject, i
         else:
             return self.X[i][random_subject], self.Y[i], random_subject
-
-    def batchfy(self, X: torch.Tensor, Y: torch.Tensor):
-        """"
-        legacy
-        """
-
-        assert X.shape[-1] == Y.shape[-1]
-        trim_len = X.shape[-1] - X.shape[-1] % self.seq_len_samp
-
-        X = X[:, :, :trim_len]  # ( 33, 60, 99584 ) (subj, chans, num_embeddings)
-        # NOTE: the previous implementation was hard to understand and possibly wrong
-        if not self.subject_wise:
-            X = scaleAndClamp(X, self.clamp_lim, self.clamp)
-        else:
-            X = scaleAndClamp_single(X, self.clamp_lim, self.clamp)
-
-        Y = Y[:, :trim_len]  # ( 512, 99584 )       (emsize, num_embeddings)
-
-        X = X.reshape(X.shape[0], X.shape[1], -1, self.seq_len_samp)  # ( 8, 60, 243, 356 ) (sub, ch, chunks, bptt)
-        if not self.subject_wise:
-            X = baseline_correction(X, self.baseline_len_samp, self.preceding_chunk_for_baseline)
-        else:
-            X = baseline_correction_single(X, self.baseline_len_samp, self.preceding_chunk_for_baseline)
-
-        Y = Y.reshape(Y.shape[0], -1, self.seq_len_samp)  # ( 1024, 243, 356 )  (emsize, chunks, bptt)
-        Y = Y.unsqueeze(0).expand(X.shape[0], *Y.shape)  # ( 33, 512, 389, 256 )
-        # Y = torch.stack(Y.chunk(Y.shape[1] // self.seq_len_samp, dim=1)).permute(1,0,2)
-        # Y = Y.unsqueeze(0)
-
-        X = X.permute(0, 2, 1, 3)  # (8, 243, 60, 356) (sub, chunks, ch, bptt)
-        Y = Y.permute(0, 2, 1, 3)  # (8, 243, 1024, 356) (sub, chunks, emsz, bptt)
-
-        chunk_ids = torch.arange(Y.shape[1]).unsqueeze(0).expand(Y.shape[0], -1)  # (subj x chunk_id)
-        subject_idxs = torch.arange(X.shape[0]).unsqueeze(1).expand(-1, X.shape[1])  # ( 33, 389 )
-        subject_idxs = subject_idxs.flatten()  # ( samples, )
-        chunk_ids = chunk_ids.flatten()  # ( samples, )
-
-        X = X.reshape(-1, X.shape[-2], X.shape[-1])  # ( 19061, 60, 256 ) (samples, ch, emsize)
-        Y = Y.reshape(-1, Y.shape[-2], Y.shape[-1])  # ( 19061, 512, 256 ) (samples, ch, emsize)
-
-        return X, Y, subject_idxs, chunk_ids
 
     @staticmethod
     def audio_preproc(
@@ -315,6 +278,6 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
 
 if __name__ == "__main__":
     from configs.args import args
-    ds = Brennan2018Dataset(args, train=True)
+    ds = Brennan2018Dataset(args)
     print(0)
     print(0)

@@ -32,3 +32,4 @@ __pycache__
 train.sh
 README_MY.md
 debug.py
+*_debug*
