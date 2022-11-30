@@ -106,10 +106,7 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         self.X = self.baseline_correction()
 
     def scaleAndClamp(self):
-        """ subject-wise scaling and clamping of EEG
-            args:
-                clamp_lim: float, abs limit (will be applied for min and max)
-                clamp: bool, whether to clamp or not
+        """ 
             returns:
                 X (size=subj, chan, time) scaled and clampted channel-wise, subject-wise
         """
@@ -212,16 +209,15 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         ]
         MP = []
         matfile_paths = natsorted(glob.glob("data/Brennan2018/raw/*.mat"))
+        cprint('DEBUG SUBSET OF SUBJECTS', 'yellow', 'on_green')
+        matfile_paths = matfile_paths[:8]
+
         for i in matfile_paths:
             if not i.split('.')[0][-3:] in excluded_subjects:
                 MP.append(i)
         matfile_paths = MP
 
-        # matfile_paths = [matfile_paths[i] for i in range(21) if not i in [1, 6, 8]]
-        # matfile_paths = [matfile_paths[i] for i in [i for i in range(40)]]
-        # cprint('using only subjects #[0, 1, 3, 4, 5, 6, 7, 48]', "blue", "on_yellow", attrs=['bold'])
         pprint(matfile_paths)
-        # matfile_paths = np.delete(matfile_paths, excluded_subjects)
 
         # NOTE: find the shortest EEG and trim all EEG datasets to that length
         a = []
