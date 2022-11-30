@@ -19,31 +19,31 @@ class Classifier(nn.Module):
         # NOTE: Do we need to adjust the accuracies for the dataset size?
         self.factor = 1  # self.batch_size / 241
 
+    @torch.no_grad()
     def forward(self, Z: torch.Tensor, Y: torch.Tensor) -> torch.Tensor:
-        with torch.no_grad():
-            batch_size = Z.size(0)
-            diags = torch.arange(batch_size).to(device)
-            x = Z.view(batch_size, -1)
-            y = Y.view(batch_size, -1)
 
-            # NOTE: no need to normalize the dot products
-            # similarity = torch.matmul(x, y.T)
+        batch_size = Z.size(0)
+        diags = torch.arange(batch_size).to(device)
+        x = Z.view(batch_size, -1)
+        y = Y.view(batch_size, -1)
 
-            x_ = rearrange(x, 'b f -> 1 b f')
-            y_ = rearrange(y, 'b f -> b 1 f')
-            similarity = torch.nn.functional.cosine_similarity(x_, y_, dim=-1)  # s
+        # NOTE: no need to normalize the dot products
+        # similarity = torch.matmul(x, y.T)
 
-            # NOTE: max similarity of speech and M/EEG representations is expected for corresponding windows
-            top1accuracy = (similarity.argmax(axis=1) == diags).to(torch.float).mean().item()
-            try:
-                top10accuracy = np.mean(
-                    [label in row for row, label in zip(torch.topk(similarity, 10, dim=1, largest=True)[1], diags)])
-            except:
-                print(similarity.size())
-                raise
+        x_ = rearrange(x, 'b f -> 1 b f')
+        y_ = rearrange(y, 'b f -> b 1 f')
+        similarity = torch.nn.functional.cosine_similarity(x_, y_, dim=-1)  # ( B, B )
 
-        # NOTE: this is potenially wrong. For top-10 accuracy we should calculate the probability
-        # that the correct label is amongt the top 10 highest probabilities. But since our
-        # batchsize is smaller than the total number of segments, we "correct" ? the top-10
-        # accuracy by bsz/totalNumberOfSegmentsToGuess ??
-        return top1accuracy * self.factor, top10accuracy * self.factor
+        # NOTE: max similarity of speech and M/EEG representations is expected for corresponding windows
+        top1accuracy = (similarity.argmax(axis=1) == diags).to(torch.float).mean().item()
+        _top1accuracy = (similarity.argmax(axis=0) == diags).to(torch.float).mean().item()
+        try:
+            top10accuracy = np.mean(
+                [label in row for row, label in zip(torch.topk(similarity, 10, dim=1, largest=True)[1], diags)])
+            _top10accuracy = np.mean(
+                [label in row for row, label in zip(torch.topk(similarity, 10, dim=0, largest=True)[1], diags)])
+        except:
+            print(similarity.size())
+            raise
+
+        return top1accuracy, top10accuracy, _top1accuracy, _top10accuracy

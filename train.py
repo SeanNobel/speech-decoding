@@ -139,6 +139,8 @@ for epoch in range(args.epochs):
     trainTop10accs = []
     testTop1accs = []
     testTop10accs = []
+    _testTop1accs = []
+    _testTop10accs = []
 
     # weight_prev = brain_encoder.subject_block.spatial_attention.z_re.clone()
 
@@ -158,7 +160,7 @@ for epoch in range(args.epochs):
         loss = loss_func(Y, Z)
 
         with torch.no_grad():
-            trainTop1acc, trainTop10acc = classifier(Z, Y)
+            trainTop1acc, trainTop10acc, _, _ = classifier(Z, Y)
 
         train_losses.append(loss.item())
         trainTop1accs.append(trainTop1acc)
@@ -171,7 +173,6 @@ for epoch in range(args.epochs):
     # weight_after = brain_encoder.subject_block.spatial_attention.z_re.clone()
     # print(f"Learning: {not torch.equal(weight_prev, weight_after)}")
 
-    # NOTE: maybe testing in this way is meaningless for contrastive loss
     brain_encoder.eval()
     for batch in test_loader:
         X = batch[0]
@@ -188,11 +189,13 @@ for epoch in range(args.epochs):
         loss = loss_func(Y, Z)
 
         with torch.no_grad():
-            testTop1acc, testTop10acc = classifier(Z, Y)
+            testTop1acc, testTop10acc, _testTop1acc, _testTop10acc = classifier(Z, Y)
 
         test_losses.append(loss.item())
         testTop1accs.append(testTop1acc)
         testTop10accs.append(testTop10acc)
+        _testTop1accs.append(_testTop1acc)
+        _testTop10accs.append(_testTop10acc)
 
     print(
         f"Ep {epoch}/{args.epochs} | ",
@@ -214,7 +217,9 @@ for epoch in range(args.epochs):
             'testTop1acc': np.mean(testTop1accs),
             'testTop10acc': np.mean(testTop10accs),
             'lrate': optimizer.param_groups[0]['lr'],
-            'temp': loss_func.temp.item()
+            'temp': loss_func.temp.item(),
+            '_testTop1acc': np.mean(_testTop1accs),
+            '_testTop10acc': np.mean(_testTop10accs)
         }
         wandb.log(performance_now)
 
