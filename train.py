@@ -171,7 +171,6 @@ for epoch in range(args.epochs):
     # weight_after = brain_encoder.subject_block.spatial_attention.z_re.clone()
     # print(f"Learning: {not torch.equal(weight_prev, weight_after)}")
 
-    # NOTE: maybe testing in this way is meaningless for contrastive loss
     brain_encoder.eval()
     for batch in test_loader:
         X = batch[0]
@@ -214,7 +213,7 @@ for epoch in range(args.epochs):
             'testTop1acc': np.mean(testTop1accs),
             'testTop10acc': np.mean(testTop10accs),
             'lrate': optimizer.param_groups[0]['lr'],
-            'temp': loss_func.temp.item()
+            'temp': loss_func.temp.item(),
         }
         wandb.log(performance_now)
 

@@ -4,6 +4,7 @@ num_subjects: 33 # FIXME: this is not good if we want to subset subejects
 multicore: False # Brennan is single core at all times
 
 # ==== Training ==== #
+use_sampler: False
 # 🔥 FIXME: with too large a batchsize there isn't enough 
 # 🔥 FIXME: samples in the eval set, and the CLIPLoss produces nans silently
 # use_sampler: True # must be True to guarantee unique segments in a batch (a must for CLIP loss to work)

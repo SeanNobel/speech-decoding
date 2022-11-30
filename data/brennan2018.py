@@ -156,9 +156,17 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         last4layers: bool,
         mode: str,
     ):
-        # waveform: ( 1, 31908132 ), sample_rate: 44100
+        audio_paths = natsorted(glob.glob('data/Brennan2018/audio/*.wav'))
+        waveform = [torchaudio.load(path) for path in audio_paths]
 
-        waveform, sample_rate = torchaudio.load("data/Brennan2018/merged_audio.wav")
+        sample_rates = np.array([w[1] for w in waveform])
+        # is all 44.1kHz
+        assert np.all(sample_rates == sample_rates[0])
+        sample_rate = sample_rates[0]
+
+        # waveform: ( 1, 31908132 )
+        waveform = torch.cat([w[0] for w in waveform], dim=1)
+
         cprint(f"Audio before resampling: {waveform.shape}", color='yellow')  # shape of the original audio
 
         # NOTE: the base model was pre-trained on audio sampled @ 16kHz
