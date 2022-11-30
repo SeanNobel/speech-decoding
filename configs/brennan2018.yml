@@ -1,12 +1,13 @@
 # ==== Dataset ==== #
 dataset: Brennan2018
 num_subjects: 49 # FIXME: this is not good if we want to subset subejects
+multicore: False # Brennan is single core at all times
 
 # ==== Training ==== #
 use_sampler: False
 # 🔥 FIXME: with too large a batchsize there isn't enough 
 # 🔥 FIXME: samples in the eval set, and the CLIPLoss produces nans silently
-use_sampler: True # must be True to guarantee unique segments in a batch (a must for CLIP loss to work)
+# use_sampler: True # must be True to guarantee unique segments in a batch (a must for CLIP loss to work)
 reproducible: False
 num_workers: 8
 batch_size: 64
@@ -29,6 +30,7 @@ d_drop: 0.3
 # When calculating softmax for spatial attention in each iteration, we drop
 # channels that are within the distance d_drop from a randomly selected channel
 
+init_temperature: 5.1
 wav2vec_model: facebook/wav2vec2-large-xlsr-53 # (HuggingFace) # xlsr_53_56k (FAIR)
 
 # == Hyperparameters that datasets should share === #
@@ -37,8 +39,8 @@ preprocs:
   lowpass_filter_width: 128
 
   brain_resample_rate: 120 # Hz
-  brain_filter_low: 0.01 # Hz
-  brain_filter_high: 35 # Hz
+  brain_filter_low: 1.0 # Hz
+  brain_filter_high: 60 # Hz
 
   seq_len_sec: 3        # segment length in seconds
   baseline_len_sec: 0.5 # baseline period in seconds

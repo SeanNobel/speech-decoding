@@ -85,10 +85,11 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
                 mode=mode,
             ), Y_path)
 
-        self.Y = torch.load(Y_path)  # load the upsampled (to 120 Hz) embeddings (of the entire recording)
+        # load the upsampled (to 120 Hz) embeddings (of the entire recording)
+        self.Y = torch.load(Y_path)
 
+        # load or rebuild the array of pre-processed EEG. Shape: (subj, chan, time)
         X_path = "data/Brennan2018/processed_X.pt"
-
         if (not os.path.exists(X_path)) or force_recompute[0]:
             cprint(f'Pre-processing EEG...', color='red')
             self.X, srate = self.brain_preproc(audio_embd_len=self.Y.shape[-1])
@@ -103,9 +104,12 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         srate = preprocessed_eeg['srate']  # ( 33, 60, 99712 )
         cprint(f"Using existing pre-processed data {self.X.shape}, srate={srate}", 'red', 'on_yellow')
 
+        self.num_subjects = self.X.shape[0]
+        cprint(f'Number of subjects: {self.num_subjects}', color='yellow')
+
         self.X, self.Y = self.shift_brain_signal(self.X, self.Y, srate=srate)
 
-        cprint(f"X: {self.X.shape}, Y: {self.Y.shape}", color='red', attrs=['bold'])
+        cprint(f"X (EEG): {self.X.shape}, Y (audio embeds): {self.Y.shape}", color='red', attrs=['bold'])
         # X: ( 33, 60, 86791 ) -> ( B, 60, 1024 )
         # Y: ( 1024, 86791 ) -> ( B, 1024, 1024 ) # w2v embeddings
 
@@ -115,27 +119,37 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         # length of baseline period in samples
         self.baseline_len_samp = int(self.seq_len_samp * self.baseline_len_sec / self.seq_len_sec)
 
-        cprint(f'Building batches of {self.seq_len_sec} s ({self.seq_len_samp} samples).', color='blue')
-        if train:
-            self.Y = self.Y[..., :int(self.Y.shape[-1] * 0.7)]
-            self.X = self.X[..., :int(self.X.shape[-1] * 0.7)]
-        else:
-            self.Y = self.Y[..., int(self.Y.shape[-1] * 0.7):]
-            self.X = self.X[..., int(self.X.shape[-1] * 0.7):]
-        self.X, self.Y, self.subject_idxs, self.chunk_ids = self.batchfy(self.X, self.Y)
-        cprint(f'X: {self.X.shape} | Y: {self.Y.shape} | {self.subject_idxs.shape}', color='blue')
+        # compute the number if samples that divide evenly by the number of samples in 1 segement
+        trim_len = (self.X.shape[-1] // self.seq_len_samp) * self.seq_len_samp
+
+        # compute the number of segements in the entire dataset
+        num_segments = trim_len // self.seq_len_samp
+
+        # trim the length of EEG and embeddings so that they can be evenly divided by num time samp in 1 segment
+        self.X = self.X[..., :trim_len]
+        self.Y = self.Y[..., :trim_len]
+
+        # make segments
+        self.X = self.X.split(num_segments, dim=-1)
+        self.Y = self.Y.split(num_segments, dim=-1)
+
+        # self.X, self.Y, self.subject_idxs, self.chunk_ids = self.batchfy(self.X, self.Y)
+        # cprint(f'X: {self.X.shape} | Y: {self.Y.shape} | {self.subject_idxs.shape}', color='blue')
 
     def __len__(self):
         return len(self.X)
 
     def __getitem__(self, i, return_chunkids=True):
+        random_subject = np.random.choice(self.num_subjects)
         if return_chunkids:
-            return self.X[i], self.Y[i], self.subject_idxs[i], self.chunk_ids[i]
+            return self.X[i][random_subject], self.Y[i], random_subject, i
         else:
-            return self.X[i], self.Y[i], self.subject_idxs[i]
+            return self.X[i][random_subject], self.Y[i], random_subject
 
     def batchfy(self, X: torch.Tensor, Y: torch.Tensor):
-        # NOTE: self.seq_len_samp is `bptt`
+        """"
+        legacy
+        """
 
         assert X.shape[-1] == Y.shape[-1]
         trim_len = X.shape[-1] - X.shape[-1] % self.seq_len_samp
@@ -204,19 +218,34 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         embedding_srate = embeddings.shape[-1] / len_audio_s
         cprint(f'Original  embedding shape {embeddings.shape} | srate (out out w2v): {embedding_srate:.3f} Hz', 'red')
 
-        res_embeddings = F.resample(embeddings, orig_freq=10, new_freq=24)  # to upsample from ~50 to ~120 Hz
+        # res_embeddings = F.resample(embeddings, orig_freq=10, new_freq=24)  # to upsample from ~50 to ~120 Hz
+        res_embeddings = mne.filter.resample(
+            embeddings.numpy().astype(np.float64),
+            up=2.4,  #FIXME: this upsamling factor must be computed, not hard-coded
+            axis=-1,
+        )
         cprint(f'Resampled embedding shape {res_embeddings.shape} | srate: {120}', color='red', attrs=['bold'])
 
         # NOTE: "Paper says: we use standard normalization for both representations"
-        scaler = StandardScaler().fit(res_embeddings.T)
-        return torch.from_numpy(scaler.transform(res_embeddings.T).T).float()
+        # scaler = StandardScaler().fit(res_embeddings.T)
+        # return torch.from_numpy(scaler.transform(res_embeddings.T).T).float()
+
+        return torch.from_numpy(res_embeddings).float()
 
     @staticmethod
     def brain_preproc(audio_embd_len):
         # NOTE: look at comprehension-scores.txt
-        # excluded_subjects = [1, 6, 8, 22, 23, 26, 27, 28, 29, 30, 31, 32, 42, 45, 46, 48]
-
+        excluded_subjects = [
+            "S02", "S07", "S09", "S23", "S24", "S27", "S28", "S29", "S30", "S31", "S32", "S33", "S43", "S46", "S47",
+            "S49"
+        ]
+        MP = []
         matfile_paths = natsorted(glob.glob("data/Brennan2018/raw/*.mat"))
+        for i in matfile_paths:
+            if not i.split('.')[0][-3:] in excluded_subjects:
+                MP.append(i)
+        matfile_paths = MP
+
         # matfile_paths = [matfile_paths[i] for i in range(21) if not i in [1, 6, 8]]
         # matfile_paths = [matfile_paths[i] for i in [i for i in range(40)]]
         # cprint('using only subjects #[0, 1, 3, 4, 5, 6, 7, 48]', "blue", "on_yellow", attrs=['bold'])
@@ -282,3 +311,10 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         Y = Y[:, :-shift]  # ( 512, 99692 )
 
         return X, Y
+
+
+if __name__ == "__main__":
+    from configs.args import args
+    ds = Brennan2018Dataset(args, train=True)
+    print(0)
+    print(0)

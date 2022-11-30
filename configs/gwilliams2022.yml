@@ -30,6 +30,7 @@ d_drop: 0.3
 # When calculating softmax for spatial attention in each iteration, we drop
 # channels that are within the distance d_drop from a randomly selected channel
 
+init_temperature: 5.1
 wav2vec_model: facebook/wav2vec2-large-xlsr-53 # (HuggingFace) # xlsr_53_56k (FAIR)
 
 # == Hyperparameters that datasets should share === #
