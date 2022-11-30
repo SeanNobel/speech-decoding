@@ -36,14 +36,11 @@ class Classifier(nn.Module):
 
         # NOTE: max similarity of speech and M/EEG representations is expected for corresponding windows
         top1accuracy = (similarity.argmax(axis=1) == diags).to(torch.float).mean().item()
-        _top1accuracy = (similarity.argmax(axis=0) == diags).to(torch.float).mean().item()
         try:
             top10accuracy = np.mean(
                 [label in row for row, label in zip(torch.topk(similarity, 10, dim=1, largest=True)[1], diags)])
-            _top10accuracy = np.mean(
-                [label in row for row, label in zip(torch.topk(similarity, 10, dim=0, largest=True)[1], diags)])
         except:
             print(similarity.size())
             raise
 
-        return top1accuracy, top10accuracy, _top1accuracy, _top10accuracy
+        return top1accuracy, top10accuracy
