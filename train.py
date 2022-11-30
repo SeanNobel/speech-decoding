@@ -164,6 +164,13 @@ for epoch in range(args.epochs):
         trainTop1accs.append(trainTop1acc)
         trainTop10accs.append(trainTop10acc)
 
+        if isinstance(train_loader.dataset.dataset, Gwilliams2022Dataset):
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+    # Accumulate gradients for Gwilliams for the whole epoch
+    if isinstance(train_loader.dataset.dataset, Brennan2018Dataset):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()

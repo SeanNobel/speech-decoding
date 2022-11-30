@@ -40,6 +40,8 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         last4layers = args.preprocs["last4layers"]
         mode = args.preprocs["mode"]
         self.subject_wise = args.preprocs['subject_wise']
+        brain_filter_low = args.preprocs['brain_filter_low']
+        brain_filter_high = args.preprocs['brain_filter_high']
 
         Y_path = f"data/Brennan2018/Y_embeds/embd_{wav2vec_model}.pt"
 
@@ -57,7 +59,11 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         X_path = "data/Brennan2018/processed_X.pt"
         if (not os.path.exists(X_path)) or force_recompute[0]:
             cprint(f'Pre-processing EEG...', color='red')
-            self.X, srate = self.brain_preproc(audio_embd_len=self.Y.shape[-1])
+            self.X, srate = self.brain_preproc(
+                self.Y.shape[-1],
+                brain_filter_low,
+                brain_filter_high,
+            )
             torch.save({
                 'X': self.X,
                 'srate': srate,
@@ -201,7 +207,7 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         return torch.from_numpy(res_embeddings).float()
 
     @staticmethod
-    def brain_preproc(audio_embd_len):
+    def brain_preproc(audio_embd_len, brain_filter_low, brain_filter_high):
         # NOTE: look at comprehension-scores.txt
         excluded_subjects = [
             "S02", "S07", "S09", "S23", "S24", "S27", "S28", "S29", "S30", "S31", "S32", "S33", "S43", "S46", "S47",
@@ -209,8 +215,6 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         ]
         MP = []
         matfile_paths = natsorted(glob.glob("data/Brennan2018/raw/*.mat"))
-        cprint('DEBUG SUBSET OF SUBJECTS', 'yellow', 'on_green')
-        matfile_paths = matfile_paths[:8]
 
         for i in matfile_paths:
             if not i.split('.')[0][-3:] in excluded_subjects:
@@ -241,8 +245,8 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
             eeg_filtered = mne.filter.filter_data(
                 eeg_raw,
                 sfreq=fsample,
-                l_freq=1.0,
-                h_freq=60,
+                l_freq=brain_filter_low,
+                h_freq=brain_filter_high,
             )
 
             # NOTE: This resamples EEG from 500Hz down to around 135Hz
