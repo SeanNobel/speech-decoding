@@ -35,7 +35,7 @@ class Classifier(nn.Module):
         similarity = torch.empty(batch_size, batch_size).to(device)
         for i in range(batch_size):
             for j in range(batch_size):
-                similarity[i, j] = x[i] @ y[j] / (x[i].norm() * y[j].norm())
+                similarity[i, j] = (x[i] @ y[j]) / max((x[i].norm() * y[j].norm()), 1e-8)
 
         similarity = similarity.T
 
