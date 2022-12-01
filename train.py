@@ -81,21 +81,18 @@ if args.dataset == 'Gwilliams2022':
             )
 
 elif args.dataset == 'Brennan2018':
-    # NOTE: now the DS take not the number of samples, but the seconds to make windows
     # NOTE: takes an optional debug param force_recompute to pre-process the EEG even if it exists
-    # dataset = Brennan2018Dataset(args)
-    train_set = Brennan2018Dataset(args, train=True)
-    test_set = Brennan2018Dataset(args, train=False)
+    dataset = Brennan2018Dataset(args)
 
-    # train_size = int(dataset.X.shape[0] * 0.8)
-    # test_size = dataset.X.shape[0] - train_size
-    # train_set, test_set = torch.utils.data.random_split(
-    #     dataset,
-    #     lengths=[train_size, test_size],
-    #     generator=g if args.reproducible else None,
-    # )
-
-    train_loader, test_loader = get_dataloaders(train_set, test_set, args, g, seed_worker)
+    train_size = int(len(dataset) * 0.8)
+    test_size = len(dataset) - train_size
+    train_set, test_set = torch.utils.data.random_split(
+        dataset,
+        lengths=[train_size, test_size],
+        generator=g if args.reproducible else None,
+    )
+    cprint(f'Number of samples: {len(train_set)} (train), {len(test_set)} (test)', color='blue')
+    train_loader, test_loader = get_dataloaders(train_set, test_set, args, g, seed_worker, test_bsz=test_size)
 
 else:
     raise ValueError('Unknown dataset')
@@ -152,6 +149,7 @@ for epoch in range(args.epochs):
         subject_idxs = batch[2]
         if not isinstance(train_loader.dataset.dataset, Gwilliams2022Dataset):
             chunkIDs = batch[3]
+            assert len(chunkIDs.unique()) == X.shape[0], "Duplicate segments in batch are not allowed. Aborting."
 
         X, Y = X.to(device), Y.to(device)
         # print([(s.item(), chid.item()) for s, chid in zip(subject_idxs, chunkIDs)])
@@ -166,6 +164,13 @@ for epoch in range(args.epochs):
         trainTop1accs.append(trainTop1acc)
         trainTop10accs.append(trainTop10acc)
 
+        if isinstance(train_loader.dataset.dataset, Gwilliams2022Dataset):
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+    # Accumulate gradients for Gwilliams for the whole epoch
+    if isinstance(train_loader.dataset.dataset, Brennan2018Dataset):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -173,7 +178,6 @@ for epoch in range(args.epochs):
     # weight_after = brain_encoder.subject_block.spatial_attention.z_re.clone()
     # print(f"Learning: {not torch.equal(weight_prev, weight_after)}")
 
-    # NOTE: maybe testing in this way is meaningless for contrastive loss
     brain_encoder.eval()
     for batch in test_loader:
         X = batch[0]
@@ -216,7 +220,7 @@ for epoch in range(args.epochs):
             'testTop1acc': np.mean(testTop1accs),
             'testTop10acc': np.mean(testTop10accs),
             'lrate': optimizer.param_groups[0]['lr'],
-            'temp': loss_func.temp.item()
+            'temp': loss_func.temp.item(),
         }
         wandb.log(performance_now)
 
