@@ -144,12 +144,14 @@ for epoch in range(args.epochs):
 
     brain_encoder.train()
     for i, batch in enumerate(tqdm(train_loader)):
-        X = batch[0]
-        Y = batch[1]
-        subject_idxs = batch[2]
-        if not isinstance(train_loader.dataset.dataset, Gwilliams2022Dataset):
-            chunkIDs = batch[3]
+
+        if len(batch) == 3:
+            X, Y, subject_idxs = batch
+        elif len(batch) == 4:
+            X, Y, subject_idxs, chunkIDs = batch
             assert len(chunkIDs.unique()) == X.shape[0], "Duplicate segments in batch are not allowed. Aborting."
+        else:
+            raise ValueError('Unexpected number of items from dataloader.')
 
         X, Y = X.to(device), Y.to(device)
         # print([(s.item(), chid.item()) for s, chid in zip(subject_idxs, chunkIDs)])
@@ -180,11 +182,13 @@ for epoch in range(args.epochs):
 
     brain_encoder.eval()
     for batch in test_loader:
-        X = batch[0]
-        Y = batch[1]
-        subject_idxs = batch[2]
-        if not isinstance(test_loader.dataset.dataset, Gwilliams2022Dataset):
-            chunkIDs = batch[3]
+
+        if len(batch) == 3:
+            X, Y, subject_idxs = batch
+        elif len(batch) == 4:
+            X, Y, subject_idxs, chunkIDs = batch
+        else:
+            raise ValueError('Unexpected number of items from dataloader.')
 
         X, Y = X.to(device), Y.to(device)
 

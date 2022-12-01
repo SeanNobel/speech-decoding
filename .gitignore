@@ -10,6 +10,7 @@ data/Brennan2018/Y_embeds/*.pt
 data/Brennan2018/processed_X.pt
 data/Brennan2018/merged_audio.wav
 data/Brennan2018/_processed_X.pt
+data/Brennan2018/merged.wav
 
 data/Broderick2018/
 
