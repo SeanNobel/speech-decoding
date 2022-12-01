@@ -34,3 +34,5 @@ train.sh
 README_MY.md
 debug.py
 *_debug*
+
+cosine_similarity.ipynb

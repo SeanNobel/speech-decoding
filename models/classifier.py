@@ -27,12 +27,17 @@ class Classifier(nn.Module):
         x = Z.view(batch_size, -1)
         y = Y.view(batch_size, -1)
 
-        # NOTE: no need to normalize the dot products
-        # similarity = torch.matmul(x, y.T)
+        # x_ = rearrange(x, 'b f -> 1 b f')
+        # y_ = rearrange(y, 'b f -> b 1 f')
+        # similarity = torch.nn.functional.cosine_similarity(x_, y_, dim=-1)  # ( B, B )
 
-        x_ = rearrange(x, 'b f -> 1 b f')
-        y_ = rearrange(y, 'b f -> b 1 f')
-        similarity = torch.nn.functional.cosine_similarity(x_, y_, dim=-1)  # ( B, B )
+        # NOTE: avoid CUDA out of memory like this
+        similarity = torch.empty(batch_size, batch_size).to(device)
+        for i in range(batch_size):
+            for j in range(batch_size):
+                similarity[i, j] = x[i] @ y[j] / (x[i].norm() * y[j].norm())
+
+        similarity = similarity.T
 
         # NOTE: max similarity of speech and M/EEG representations is expected for corresponding windows
         top1accuracy = (similarity.argmax(axis=1) == diags).to(torch.float).mean().item()
