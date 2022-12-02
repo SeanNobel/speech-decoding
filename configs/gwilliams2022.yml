@@ -31,7 +31,6 @@ d_drop: 0.3
 # channels that are within the distance d_drop from a randomly selected channel
 
 init_temperature: 5.1
-wav2vec_model: facebook/wav2vec2-large-xlsr-53 # (HuggingFace) # xlsr_53_56k (FAIR)
 
 # == Hyperparameters that datasets should share === #
 force_recompute_y: False
@@ -51,7 +50,6 @@ preprocs:
   shift_len: 150 # ms
 
   last4layers: True
-  mode: huggingface # (if last4layers: {'huggingface', 'before', 'after'}). If not huggingface, used FAIR's W2V impl.
 
   clamp: True
   clamp_lim: 20

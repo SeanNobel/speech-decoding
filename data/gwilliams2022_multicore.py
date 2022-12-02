@@ -68,8 +68,6 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
     def __init__(self, args, data_dir="data/Gwilliams2022/preprocessed/"):
         super().__init__()
 
-        self.wav2vec_model = args.wav2vec_model
-
         self.brain_orig_rate = 1000
         self.brain_resample_rate = args.preprocs["brain_resample_rate"]
         self.brain_filter_low = args.preprocs["brain_filter_low"]
@@ -84,7 +82,6 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
         self.lowpass_filter_width = args.preprocs["lowpass_filter_width"]
 
         self.last4layers = args.preprocs["last4layers"]
-        self.mode = args.preprocs["mode"]
 
         self.shift_brain = args.preprocs["shift_brain"]
         self.shift_len = args.preprocs["shift_len"]
@@ -354,7 +351,7 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
 
     @torch.no_grad()
     def audio_preproc(self):
-        wav2vec = load_wav2vec_model(self.wav2vec_model)
+        wav2vec = load_wav2vec_model()
         wav2vec.eval()
 
         task_prefixes = ["lw1", "cable", "easy", "the"]
@@ -385,7 +382,7 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
                 cprint(f"Audio after resampling: {waveform.shape}", color="cyan")
 
                 if self.last4layers:
-                    embeddings = getW2VLastFourLayersAvg(wav2vec, waveform, mode=self.mode)
+                    embeddings = getW2VLastFourLayersAvg(wav2vec, waveform)
                 else:
                     embeddings = wav2vec.feature_extractor(waveform).squeeze()
                 cprint(f"Audio embedding: {embeddings.shape}", color="cyan")

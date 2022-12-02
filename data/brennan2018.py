@@ -35,7 +35,6 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         self.clamp = args.preprocs["clamp"]
         self.clamp_lim = args.preprocs["clamp_lim"]
 
-        wav2vec_model = args.wav2vec_model
         force_recompute = args.force_recompute,
         last4layers = args.preprocs["last4layers"]
         mode = args.preprocs["mode"]
@@ -43,13 +42,11 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         brain_filter_low = args.preprocs['brain_filter_low']
         brain_filter_high = args.preprocs['brain_filter_high']
 
-        Y_path = f"data/Brennan2018/Y_embeds/embd_{wav2vec_model}.pt"
+        Y_path = f"data/Brennan2018/Y_embeds/embd_wav2vec.pt"
 
         if (not os.path.exists(Y_path)) or force_recompute[0]:
             torch.save(self.audio_preproc(
-                wav2vec_model,
-                last4layers=last4layers,
-                mode=mode,
+                last4layers=last4layers
             ), Y_path)
 
         # load the upsampled (to 120 Hz) embeddings (of the entire recording)
@@ -155,9 +152,7 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
 
     @staticmethod
     def audio_preproc(
-        wav2vec_model: str,
-        last4layers: bool,
-        mode: str,
+        last4layers: bool
     ):
         audio_paths = natsorted(glob.glob('data/Brennan2018/audio/*.wav'))
         waveform = [torchaudio.load(path) for path in audio_paths]
@@ -179,7 +174,7 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         len_audio_s = waveform.shape[1] / resample_rate
         cprint(f"Audio length: {len_audio_s} s.", color='yellow')
 
-        model = load_wav2vec_model(wav2vec_model)
+        model = load_wav2vec_model()
         model.eval()
 
         # NOTE: for the large W2V2, the embedding dim is 1024

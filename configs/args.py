@@ -21,7 +21,6 @@ def parse_arguments():
     parser.add_argument("--D2", type=int, default=320)
     parser.add_argument("--F", type=int, default=512, help="Embedding dimension for both speech and M/EEG")
     parser.add_argument("--K", type=int, default=32, help="Number of harmonics in fourier space for spatial attention")
-    parser.add_argument("--wav2vec-model", type=str, default="xlsr_53_56k", help="Type of wav2vec2.0 model to use")
     parser.add_argument("--wandb", action='store_true', help="Whether to log to wandb")
     parser.add_argument("--force_recompute", action='store_true', help="Recompute EEG even if exists")
     parser.add_argument("--reproducible", action='store_true', help="Seed everything")
