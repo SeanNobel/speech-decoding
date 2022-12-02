@@ -33,7 +33,6 @@ cosine_similarity.ipynb
 
 tmp/
 
-weights/*.pt
 *.pt
 wandb
 train.sh
