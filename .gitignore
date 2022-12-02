@@ -1,38 +1,42 @@
-data/__pycache__
-models/__pycache__
-utils/__pycache__
-configs/__pycache__
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
 
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# VS Code
+.vscode/
+
+# Data
 data/Brennan2018/audio/
 data/Brennan2018/proc/
 data/Brennan2018/raw/
 data/Brennan2018/Y_embeds/*.pt
 data/Brennan2018/processed_X.pt
 data/Brennan2018/merged_audio.wav
-data/Brennan2018/_processed_X.pt
 data/Brennan2018/merged.wav
-
+data/Brennan2018/_processed_X.pt
 data/Broderick2018/
+data/Gwilliams2022/
+!data/Gwilliams2022/.gitkeep
 
-data/Gwilliams2022
-!data/Gwilliams2022/.keep
-
+# Runs
 runs/*
-!runs/.keep
+!runs/.gitkeep
+
+# Notebooks
+tests.ipynb
+sandbox.ipynb
+cosine_similarity.ipynb
 
 tmp/
 
 weights/*.pt
 *.pt
-tests.ipynb
-.ipynb_checkpoints
-sandbox.ipynb
 wandb
-.vscode/launch.json
-__pycache__
 train.sh
 README_MY.md
 debug.py
 *_debug*
-
-cosine_similarity.ipynb
