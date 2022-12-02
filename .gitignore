@@ -26,12 +26,15 @@ data/Gwilliams2022/
 runs/*
 !runs/.gitkeep
 
+# Notebooks
+tests.ipynb
+sandbox.ipynb
+cosine_similarity.ipynb
+
 tmp/
 
 weights/*.pt
 *.pt
-tests.ipynb
-sandbox.ipynb
 wandb
 train.sh
 README_MY.md

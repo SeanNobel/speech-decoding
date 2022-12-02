@@ -17,8 +17,7 @@ if args.multicore:
 else:
     from data.gwilliams2022 import Gwilliams2022Dataset
 
-from models.brain_encoder import BrainEncoder
-from models.classifier import Classifier
+from models import BrainEncoder, Classifier
 from utils.get_dataloaders import get_dataloaders, get_samplers
 from utils.loss import *
 from tqdm import trange
