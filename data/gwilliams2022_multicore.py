@@ -148,7 +148,7 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
     def batchfy(self):
         # self.X.keys() -> ['subject01_sess0_task0', ..., 'subject27_sess1_task3']
         # self.Y.keys() -> ['task0', 'task1', 'task2', 'task3']
-        cprint([i.split('_')[-1] for i in natsorted(self.X.keys())], color='green')
+        # cprint([i.split('_')[-1] for i in natsorted(self.X.keys())], color='green')
         assert natsorted(self.X.keys()) == list(self.X.keys()), 'self.X.keys() is not sorted'
 
         # ------------------------------------------------------

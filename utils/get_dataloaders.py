@@ -16,7 +16,7 @@ def get_dataloaders(train_set, test_set, args, g, seed_worker, test_bsz=None):
         )
         test_loader = DataLoader(
             test_set,
-            batch_size=args.batch_size if test_bsz is not None else test_bsz,
+            batch_size=args.batch_size if test_bsz is None else test_bsz,
             drop_last=True,
             shuffle=False,
             num_workers=6,
@@ -35,7 +35,7 @@ def get_dataloaders(train_set, test_set, args, g, seed_worker, test_bsz=None):
         )
         test_loader = DataLoader(
             test_set,
-            batch_size=args.batch_size if test_bsz is not None else test_bsz,
+            batch_size=args.batch_size if test_bsz is None else test_bsz,
             drop_last=True,
             shuffle=False,
             num_workers=6,
@@ -51,6 +51,7 @@ def get_samplers(
     args,
     seed_worker=None,
     g=None,
+    test_bsz=None,
 ):
     train_sampler = RandomSampler(data_source=train_set,
                                   replacement=True,
@@ -67,7 +68,7 @@ def get_samplers(
                               num_workers=args.num_workers,
                               worker_init_fn=seed_worker)
     test_loader = DataLoader(test_set,
-                             batch_size=args.batch_size,
+                             batch_size=args.batch_size if test_bsz is None else test_bsz,
                              sampler=test_sampler,
                              num_workers=args.num_workers,
                              worker_init_fn=seed_worker)

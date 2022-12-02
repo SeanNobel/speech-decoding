@@ -59,26 +59,12 @@ if args.dataset == 'Gwilliams2022':
 
     if args.use_sampler:
         # NOTE: currently not supporting reproducibility
-        train_loader, test_loader = get_samplers(
-            train_set,
-            test_set,
-            args,
-        )
+        train_loader, test_loader = get_samplers(train_set, test_set, args, test_bsz=test_size)
     else:
         if args.reproducible:
-            train_loader, test_loader = get_dataloaders(
-                train_set,
-                test_set,
-                args,
-                seed_worker,
-                g,
-            )
+            train_loader, test_loader = get_dataloaders(train_set, test_set, args, seed_worker, g, test_bsz=test_size)
         else:
-            train_loader, test_loader = get_dataloaders(
-                train_set,
-                test_set,
-                args,
-            )
+            train_loader, test_loader = get_dataloaders(train_set, test_set, args, test_bsz=test_size)
 
 elif args.dataset == 'Brennan2018':
     # NOTE: takes an optional debug param force_recompute to pre-process the EEG even if it exists
@@ -144,12 +130,14 @@ for epoch in range(args.epochs):
 
     brain_encoder.train()
     for i, batch in enumerate(tqdm(train_loader)):
-        X = batch[0]
-        Y = batch[1]
-        subject_idxs = batch[2]
-        if not isinstance(train_loader.dataset.dataset, Gwilliams2022Dataset):
-            chunkIDs = batch[3]
+
+        if len(batch) == 3:
+            X, Y, subject_idxs = batch
+        elif len(batch) == 4:
+            X, Y, subject_idxs, chunkIDs = batch
             assert len(chunkIDs.unique()) == X.shape[0], "Duplicate segments in batch are not allowed. Aborting."
+        else:
+            raise ValueError('Unexpected number of items from dataloader.')
 
         X, Y = X.to(device), Y.to(device)
         # print([(s.item(), chid.item()) for s, chid in zip(subject_idxs, chunkIDs)])
@@ -180,21 +168,23 @@ for epoch in range(args.epochs):
 
     brain_encoder.eval()
     for batch in test_loader:
-        X = batch[0]
-        Y = batch[1]
-        subject_idxs = batch[2]
-        if not isinstance(test_loader.dataset.dataset, Gwilliams2022Dataset):
-            chunkIDs = batch[3]
-
-        X, Y = X.to(device), Y.to(device)
 
         with torch.no_grad():
-            Z = brain_encoder(X, subject_idxs)
 
-        loss = loss_func(Y, Z)
+            if len(batch) == 3:
+                X, Y, subject_idxs = batch
+            elif len(batch) == 4:
+                X, Y, subject_idxs, chunkIDs = batch
+            else:
+                raise ValueError('Unexpected number of items from dataloader.')
 
-        with torch.no_grad():
-            testTop1acc, testTop10acc = classifier(Z, Y)
+            X, Y = X.to(device), Y.to(device)
+
+            Z = brain_encoder(X, subject_idxs)  # 0.96 GB
+
+            loss = loss_func(Y, Z)
+
+            testTop1acc, testTop10acc = classifier(Z, Y)  # ( 250, 1024, 360 )
 
         test_losses.append(loss.item())
         testTop1accs.append(testTop1acc)
