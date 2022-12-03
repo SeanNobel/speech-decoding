@@ -60,7 +60,7 @@ def trim_nosound_regions(meg_raw, df_annot):
         start = to_second(df_annot.onset[start_t])
         end = to_second(df_annot.onset[end_t]) + df_annot.duration[end_t]
 
-        meg_trimmed.append(meg_raw[:, int(start * 1000) : int(end * 1000)])
+        meg_trimmed.append(meg_raw[:, int(start * 1000):int(end * 1000)])
 
         real_durations.append(end - start)
 
@@ -70,6 +70,7 @@ def trim_nosound_regions(meg_raw, df_annot):
 
 
 class Gwilliams2022Dataset(Dataset):
+
     def __init__(self, args):
         super().__init__()
         self.wav2vec_model = args.wav2vec_model
@@ -83,9 +84,7 @@ class Gwilliams2022Dataset(Dataset):
         self.clamp = args.preprocs["clamp"]
         self.clamp_lim = args.preprocs["clamp_lim"]
 
-        self.baseline_len_samp = int(
-            self.brain_resample_rate * args.preprocs["baseline_len_sec"]
-        )
+        self.baseline_len_samp = int(self.brain_resample_rate * args.preprocs["baseline_len_sec"])
 
         self.audio_resample_rate = args.preprocs["audio_resample_rate"]
         self.lowpass_filter_width = args.preprocs["lowpass_filter_width"]
@@ -112,9 +111,7 @@ class Gwilliams2022Dataset(Dataset):
             self.real_durations = np.load(real_dur_path, allow_pickle=True).item()
         else:
             self.real_durations = {}  # will be updated in self.brain_preproc
-            self.X = self.brain_preproc(
-                27
-            )  # NOTE: Kind of ugly, but this is what is should be, I guess
+            self.X = self.brain_preproc(27)  # NOTE: Kind of ugly, but this is what is should be, I guess
 
             np.save(real_dur_path, self.real_durations)
             args.preprocs.update({"x_done": True})
@@ -161,9 +158,7 @@ class Gwilliams2022Dataset(Dataset):
         # self.X.keys() -> ['subject01_sess0_task0', ..., 'subject27_sess1_task3']
         # self.Y.keys() -> ['task0', 'task1', 'task2', 'task3']
         # cprint([i.split('_')[-1] for i in natsorted(self.X.keys())], color='green')
-        assert natsorted(self.X.keys()) == list(
-            self.X.keys()
-        ), "self.X.keys() is not sorted"
+        assert natsorted(self.X.keys()) == list(self.X.keys()), "self.X.keys() is not sorted"
 
         # ------------------------------------------------------
         #     Make X_dict (MEG are concatenated along tasks)
@@ -176,19 +171,13 @@ class Gwilliams2022Dataset(Dataset):
             if self.shift_brain:
                 X = self.shift_brain_signal(X, is_Y=False)
 
-            X = scaleAndClamp_single(
-                X, self.clamp_lim, self.clamp
-            )  # ( ch=208, len=37835 )
+            X = scaleAndClamp_single(X, self.clamp_lim, self.clamp)  # ( ch=208, len=37835 )
 
-            X = self.data_reform(
-                X, self.seq_len_samp
-            )  # ( num_segment=~500, ch=208, len=360 )
+            X = self.data_reform(X, self.seq_len_samp)  # ( num_segment=~500, ch=208, len=360 )
 
             X = baseline_correction_single(X, self.baseline_len_samp)
 
-            key_wo_task = "_".join(
-                key.split("_")[:-1]
-            )  # e.g. 'subject01_sess0_task0' -> 'subject01_sess0'
+            key_wo_task = "_".join(key.split("_")[:-1])  # e.g. 'subject01_sess0_task0' -> 'subject01_sess0'
             if not key_wo_task in X_dict.keys():
                 X_dict.update({key_wo_task: X})
             else:
@@ -210,9 +199,7 @@ class Gwilliams2022Dataset(Dataset):
 
             Y = torch.from_numpy(Y.astype(np.float32))
 
-            Y = self.data_reform(
-                Y, self.seq_len_samp
-            )  # ( num_segment=~500, F=1024, len=360 )
+            Y = self.data_reform(Y, self.seq_len_samp)  # ( num_segment=~500, F=1024, len=360 )
 
             Y_list.append(Y)
 
@@ -275,9 +262,7 @@ class Gwilliams2022Dataset(Dataset):
         x_path = d["x_path"]
         root_dir = d["root_dir"]
 
-        description = (
-            f"subject{str(subject_idx+1).zfill(2)}_sess{session_idx}_task{task_idx}"
-        )
+        description = (f"subject{str(subject_idx+1).zfill(2)}_sess{session_idx}_task{task_idx}")
 
         bids_path = mne_bids.BIDSPath(
             subject=str(subject_idx + 1).zfill(2),
@@ -295,16 +280,12 @@ class Gwilliams2022Dataset(Dataset):
 
         cprint(description, color="cyan")
         df = raw.to_data_frame()
-        meg_raw = np.stack(
-            [df[key] for key in df.keys() if "MEG" in key]
-        )  # ( 224, 396000 )
+        meg_raw = np.stack([df[key] for key in df.keys() if "MEG" in key])  # ( 224, 396000 )
         # NOTE: (kind of) confirmed that last 16 channels are REF
         meg_raw = meg_raw[:num_channels]  # ( 208, 396000 )
 
         df_annot = raw.annotations.to_data_frame()
-        meg_trimmed, _real_durations = trim_nosound_regions(
-            meg_raw, df_annot
-        )  # ( 208, <396000 )
+        meg_trimmed, _real_durations = trim_nosound_regions(meg_raw, df_annot)  # ( 208, <396000 )
 
         # update_real_durations
         task_str = f"task{task_idx}"
@@ -359,9 +340,7 @@ class Gwilliams2022Dataset(Dataset):
         for subj in range(num_subjects):
             for session_idx in range(2):
                 for task_idx in range(4):
-                    subj_list.append(
-                        (subj, consts, glob_real_durations, session_idx, task_idx)
-                    )
+                    subj_list.append((subj, consts, glob_real_durations, session_idx, task_idx))
 
         # subj_list = [(i, c, rd) for i, c, rd in zip(range(num_subjects), repeat(consts), repeat(real_durations))]
         with Pool(20) as p:
@@ -370,8 +349,7 @@ class Gwilliams2022Dataset(Dataset):
                     p.imap(Gwilliams2022Dataset._brain_preproc, subj_list),
                     total=len(subj_list),
                     bar_format=bar_format,
-                )
-            )
+                ))
         print("no_errors")
 
         # NOTE: return glob_real_durations (which is a global shared struct) into self.real_durations
@@ -379,15 +357,9 @@ class Gwilliams2022Dataset(Dataset):
 
         # NOTE: assemble files into one and clean up
         # FIXME: the paths ending with /0 !!!
-        fnames = [
-            f
-            for f in os.listdir(f"{self.root_dir}/data/Gwilliams2022/preprocessed/0/")
-            if f.startswith("__")
-        ]
+        fnames = [f for f in os.listdir(f"{self.root_dir}/data/Gwilliams2022/preprocessed/0/") if f.startswith("__")]
         X = dict()
-        for fname in natsorted(
-            fnames
-        ):  # NOTE: data MUST be task0, ... taskN, task0, ..., taskN (N=4)
+        for fname in natsorted(fnames):  # NOTE: data MUST be task0, ... taskN, task0, ..., taskN (N=4)
             X[fname[2:-4]] = np.load(
                 f"{self.root_dir}/data/Gwilliams2022/preprocessed/0/{fname}",
                 allow_pickle=True,
@@ -409,17 +381,13 @@ class Gwilliams2022Dataset(Dataset):
         task_prefixes = ["lw1", "cable", "easy", "the"]
 
         Y = {}
-        assert os.path.exists(
-            f"{self.root_dir}/data/Gwilliams2022/stimuli/audio"
-        ), "The path `data/Gwilliams2022/stimuli/audio` DOESN'T EXIST."
+        assert os.path.exists(f"{self.root_dir}/data/Gwilliams2022/stimuli/audio"
+                             ), "The path `data/Gwilliams2022/stimuli/audio` DOESN'T EXIST."
         for task_idx in self.real_durations.keys():  # 4 tasks for each subject
             task_idx_ID = int(task_idx[-1])
 
             audio_paths = natsorted(
-                glob.glob(
-                    f"{self.root_dir}/data/Gwilliams2022/stimuli/audio/{task_prefixes[task_idx_ID]}*.wav"
-                )
-            )
+                glob.glob(f"{self.root_dir}/data/Gwilliams2022/stimuli/audio/{task_prefixes[task_idx_ID]}*.wav"))
 
             audio_raw = []
             for f, path in enumerate(audio_paths):
@@ -446,9 +414,8 @@ class Gwilliams2022Dataset(Dataset):
                     embeddings = wav2vec.feature_extractor(waveform).squeeze()
                 cprint(f"Audio embedding: {embeddings.shape}", color="cyan")
 
-                rate_after_wav2vec = (
-                    self.audio_resample_rate * embeddings.shape[-1] / waveform.shape[-1]
-                )  # 49.9737...
+                rate_after_wav2vec = (self.audio_resample_rate * embeddings.shape[-1] / waveform.shape[-1]
+                                     )  # 49.9737...
                 cprint(rate_after_wav2vec, color="cyan")
 
                 # NOTE: torchaudio resample doesn't accept float freqs
@@ -490,13 +457,9 @@ class Gwilliams2022Dataset(Dataset):
             if self.shift_brain:
                 X = self.shift_brain_signal(X, is_Y=False)
 
-            X = scaleAndClamp_single(
-                X, self.clamp_lim, self.clamp
-            )  # ( ch=208, len=37835 )
+            X = scaleAndClamp_single(X, self.clamp_lim, self.clamp)  # ( ch=208, len=37835 )
 
-            X = self.data_reform(
-                X, self.seq_len_samp
-            )  # ( num_segment=~500, ch=208, len=360 )
+            X = self.data_reform(X, self.seq_len_samp)  # ( num_segment=~500, ch=208, len=360 )
 
             X = baseline_correction_single(X, self.baseline_len_samp)
 
@@ -521,9 +484,7 @@ class Gwilliams2022Dataset(Dataset):
 
             Y = torch.from_numpy(Y.astype(np.float32))
 
-            Y = self.data_reform(
-                Y, self.seq_len_samp
-            )  # ( num_segment=~500, F=1024, len=360 )
+            Y = self.data_reform(Y, self.seq_len_samp)  # ( num_segment=~500, F=1024, len=360 )
 
             Y_list.append(Y)
 

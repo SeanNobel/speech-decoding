@@ -32,13 +32,7 @@ def check_preprocs(args, data_dir):
             # NOTE: should be just:
             # is_processed = np.all([v == args.preprocs[k] for k, v in settings.items() if not k in excluded_keys])
             excluded_keys = ["preceding_chunk_for_baseline", "mode"]
-            is_processed = np.all(
-                [
-                    v == args.preprocs[k]
-                    for k, v in settings.items()
-                    if k not in excluded_keys
-                ]
-            )
+            is_processed = np.all([v == args.preprocs[k] for k, v in settings.items() if k not in excluded_keys])
             if is_processed:
                 cprint(
                     f"All preproc params matched to {preproc_name} -> using",
@@ -82,12 +76,8 @@ def scaleAndClamp(X, clamp_lim, clamp):
     """
     res = []
     for subjID in range(X.shape[0]):
-        scaler = RobustScaler().fit(
-            X[subjID, :, :].T
-        )  # NOTE: must be samples x features
-        _X = torch.from_numpy(scaler.transform(X[subjID, :, :].T)).to(
-            torch.float
-        )  # must be samples x features !!!
+        scaler = RobustScaler().fit(X[subjID, :, :].T)  # NOTE: must be samples x features
+        _X = torch.from_numpy(scaler.transform(X[subjID, :, :].T)).to(torch.float)  # must be samples x features !!!
         if clamp:
             _X.clamp_(min=-clamp_lim, max=clamp_lim)
         res.append(_X.to(torch.float))
