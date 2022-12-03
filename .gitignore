@@ -8,6 +8,7 @@ __pycache__/
 
 # VS Code
 .vscode/
+outputs/
 
 # Data
 data/Brennan2018/audio/

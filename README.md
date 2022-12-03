@@ -52,9 +52,13 @@ Use the `--reproducible` CLI argument. You might need to run `export CUBLAS_WORK
 
 # Usage
 
-## For EEG (Brennan 2018 et al.)
+## For EEG (Brennan et al. 2022)
 Run `python train.py --config configs/brennan2018.yml --force_recompute`.
 When `--force_recompute` flag is not set, the model just load the stred pre-processed data. This is useful if you want to run the model on exactly the same data several times.
+
+## For MEG (Gwilliams et al. 2022)
+
+Run `python train.py dataset=Gwilliams2022 multicore=True 
 
 ## Dataset
 

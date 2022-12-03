@@ -3,6 +3,7 @@ from re import sub
 import torch
 import torchaudio
 import torchaudio.functional as F
+from torch.utils.data import Dataset
 import numpy as np
 import pandas as pd
 import glob
@@ -24,6 +25,7 @@ from constants import bar_format
 from multiprocessing import Pool, Manager
 from itertools import repeat
 from pprint import pprint
+from omegaconf import open_dict
 
 mne.set_log_level(verbose="WARNING")
 
@@ -63,11 +65,13 @@ def trim_nosound_regions(meg_raw, df_annot):
     return meg_trimmed, real_durations
 
 
-class Gwilliams2022Dataset(torch.utils.data.Dataset):
+class Gwilliams2022Dataset(Dataset):
 
-    def __init__(self, args, data_dir="data/Gwilliams2022/preprocessed/"):
+    def __init__(self, args):
         super().__init__()
 
+        force_recompute = args.rebuild_dataset
+        self.root_dir = f"{args.root_dir}/data/Gwilliams2022/preprocessed/"
         self.brain_orig_rate = 1000
         self.brain_resample_rate = args.preprocs["brain_resample_rate"]
         self.brain_filter_low = args.preprocs["brain_filter_low"]
@@ -75,7 +79,7 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
         self.seq_len_samp = self.brain_resample_rate * args.preprocs["seq_len_sec"]
         self.clamp = args.preprocs["clamp"]
         self.clamp_lim = args.preprocs["clamp_lim"]
-        self.preceding_chunk_for_baseline = args.preprocs["preceding_chunk_for_baseline"]
+
         self.baseline_len_samp = int(self.brain_resample_rate * args.preprocs["baseline_len_sec"])
 
         self.audio_resample_rate = args.preprocs["audio_resample_rate"]
@@ -87,13 +91,13 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
         self.shift_len = args.preprocs["shift_len"]
 
         # NOTE: x_done and y_done are added to args.preprocs
-        args, preproc_dir = check_preprocs(args, data_dir)
+        args, preproc_dir = check_preprocs(args, self.root_dir)
         self.x_path = preproc_dir + "x_dict.npy"
         self.y_path = preproc_dir + "y_dict.npy"
         real_dur_path = preproc_dir + "real_durations.npy"
 
         # ------------
-        #    Make X
+        #    Make X (M/EEG)
         # ------------
         if args.preprocs["x_done"]:
             self.X = np.load(self.x_path, allow_pickle=True).item()
@@ -108,11 +112,12 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
                 json.dump(args.preprocs, f)
 
         # -------------------------------------------
-        #     Make Y if it doesn't already exist
+        #     Make Y (audio embeddings) if it doesn't already exist
         # -------------------------------------------
-        if args.force_recompute_y or not args.preprocs['y_done']:
+        if force_recompute or not args.preprocs['y_done']:
             self.Y = self.audio_preproc()
-            args.preprocs.update({"y_done": True})
+            with open_dict(args):
+                args.preprocs.y_done = True
             with open(preproc_dir + "settings.json", 'w') as f:
                 json.dump(args.preprocs, f)
         else:
@@ -163,7 +168,7 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
 
             X = self.data_reform(X, self.seq_len_samp)  # ( num_segment=~500, ch=208, len=360 )
 
-            X = baseline_correction_single(X, self.baseline_len_samp, self.preceding_chunk_for_baseline)
+            X = baseline_correction_single(X, self.baseline_len_samp)
 
             key_wo_task = '_'.join(key.split('_')[:-1])  # e.g. 'subject01_sess0_task0' -> 'subject01_sess0'
             if not key_wo_task in X_dict.keys():
@@ -245,6 +250,7 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
         brain_filter_high = d['brain_filter_high']
         brain_resample_rate = d['brain_resample_rate']
         x_path = d['x_path']
+        root_dir = d['root_dir']
 
         description = f"subject{str(subject_idx+1).zfill(2)}_sess{session_idx}_task{task_idx}"
 
@@ -254,7 +260,7 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
             session=str(session_idx),
             task=str(task_idx),
             datatype="meg",
-            root="data/Gwilliams2022/",
+            root=f"{root_dir}/data/Gwilliams2022/",
         )
         try:
             raw = mne_bids.read_raw_bids(bids_path)
@@ -303,7 +309,7 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
         # X.update({description: meg_resampled})
         # np.save(x_path, X)
 
-        np.save(f'data/Gwilliams2022/preprocessed/0/__{description}', meg_resampled)
+        np.save(f'{root_dir}/data/Gwilliams2022/preprocessed/0/__{description}', meg_resampled)
         return 0
 
     def brain_preproc(self, num_subjects, num_channels=208):
@@ -314,6 +320,7 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
             brain_filter_high=self.brain_filter_high,
             brain_resample_rate=self.brain_resample_rate,
             x_path=self.x_path,
+            root_dir=self.root_dir,
         )
 
         subj_list = []
@@ -336,16 +343,16 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
         self.real_durations = dict(glob_real_durations)
 
         # NOTE: assemble files into one and clean up
-        fnames = [f for f in os.listdir('data/Gwilliams2022/preprocessed/0/') if f.startswith('__')]
+        fnames = [f for f in os.listdir(f'{self.root_dir}/data/Gwilliams2022/preprocessed/0/') if f.startswith('__')]
         X = dict()
         for fname in natsorted(fnames):  # NOTE: data MUST be task0, ... taskN, task0, ..., taskN (N=4)
-            X[fname[2:-4]] = np.load(f'data/Gwilliams2022/preprocessed/0/{fname}', allow_pickle=True)
+            X[fname[2:-4]] = np.load(f'{self.root_dir}/data/Gwilliams2022/preprocessed/0/{fname}', allow_pickle=True)
         np.save(self.x_path, X)
         pprint(self.real_durations)
 
         cprint('removing temp files for EEG data', color='green')
         for fname in fnames:
-            os.remove(f'data/Gwilliams2022/preprocessed/0/{fname}')
+            os.remove(f'{self.root_dir}/data/Gwilliams2022/preprocessed/0/{fname}')
 
         return X
 
@@ -362,7 +369,8 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
         for task_idx in self.real_durations.keys():  # 4 tasks for each subject
             task_idx_ID = int(task_idx[-1])
 
-            audio_paths = natsorted(glob.glob(f"data/Gwilliams2022/stimuli/audio/{task_prefixes[task_idx_ID]}*.wav"))
+            audio_paths = natsorted(
+                glob.glob(f"{self.root_dir}/data/Gwilliams2022/stimuli/audio/{task_prefixes[task_idx_ID]}*.wav"))
 
             audio_raw = []
             for f, path in enumerate(audio_paths):
@@ -431,7 +439,7 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
 
             X = self.data_reform(X, self.seq_len_samp)  # ( num_segment=~500, ch=208, len=360 )
 
-            X = baseline_correction_single(X, self.baseline_len_samp, self.preceding_chunk_for_baseline)
+            X = baseline_correction_single(X, self.baseline_len_samp)
 
             X_list.append(X)
             num_segments = X.shape[0]

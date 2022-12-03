@@ -1,4 +1,5 @@
 from constants import bar_format, device
+
 # from configs.args import args
 # if args.reproducible:
 #     from utils.reproducibility import g, seed_worker
@@ -17,11 +18,6 @@ from time import time
 from tqdm import tqdm
 from data.brennan2018 import Brennan2018Dataset
 from data.gwilliams2022_multicore import Gwilliams2022Dataset
-# if args.multicore:
-#     from data.gwilliams2022_multicore import Gwilliams2022Dataset
-# else:
-#     from data.gwilliams2022 import Gwilliams2022Dataset
-
 from models import BrainEncoder, Classifier
 from utils.get_dataloaders import get_dataloaders, get_samplers
 from utils.loss import *
@@ -29,20 +25,21 @@ from tqdm import trange
 from termcolor import cprint
 import wandb
 
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig, OmegaConf, open_dict
 import hydra
+from hydra.utils import get_original_cwd, to_absolute_path
 
 
 @hydra.main(version_base=None, config_path="configs", config_name="config")
 def run(args: DictConfig) -> None:
-    print(args)
-    # run_dir = f"runs/{args.name}/"
-    # if not os.path.exists(run_dir):
-    #     os.mkdir(run_dir)
+    with open_dict(args):
+        args.root_dir = get_original_cwd()
+    cprint(f"Current working directory : {os.getcwd()}", color='red')
+    cprint(args, color='cyan')
 
     # NOTE: we'll remove this, once the repo is ready
     if args.wandb:
-        wandb.config = {k: v for k, v in args.__dict__.items() if not k.startswith('__')}
+        wandb.config = {k: v for k, v in args.__dict__.items() if not k.startswith("__")}
         wandb.init(
             project="speech_decoding",
             # entity="nightdude",
@@ -55,7 +52,7 @@ def run(args: DictConfig) -> None:
     # -----------------------
     # NOTE: For Gwilliams dataset, dataset size is the number of speech segments
     # so that no overlapping segments are included in a single batch
-    if args.dataset == 'Gwilliams2022':
+    if args.dataset == "Gwilliams2022":
         dataset = Gwilliams2022Dataset(args)
 
         args.num_subjects = dataset.num_subjects
@@ -82,7 +79,7 @@ def run(args: DictConfig) -> None:
             else:
                 train_loader, test_loader = get_dataloaders(train_set, test_set, args, test_bsz=test_size)
 
-    elif args.dataset == 'Brennan2018':
+    elif args.dataset == "Brennan2018":
         # NOTE: takes an optional debug param force_recompute to pre-process the EEG even if it exists
         dataset = Brennan2018Dataset(args)
 
@@ -93,11 +90,14 @@ def run(args: DictConfig) -> None:
             lengths=[train_size, test_size],
             generator=g if args.reproducible else None,
         )
-        cprint(f'Number of samples: {len(train_set)} (train), {len(test_set)} (test)', color='blue')
+        cprint(
+            f"Number of samples: {len(train_set)} (train), {len(test_set)} (test)",
+            color="blue",
+        )
         train_loader, test_loader = get_dataloaders(train_set, test_set, args, g, seed_worker, test_bsz=test_size)
 
     else:
-        raise ValueError('Unknown dataset')
+        raise ValueError("Unknown dataset")
 
     # ---------------------
     #        Models
@@ -124,12 +124,17 @@ def run(args: DictConfig) -> None:
     if args.lr_scheduler == "exponential":
         scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.lr_exp_gamma)
     elif args.lr_scheduler == "step":
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
-                                                    step_size=args.epochs // args.lr_step_numsteps,
-                                                    gamma=args.lr_step_gamma)
+        scheduler = torch.optim.lr_scheduler.StepLR(
+            optimizer,
+            step_size=args.epochs // args.lr_step_numsteps,
+            gamma=args.lr_step_gamma,
+        )
     elif args.lr_scheduler == "multistep":
         scheduler = torch.optim.lr_scheduler.MultiStepLR(
-            optimizer, milestones=[int(m * args.epochs) for m in args.lr_multistep_mlstns], gamma=args.lr_step_gamma)
+            optimizer,
+            milestones=[int(m * args.epochs) for m in args.lr_multistep_mlstns],
+            gamma=args.lr_step_gamma,
+        )
     else:
         raise ValueError()
 
@@ -151,9 +156,9 @@ def run(args: DictConfig) -> None:
                 X, Y, subject_idxs = batch
             elif len(batch) == 4:
                 X, Y, subject_idxs, chunkIDs = batch
-                assert len(chunkIDs.unique()) == X.shape[0], "Duplicate segments in batch are not allowed. Aborting."
+                assert (len(chunkIDs.unique()) == X.shape[0]), "Duplicate segments in batch are not allowed. Aborting."
             else:
-                raise ValueError('Unexpected number of items from dataloader.')
+                raise ValueError("Unexpected number of items from dataloader.")
 
             X, Y = X.to(device), Y.to(device)
             # print([(s.item(), chid.item()) for s, chid in zip(subject_idxs, chunkIDs)])
@@ -192,7 +197,7 @@ def run(args: DictConfig) -> None:
                 elif len(batch) == 4:
                     X, Y, subject_idxs, chunkIDs = batch
                 else:
-                    raise ValueError('Unexpected number of items from dataloader.')
+                    raise ValueError("Unexpected number of items from dataloader.")
 
                 X, Y = X.to(device), Y.to(device)
 
@@ -218,21 +223,21 @@ def run(args: DictConfig) -> None:
 
         if args.wandb:
             performance_now = {
-                'epoch': epoch,
-                'train_loss': np.mean(train_losses),
-                'test_loss': np.mean(test_losses),
-                'trainTop1acc': np.mean(trainTop1accs),
-                'trainTop10acc': np.mean(trainTop10accs),
-                'testTop1acc': np.mean(testTop1accs),
-                'testTop10acc': np.mean(testTop10accs),
-                'lrate': optimizer.param_groups[0]['lr'],
-                'temp': loss_func.temp.item(),
+                "epoch": epoch,
+                "train_loss": np.mean(train_losses),
+                "test_loss": np.mean(test_losses),
+                "trainTop1acc": np.mean(trainTop1accs),
+                "trainTop10acc": np.mean(trainTop10accs),
+                "testTop1acc": np.mean(testTop1accs),
+                "testTop10acc": np.mean(testTop10accs),
+                "lrate": optimizer.param_groups[0]["lr"],
+                "temp": loss_func.temp.item(),
             }
             wandb.log(performance_now)
 
         scheduler.step()
 
-        torch.save(brain_encoder.state_dict(), run_dir + "model_last.pt")
+        torch.save(brain_encoder.state_dict(), "model_last.pt")
 
 
 if __name__ == "__main__":

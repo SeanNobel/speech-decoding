@@ -25,7 +25,7 @@ class SpatialAttention(nn.Module):
         k, l = a[:, 0], a[:, 1]
 
         # vectorize x- and y-positions of the sensors
-        loc = ch_locations_2d(args.dataset)
+        loc = ch_locations_2d(args)
         x, y = loc[:, 0], loc[:, 1]
 
         # make a complex-valued parameter, reshape k,l into one dimension
