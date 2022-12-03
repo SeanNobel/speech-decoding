@@ -53,12 +53,13 @@ Use the `--reproducible` CLI argument. You might need to run `export CUBLAS_WORK
 # Usage
 
 ## For EEG (Brennan et al. 2022)
-Run `python train.py --config configs/brennan2018.yml --force_recompute`.
-When `--force_recompute` flag is not set, the model just load the stred pre-processed data. This is useful if you want to run the model on exactly the same data several times.
+Run `python train.py dataset=Brennan2018 rebuild_datasets=True`.
+When `rebuild_datasets=True`, existing pre-processed M/EEG and pre-computing embeddings are used. This is useful if you want to run the model on exactly the same data and embeddings several times.
 
 ## For MEG (Gwilliams et al. 2022)
 
-Run `python train.py dataset=Gwilliams2022 multicore=True 
+Run `python train.py dataset=Gwilliams2022 rebuild_datasets=True`
+When `rebuild_datasets=True`, existing pre-processed M/EEG and pre-computing embeddings are used. This is useful if you want to run the model on exactly the same data and embeddings several times. It takes ~30 minutes to pre-process Gwilliams2022 and compute embeddings on 20 cores. Set `rebuild_datasets=False` for subsequent runs (or don't specify it, becuase by default `rebuild_datasets=False`)
 
 ## Dataset
 

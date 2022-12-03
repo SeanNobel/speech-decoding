@@ -3,7 +3,10 @@ dataset: Brennan2018     # for Gwilliams2022, override with Gwilliams2022 in CLI
 rebuild_dataset: False
 
 # ==== Training ==== #
-wandb: False
+use_wandb: False
+wandb:
+  project: "speech_decoding"
+  entity: "nightdude"
 use_sampler: True        # applicable to Gwilliams only
 reproducible: False      # NOTE: do we need it at all?
 num_workers: 8
@@ -28,19 +31,19 @@ d_drop: 0.1 # for spatial attention, drop channels within d_drop of a randomly s
 init_temperature: 5.1
 wav2vec_model: facebook/wav2vec2-large-xlsr-53 # (HuggingFace) # xlsr_53_56k (FAIR)
 
-# == Hyperparameters that datasets should share === #
+# == Data pre-processing parameters === #
 preprocs:
   audio_resample_rate: 16000 # before wav2vec
   lowpass_filter_width: 128
   brain_resample_rate: 120 # Hz
-  brain_filter_low: 1.0 # Hz
-  brain_filter_high: 60 # Hz
-  seq_len_sec: 3        # segment length in seconds
-  baseline_len_sec: 0.5 # baseline period in seconds
-  shift_brain: True
-  shift_len: 150 # ms
-  last4layers: True # if True, the brain_encoder's emsize will be 1024, not 512
-  subject_wise: True # whether we want to scale each subject's dataset individually
+  brain_filter_low: 1.0    # Hz
+  brain_filter_high: 60    # Hz
+  seq_len_sec: 3           # segment length in seconds
+  baseline_len_sec: 0.5    # baseline period in seconds
+  shift_brain: True        # whether to shift M/EEG into the future relative to audio
+  shift_len: 150           # if True, by how many ms
+  last4layers: True        # if True, the brain_encoder's emsize will be 1024, not 512
+  subject_wise: True       # whether to scale each subject's EEG dataset individually (only for Brennan2018)
   clamp: True
   clamp_lim: 20
 

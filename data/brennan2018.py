@@ -37,12 +37,12 @@ class Brennan2018Dataset(Dataset):
         self.baseline_len_sec = args.preprocs.baseline_len_sec
         self.clamp = args.preprocs.clamp
         self.clamp_lim = args.preprocs.clamp_lim
+        self.brain_filter_low = args.preprocs.brain_filter_low
+        self.brain_filter_high = args.preprocs.brain_filter_high
 
         force_recompute = args.rebuild_dataset
         last4layers = args.preprocs.last4layers
         self.subject_wise = args.preprocs.subject_wise
-        brain_filter_low = args.preprocs.brain_filter_low
-        brain_filter_high = args.preprocs.brain_filter_high
 
         Y_path = f"{self.root_dir}/data/Brennan2018/Y_embeds/embd_wav2vec.pt"
 
@@ -56,11 +56,7 @@ class Brennan2018Dataset(Dataset):
         X_path = f"{self.root_dir}/data/Brennan2018/processed_X.pt"
         if (not os.path.exists(X_path)) or force_recompute:
             cprint(f"Pre-processing EEG...", color="red")
-            self.X, srate = self.brain_preproc(
-                self.Y.shape[-1],
-                brain_filter_low,
-                brain_filter_high,
-            )
+            self.X, srate = self.brain_preproc(self.Y.shape[-1])
             torch.save(
                 {
                     "X": self.X,
@@ -215,8 +211,7 @@ class Brennan2018Dataset(Dataset):
 
         return torch.from_numpy(res_embeddings).float()
 
-    @staticmethod
-    def brain_preproc(audio_embd_len, brain_filter_low, brain_filter_high):
+    def brain_preproc(self, audio_embd_len):
         # NOTE: look at comprehension-scores.txt
         excluded_subjects = [
             "S02",
@@ -237,7 +232,7 @@ class Brennan2018Dataset(Dataset):
             "S49",
         ]
         MP = []
-        matfile_paths = natsorted(glob.glob("data/Brennan2018/raw/*.mat"))
+        matfile_paths = natsorted(glob.glob(f"{self.root_dir}/data/Brennan2018/raw/*.mat"))
 
         for i in matfile_paths:
             if not i.split(".")[0][-3:] in excluded_subjects:
@@ -268,8 +263,8 @@ class Brennan2018Dataset(Dataset):
             eeg_filtered = mne.filter.filter_data(
                 eeg_raw,
                 sfreq=fsample,
-                l_freq=brain_filter_low,
-                h_freq=brain_filter_high,
+                l_freq=self.brain_filter_low,
+                h_freq=self.brain_filter_high,
             )
 
             # NOTE: This resamples EEG from 500Hz down to around 135Hz

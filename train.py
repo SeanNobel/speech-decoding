@@ -1,14 +1,4 @@
-from constants import bar_format, device
-
-# from configs.args import args
-# if args.reproducible:
-#     from utils.reproducibility import g, seed_worker
-# else:
-#     g = None
-#     seed_worker = None
-
-g = None
-seed_worker = None
+from constants import device
 
 import os, sys
 import numpy as np
@@ -17,7 +7,7 @@ import torch.nn as nn
 from time import time
 from tqdm import tqdm
 from data.brennan2018 import Brennan2018Dataset
-from data.gwilliams2022_multicore import Gwilliams2022Dataset
+from data.gwilliams2022 import Gwilliams2022Dataset
 from models import BrainEncoder, Classifier
 from utils.get_dataloaders import get_dataloaders, get_samplers
 from utils.loss import *
@@ -25,9 +15,9 @@ from tqdm import trange
 from termcolor import cprint
 import wandb
 
-from omegaconf import DictConfig, OmegaConf, open_dict
+from omegaconf import DictConfig, open_dict
 import hydra
-from hydra.utils import get_original_cwd, to_absolute_path
+from hydra.utils import get_original_cwd
 
 
 @hydra.main(version_base=None, config_path="configs", config_name="config")
@@ -37,16 +27,21 @@ def run(args: DictConfig) -> None:
     cprint(f"Current working directory : {os.getcwd()}", color='red')
     cprint(args, color='cyan')
 
+    if args.reproducible:
+        from utils.reproducibility import g, seed_worker
+    else:
+        g = None
+        seed_worker = None
+
     # NOTE: we'll remove this, once the repo is ready
-    if args.wandb:
+    if args.use_wandb:
         wandb.config = {k: v for k, v in args.__dict__.items() if not k.startswith("__")}
         wandb.init(
-            project="speech_decoding",
-            # entity="nightdude",
+            project=args.wandb.project,
+            entity=args.wandb.entity,
             config=wandb.config,
             save_code=True,
         )
-
     # -----------------------
     #       Dataloader
     # -----------------------
@@ -54,8 +49,8 @@ def run(args: DictConfig) -> None:
     # so that no overlapping segments are included in a single batch
     if args.dataset == "Gwilliams2022":
         dataset = Gwilliams2022Dataset(args)
-
-        args.num_subjects = dataset.num_subjects
+        with open_dict(args):
+            args.num_subjects = dataset.num_subjects
 
         train_size = int(dataset.Y.shape[0] * 0.8)
         test_size = dataset.Y.shape[0] - train_size
@@ -82,6 +77,8 @@ def run(args: DictConfig) -> None:
     elif args.dataset == "Brennan2018":
         # NOTE: takes an optional debug param force_recompute to pre-process the EEG even if it exists
         dataset = Brennan2018Dataset(args)
+        with open_dict(args):
+            args.num_subjects = dataset.num_subjects
 
         train_size = int(len(dataset) * 0.8)
         test_size = len(dataset) - train_size
@@ -221,7 +218,7 @@ def run(args: DictConfig) -> None:
             f"temp: {loss_func.temp.item():.3f}",
         )
 
-        if args.wandb:
+        if args.use_wandb:
             performance_now = {
                 "epoch": epoch,
                 "train_loss": np.mean(train_losses),
