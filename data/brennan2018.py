@@ -3,7 +3,7 @@ from re import sub
 import torch
 import torchaudio
 import torchaudio.functional as F
-from torch.utils.data import Sampler
+from torch.utils.data import Sampler, Dataset
 import numpy as np
 import pandas as pd
 import glob
@@ -25,29 +25,26 @@ from sklearn.preprocessing import RobustScaler, StandardScaler
 mne.set_log_level(verbose="WARNING")
 
 
-class Brennan2018Dataset(torch.utils.data.Dataset):
+class Brennan2018Dataset(Dataset):
 
     def __init__(self, args, train=True):
         super().__init__()
 
-        self.seq_len_sec = args.preprocs["seq_len_sec"]
-        self.baseline_len_sec = args.preprocs["baseline_len_sec"]
-        self.clamp = args.preprocs["clamp"]
-        self.clamp_lim = args.preprocs["clamp_lim"]
+        self.seq_len_sec = args.preprocs.seq_len_sec
+        self.baseline_len_sec = args.preprocs.baseline_len_sec
+        self.clamp = args.preprocs.clamp
+        self.clamp_lim = args.preprocs.clamp_lim
 
-        force_recompute = args.force_recompute,
-        last4layers = args.preprocs["last4layers"]
-        mode = args.preprocs["mode"]
-        self.subject_wise = args.preprocs['subject_wise']
-        brain_filter_low = args.preprocs['brain_filter_low']
-        brain_filter_high = args.preprocs['brain_filter_high']
+        force_recompute = args.rebuild_dataset
+        last4layers = args.preprocs.last4layers
+        self.subject_wise = args.preprocs.subject_wise
+        brain_filter_low = args.preprocs.brain_filter_low
+        brain_filter_high = args.preprocs.brain_filter_high
 
         Y_path = f"data/Brennan2018/Y_embeds/embd_wav2vec.pt"
 
-        if (not os.path.exists(Y_path)) or force_recompute[0]:
-            torch.save(self.audio_preproc(
-                last4layers=last4layers
-            ), Y_path)
+        if (not os.path.exists(Y_path)) or force_recompute:
+            torch.save(self.audio_preproc(last4layers=last4layers), Y_path)
 
         # load the upsampled (to 120 Hz) embeddings (of the entire recording)
         self.Y = torch.load(Y_path)
@@ -151,9 +148,7 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
             return self.X[i][random_subject], self.Y[i], random_subject
 
     @staticmethod
-    def audio_preproc(
-        last4layers: bool
-    ):
+    def audio_preproc(last4layers: bool):
         audio_paths = natsorted(glob.glob('data/Brennan2018/audio/*.wav'))
         waveform = [torchaudio.load(path) for path in audio_paths]
 
@@ -180,7 +175,7 @@ class Brennan2018Dataset(torch.utils.data.Dataset):
         # NOTE: for the large W2V2, the embedding dim is 1024
         if last4layers:
             cprint(f'Generating audio embeddings', 'yellow', 'on_red')
-            embeddings = getW2VLastFourLayersAvg(model, waveform, mode=mode)  # torch.Size([1024, 36170])
+            embeddings = getW2VLastFourLayersAvg(model, waveform)  # torch.Size([1024, 36170])
         else:
             embeddings = model.feature_extractor(waveform).squeeze()  # (512, 36176 @16kHz) ( 512, 99712 @44.1kHz)
 
