@@ -27,7 +27,6 @@ mne.set_log_level(verbose="WARNING")
 
 
 class Brennan2018Dataset(Dataset):
-
     def __init__(self, args, train=True):
         super().__init__()
 
@@ -92,7 +91,9 @@ class Brennan2018Dataset(Dataset):
         self.seq_len_samp = int(self.seq_len_sec * srate)
 
         # length of baseline period in samples
-        self.baseline_len_samp = int(self.seq_len_samp * self.baseline_len_sec / self.seq_len_sec)
+        self.baseline_len_samp = int(
+            self.seq_len_samp * self.baseline_len_sec / self.seq_len_sec
+        )
 
         # compute the number if samples that divide evenly by the number of samples in 1 segement
         trim_len = (self.X.shape[-1] // self.seq_len_samp) * self.seq_len_samp
@@ -123,13 +124,18 @@ class Brennan2018Dataset(Dataset):
         if self.subject_wise:
             res = []
             for subjID in range(self.X.shape[0]):
-                scaler = RobustScaler().fit(self.X[subjID, :, :].T)  # NOTE: must be samples x features
+                scaler = RobustScaler().fit(
+                    self.X[subjID, :, :].T
+                )  # NOTE: must be samples x features
                 _X = torch.from_numpy(scaler.transform(self.X[subjID, :, :].T)).to(
-                    torch.float)  # must be samples x features !!!
+                    torch.float
+                )  # must be samples x features !!!
                 if self.clamp:
                     _X.clamp_(min=-self.clamp_lim, max=self.clamp_lim)
                 res.append(_X.to(torch.float))
-            return torch.stack(res).permute(0, 2, 1)  # NOTE: make (subj, ch, time) again
+            return torch.stack(res).permute(
+                0, 2, 1
+            )  # NOTE: make (subj, ch, time) again
         else:
             num_subjects = self.X.shape[0]
             T = rearrange(self.X, "s c t -> (t s) c")  # flatten subjects
@@ -143,7 +149,9 @@ class Brennan2018Dataset(Dataset):
         baseline_corrected_X = []
         # NOTE: now X is a tuple of 358 matrices of size torch.Size([subj, ch, time]))
         for chunk_id in range(len(self.X)):
-            baseline = self.X[chunk_id][..., :self.baseline_len_samp].mean(axis=-1, keepdim=True)
+            baseline = self.X[chunk_id][..., : self.baseline_len_samp].mean(
+                axis=-1, keepdim=True
+            )
             baseline_corrected_X.append(self.X[chunk_id] - baseline)
         return baseline_corrected_X
 
@@ -158,7 +166,9 @@ class Brennan2018Dataset(Dataset):
             return self.X[i][random_subject], self.Y[i], random_subject
 
     def audio_preproc(self, last4layers: bool):
-        audio_paths = natsorted(glob.glob(f"{self.root_dir}/data/Brennan2018/audio/*.wav"))
+        audio_paths = natsorted(
+            glob.glob(f"{self.root_dir}/data/Brennan2018/audio/*.wav")
+        )
         waveform = [torchaudio.load(path) for path in audio_paths]
 
         sample_rates = np.array([w[1] for w in waveform])
@@ -169,12 +179,18 @@ class Brennan2018Dataset(Dataset):
         # waveform: ( 1, 31908132 )
         waveform = torch.cat([w[0] for w in waveform], dim=1)
 
-        cprint(f"Audio before resampling: {waveform.shape}", color="yellow")  # shape of the original audio
+        cprint(
+            f"Audio before resampling: {waveform.shape}", color="yellow"
+        )  # shape of the original audio
 
         # NOTE: the base model was pre-trained on audio sampled @ 16kHz
         resample_rate = 16000
-        waveform = F.resample(waveform, sample_rate, resample_rate, lowpass_filter_width=128)
-        cprint(f"Audio after resampling: {waveform.shape}", color="red")  # shape of the resampled audio
+        waveform = F.resample(
+            waveform, sample_rate, resample_rate, lowpass_filter_width=128
+        )
+        cprint(
+            f"Audio after resampling: {waveform.shape}", color="red"
+        )  # shape of the resampled audio
         len_audio_s = waveform.shape[1] / resample_rate
         cprint(f"Audio length: {len_audio_s} s.", color="yellow")
 
@@ -184,9 +200,13 @@ class Brennan2018Dataset(Dataset):
         # NOTE: for the large W2V2, the embedding dim is 1024
         if last4layers:
             cprint(f"Generating audio embeddings", "yellow", "on_red")
-            embeddings = getW2VLastFourLayersAvg(model, waveform)  # torch.Size([1024, 36170])
+            embeddings = getW2VLastFourLayersAvg(
+                model, waveform
+            )  # torch.Size([1024, 36170])
         else:
-            embeddings = model.feature_extractor(waveform).squeeze()  # (512, 36176 @16kHz) ( 512, 99712 @44.1kHz)
+            embeddings = model.feature_extractor(
+                waveform
+            ).squeeze()  # (512, 36176 @16kHz) ( 512, 99712 @44.1kHz)
 
         embedding_srate = embeddings.shape[-1] / len_audio_s
         cprint(
@@ -232,7 +252,9 @@ class Brennan2018Dataset(Dataset):
             "S49",
         ]
         MP = []
-        matfile_paths = natsorted(glob.glob(f"{self.root_dir}/data/Brennan2018/raw/*.mat"))
+        matfile_paths = natsorted(
+            glob.glob(f"{self.root_dir}/data/Brennan2018/raw/*.mat")
+        )
 
         for i in matfile_paths:
             if not i.split(".")[0][-3:] in excluded_subjects:
@@ -306,11 +328,3 @@ class Brennan2018Dataset(Dataset):
         Y = Y[:, :-shift]  # ( 512, 99692 )
 
         return X, Y
-
-
-if __name__ == "__main__":
-    from configs.args import args
-
-    ds = Brennan2018Dataset(args)
-    print(0)
-    print(0)
