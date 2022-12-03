@@ -96,7 +96,10 @@ class Gwilliams2022Dataset(Dataset):
         self.shift_len = args.preprocs["shift_len"]
 
         # NOTE: x_done and y_done are added to args.preprocs
-        args, preproc_dir = check_preprocs(args, self.root_dir + "/")
+        args, preproc_dir = check_preprocs(
+            args,
+            f"{self.root_dir}/data/Gwilliams2022/preprocessed/",
+        )
         self.x_path = preproc_dir + "x_dict.npy"
         self.y_path = preproc_dir + "y_dict.npy"
         real_dur_path = preproc_dir + "real_durations.npy"
@@ -109,12 +112,14 @@ class Gwilliams2022Dataset(Dataset):
             self.real_durations = np.load(real_dur_path, allow_pickle=True).item()
         else:
             self.real_durations = {}  # will be updated in self.brain_preproc
-            self.X = self.brain_preproc(args.num_subjects)  # ???
+            self.X = self.brain_preproc(
+                27
+            )  # NOTE: Kind of ugly, but this is what is should be, I guess
 
             np.save(real_dur_path, self.real_durations)
             args.preprocs.update({"x_done": True})
             with open(preproc_dir + "settings.json", "w") as f:
-                json.dump(args.preprocs, f)
+                json.dump(dict(args.preprocs), f)
 
         # -------------------------------------------
         #     Make Y (audio embeddings) if it doesn't already exist
@@ -124,7 +129,7 @@ class Gwilliams2022Dataset(Dataset):
             with open_dict(args):
                 args.preprocs.y_done = True
             with open(preproc_dir + "settings.json", "w") as f:
-                json.dump(args.preprocs, f)
+                json.dump(dict(args.preprocs), f)
         else:
             self.Y = np.load(self.y_path, allow_pickle=True).item()
 

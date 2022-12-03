@@ -1,1 +1,0 @@
-{"audio_resample_rate": 16000, "lowpass_filter_width": 128, "brain_resample_rate": 120, "brain_filter_low": 1.0, "brain_filter_high": 60, "seq_len_sec": 3, "baseline_len_sec": 0.5, "shift_brain": true, "shift_len": 150, "last4layers": true, "subject_wise": true, "clamp": true, "clamp_lim": 20, "x_done": false, "y_done": false}
