@@ -69,7 +69,7 @@ class Gwilliams2022Dataset(Dataset):
 
     def __init__(self, args):
         super().__init__()
-
+        self.wav2vec_model = args.wav2vec_model
         force_recompute = args.rebuild_dataset
         self.root_dir = f"{args.root_dir}/data/Gwilliams2022/preprocessed/"
         self.brain_orig_rate = 1000
@@ -358,14 +358,14 @@ class Gwilliams2022Dataset(Dataset):
 
     @torch.no_grad()
     def audio_preproc(self):
-        wav2vec = load_wav2vec_model()
+        wav2vec = load_wav2vec_model(self.wav2vec_model)
         wav2vec.eval()
 
         task_prefixes = ["lw1", "cable", "easy", "the"]
 
         Y = {}
-        assert os.path.exists(
-            'data/Gwilliams2022/stimuli/audio'), "The path `data/Gwilliams2022/stimuli/audio` DOESN'T EXIST."
+        assert os.path.exists(f"{self.root_dir}/data/Gwilliams2022/stimuli/audio"
+                             ), "The path `data/Gwilliams2022/stimuli/audio` DOESN'T EXIST."
         for task_idx in self.real_durations.keys():  # 4 tasks for each subject
             task_idx_ID = int(task_idx[-1])
 
