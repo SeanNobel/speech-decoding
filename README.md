@@ -2,7 +2,7 @@
 
 Paper: https://arxiv.org/pdf/2208.12266.pdf
 
-<div align="center"><img src="overview_meta2022.png" width=300></div>
+<div align="center"><img src="assets/overview_meta2022.png" width=300></div>
 
 ## Status
 
@@ -10,19 +10,19 @@ Works for Gwilliams2022 dataset and Brennan2018 dataset.
 
 ## TODOs
 
-- [x] Full reproducibility support. Will be useful for HP tuning. 
-- [x] Match accuracy to numbers reported in the paper. 
+- [ ] Full reproducibility support. Will be useful for HP tuning. 
+- [ ] Match accuracy to numbers reported in the paper. 
 
 # Usage
 
 ## For EEG (Brennan et al. 2022)
 Run `python train.py dataset=Brennan2018 rebuild_datasets=True`.
-When `rebuild_datasets=True`, existing pre-processed M/EEG and pre-computing embeddings are used. This is useful if you want to run the model on exactly the same data and embeddings several times.
+When `rebuild_datasets=False`, existing pre-processed M/EEG and pre-computing embeddings are used. This is useful if you want to run the model on exactly the same data and embeddings several times. Otherwise, the both audio embeddings are pre-computed and M/EEG data are pre-processed before training begins.
 
 ## For MEG (Gwilliams et al. 2022)
 
 Run `python train.py dataset=Gwilliams2022 rebuild_datasets=True`
-When `rebuild_datasets=True`, existing pre-processed M/EEG and pre-computing embeddings are used. This is useful if you want to run the model on exactly the same data and embeddings several times. It takes ~30 minutes to pre-process Gwilliams2022 and compute embeddings on 20 cores. Set `rebuild_datasets=False` for subsequent runs (or don't specify it, becuase by default `rebuild_datasets=False`)
+When `rebuild_datasets=False`, existing pre-processed M/EEG and pre-computing embeddings are used. This is useful if you want to run the model on exactly the same data and embeddings several times. It takes ~30 minutes to pre-process Gwilliams2022 and compute embeddings on 20 cores. Set `rebuild_datasets=False` for subsequent runs (or don't specify it, becuase by default `rebuild_datasets=False`). Otherwise, the both audio embeddings are pre-computed and M/EEG data are pre-processed before training begins.
 
 ## Monitoring training progress with W&B
 
@@ -43,7 +43,3 @@ To do that, set `entity` and `project` in the `wandb` section of `config.yaml`.
 - Dataset https://deepblue.lib.umich.edu/data/concern/data_sets/bg257f92t
 
 You will need `S01.mat` to `S49.mat` placed under `data/Brennan2018/raw/` to run the code.
-
-## Wav2Vec 2.0
-
-`wav2vec2-large-xlsr-53` model was used for speech embedding. You don't have to download anything, thanks to [HuggingFace](https://huggingface.co/facebook/wav2vec2-large-xlsr-53).

@@ -118,7 +118,7 @@ class Brennan2018Dataset(Dataset):
     def scaleAndClamp(self):
         """
         returns:
-            X (size=subj, chan, time) scaled and clampted channel-wise, subject-wise
+            X (size=subj, chan, time) scaled channel-wise, subject-wise and clamped 
         """
         if self.subject_wise:
             res = []
