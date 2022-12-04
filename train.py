@@ -33,15 +33,6 @@ def run(args: DictConfig) -> None:
         g = None
         seed_worker = None
 
-    # NOTE: we'll remove this, once the repo is ready
-    if args.use_wandb:
-        wandb.config = {k: v for k, v in args.__dict__.items() if not k.startswith("__")}
-        wandb.init(
-            project=args.wandb.project,
-            entity=args.wandb.entity,
-            config=wandb.config,
-            save_code=True,
-        )
     # -----------------------
     #       Dataloader
     # -----------------------
@@ -64,6 +55,7 @@ def run(args: DictConfig) -> None:
             # NOTE: currently not supporting reproducibility
             train_loader, test_loader = get_samplers(train_set, test_set, args, test_bsz=test_size)
         else:
+            # FIXME: maybe either get rid of reproducibility, or remove this?
             if args.reproducible:
                 train_loader, test_loader = get_dataloaders(train_set,
                                                             test_set,
@@ -95,6 +87,15 @@ def run(args: DictConfig) -> None:
 
     else:
         raise ValueError("Unknown dataset")
+
+    if args.use_wandb:
+        wandb.config = {k: v for k, v in dict(args).items() if k not in ['root_dir', 'wandb']}
+        wandb.init(
+            project=args.wandb.project,
+            entity=args.wandb.entity,
+            config=wandb.config,
+            save_code=True,
+        )
 
     # ---------------------
     #        Models

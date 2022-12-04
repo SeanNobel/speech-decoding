@@ -5,11 +5,11 @@ rebuild_dataset: False
 # ==== Training ==== #
 use_wandb: False
 wandb:
-  project: "speech_decoding"
-  entity: "nightdude"
+  project: speech_decoding
+  entity: nightdude
 use_sampler: True        # applicable to Gwilliams only
 reproducible: False      # NOTE: do we need it at all?
-num_workers: 8
+num_workers: 6
 batch_size: 64
 updates: 1200
 lr: 3e-4
@@ -26,7 +26,7 @@ D1: 270
 D2: 320
 F: 512 # NOTE: because if you set last4layers=False, then it's set to 1024 in the dataset class
 K: 32
-d_drop: 0.1 # for spatial attention, drop channels within d_drop of a randomly selected channel
+d_drop: 0.3 # for spatial attention, drop channels within d_drop of a randomly selected channel
 
 init_temperature: 5.1
 wav2vec_model: facebook/wav2vec2-large-xlsr-53 # (HuggingFace) # xlsr_53_56k (FAIR)
