@@ -20,47 +20,8 @@ from termcolor import cprint
 from pprint import pprint
 from einops import rearrange
 from sklearn.preprocessing import RobustScaler
-from constants import bar_format
-from multiprocessing import Pool, Manager
-from itertools import repeat
-from pprint import pprint
 
 mne.set_log_level(verbose="WARNING")
-
-manager = Manager()
-glob_real_durations = manager.dict()
-
-
-def to_second(onset):  # pandas Timestamp object
-    return onset.minute * 60 + onset.second + onset.microsecond * 1e-6
-
-
-def trim_nosound_regions(meg_raw, df_annot):
-    prev_sound_id = -1.0
-    starts_ends_t = []
-    for t, desc in enumerate(df_annot.description):
-        desc = ast.literal_eval(desc)
-        if desc['sound_id'] != prev_sound_id:
-            prev_sound_id = desc['sound_id']
-
-            starts_ends_t += [t - 1, t]
-
-    starts_ends_t = starts_ends_t[1:] + [t]
-    starts_ends_t = np.reshape(starts_ends_t, (-1, 2))
-
-    meg_trimmed = []
-    real_durations = []
-    for start_t, end_t in starts_ends_t:
-        start = to_second(df_annot.onset[start_t])
-        end = to_second(df_annot.onset[end_t]) + df_annot.duration[end_t]
-
-        meg_trimmed.append(meg_raw[:, int(start * 1000):int(end * 1000)])
-
-        real_durations.append(end - start)
-
-    meg_trimmed = np.concatenate(meg_trimmed, axis=1)
-
-    return meg_trimmed, real_durations
 
 
 class Gwilliams2022Dataset(torch.utils.data.Dataset):
@@ -145,7 +106,7 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
     def batchfy(self):
         # self.X.keys() -> ['subject01_sess0_task0', ..., 'subject27_sess1_task3']
         # self.Y.keys() -> ['task0', 'task1', 'task2', 'task3']
-        # cprint([i.split('_')[-1] for i in natsorted(self.X.keys())], color='green')
+
         assert natsorted(self.X.keys()) == list(self.X.keys()), 'self.X.keys() is not sorted'
 
         # ------------------------------------------------------
@@ -236,116 +197,58 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
         else:
             return data[:, shift:]
 
-    @staticmethod
-    def _brain_preproc(dat):
-        subject_idx, d, real_durations, session_idx, task_idx = dat
-        num_channels = d['num_channels']
-        brain_orig_rate = d['brain_orig_rate']
-        brain_filter_low = d['brain_filter_low']
-        brain_filter_high = d['brain_filter_high']
-        brain_resample_rate = d['brain_resample_rate']
-        x_path = d['x_path']
-
-        description = f"subject{str(subject_idx+1).zfill(2)}_sess{session_idx}_task{task_idx}"
-
-        bids_path = mne_bids.BIDSPath(
-            subject=str(subject_idx + 1).zfill(2),
-            # '01', '02', ...
-            session=str(session_idx),
-            task=str(task_idx),
-            datatype="meg",
-            root="data/Gwilliams2022/",
-        )
-        try:
-            raw = mne_bids.read_raw_bids(bids_path)
-        except:
-            cprint("No .con data was found", color="yellow")
-            return 1
-
-        cprint(description, color="cyan")
-        df = raw.to_data_frame()
-        meg_raw = np.stack([df[key] for key in df.keys() if "MEG" in key])  # ( 224, 396000 )
-        # NOTE: (kind of) confirmed that last 16 channels are REF
-        meg_raw = meg_raw[:num_channels]  # ( 208, 396000 )
-
-        df_annot = raw.annotations.to_data_frame()
-        meg_trimmed, _real_durations = trim_nosound_regions(meg_raw, df_annot)  # ( 208, <396000 )
-
-        # update_real_durations
-        task_str = f"task{task_idx}"
-        if task_str in real_durations.keys():
-            if not np.allclose(real_durations[task_str], _real_durations):
-                print(yellow("Real durations are different"))
-                print(yellow(_real_durations))
-                print(yellow(real_durations[task_str]))
-
-        real_durations.update({task_str: _real_durations})
-
-        meg_filtered = mne.filter.filter_data(
-            meg_trimmed,
-            sfreq=brain_orig_rate,
-            l_freq=brain_filter_low,
-            h_freq=brain_filter_high,
-        )
-
-        # To 120 Hz
-        meg_resampled = mne.filter.resample(
-            meg_filtered,
-            down=brain_orig_rate / brain_resample_rate,
-        )  # ( 208, 37853 )
-
-        # scaler = RobustScaler().fit(meg_resampled)
-        # meg_scaled = scaler.transform(meg_resampled)
-        # cprint(meg_scaled.shape, color="cyan")
-
-        # save to disk
-        # X = np.load(x_path, allow_pickle=True).item()
-        # X.update({description: meg_resampled})
-        # np.save(x_path, X)
-
-        np.save(f'data/Gwilliams2022/preprocessed/0/__{description}', meg_resampled)
-        return 0
-
     def brain_preproc(self, num_subjects, num_channels=208):
-        consts = dict(
-            num_channels=num_channels,
-            brain_orig_rate=self.brain_orig_rate,
-            brain_filter_low=self.brain_filter_low,
-            brain_filter_high=self.brain_filter_high,
-            brain_resample_rate=self.brain_resample_rate,
-            x_path=self.x_path,
-        )
+        np.save(self.x_path, {})
+        for subject_idx in range(num_subjects):
+            for session_idx in range(2):  # 2 sessions for each subject (but sometimes only 1 or even 0)
+                for task_idx in range(4):  # 4 tasks for each subject
 
-        subj_list = []
-        for subj in range(num_subjects):
-            for session_idx in range(2):
-                for task_idx in range(4):
-                    subj_list.append((subj, consts, glob_real_durations, session_idx, task_idx))
+                    description = f"subject{str(subject_idx+1).zfill(2)}_sess{session_idx}_task{task_idx}"
+                    cprint(description, color="cyan")
 
-        # subj_list = [(i, c, rd) for i, c, rd in zip(range(num_subjects), repeat(consts), repeat(real_durations))]
-        with Pool(20) as p:
-            res = list(
-                tqdm(
-                    p.imap(Gwilliams2022Dataset._brain_preproc, subj_list),
-                    total=len(subj_list),
-                    bar_format=bar_format,
-                ))
-        print('no_errors')
+                    bids_path = mne_bids.BIDSPath(
+                        subject=str(subject_idx + 1).zfill(2),
+                        # '01', '02', ...
+                        session=str(session_idx),
+                        task=str(task_idx),
+                        datatype="meg",
+                        root="data/Gwilliams2022/",
+                    )
+                    try:
+                        raw = mne_bids.read_raw_bids(bids_path)
+                    except:
+                        cprint("No .con data was found", color="yellow")
+                        continue
 
-        # NOTE: return glob_real_durations (which is a global shared struct) into self.real_durations
-        self.real_durations = dict(glob_real_durations)
+                    df = raw.to_data_frame()
+                    meg_raw = np.stack([df[key] for key in df.keys() if "MEG" in key])  # ( 224, 396000 )
+                    # NOTE: (kind of) confirmed that last 16 channels are REF
+                    meg_raw = meg_raw[:num_channels]  # ( 208, 396000 )
 
-        # NOTE: assemble files into one and clean up
-        fnames = [f for f in os.listdir('data/Gwilliams2022/preprocessed/0/') if f.startswith('__')]
-        X = dict()
-        for fname in natsorted(fnames):  # NOTE: data MUST be task0, ... taskN, task0, ..., taskN (N=4)
-            X[fname[2:-4]] = np.load(f'data/Gwilliams2022/preprocessed/0/{fname}', allow_pickle=True)
-        np.save(self.x_path, X)
-        pprint(self.real_durations)
+                    df_annot = raw.annotations.to_data_frame()
+                    meg_trimmed, real_durations = self.trim_nosound_regions(meg_raw, df_annot)  # ( 208, <396000 )
+                    self.update_real_durations(real_durations, task_idx)
 
-        cprint('removing temp files for EEG data', color='green')
-        for fname in fnames:
-            os.remove(f'data/Gwilliams2022/preprocessed/0/{fname}')
+                    meg_filtered = mne.filter.filter_data(
+                        meg_trimmed,
+                        sfreq=self.brain_orig_rate,
+                        l_freq=self.brain_filter_low,
+                        h_freq=self.brain_filter_high,
+                    )
+
+                    # To 120 Hz
+                    meg_resampled = mne.filter.resample(meg_filtered,
+                                                        down=self.brain_orig_rate /
+                                                        self.brain_resample_rate)  # ( 208, 37853 )
+
+                    # scaler = RobustScaler().fit(meg_resampled)
+                    # meg_scaled = scaler.transform(meg_resampled)
+                    # cprint(meg_scaled.shape, color="cyan")
+
+                    # save to disk
+                    X = np.load(self.x_path, allow_pickle=True).item()
+                    X.update({description: meg_resampled})
+                    np.save(self.x_path, X)
 
         return X
 
@@ -359,16 +262,15 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
         Y = {}
         assert os.path.exists(
             'data/Gwilliams2022/stimuli/audio'), "The path `data/Gwilliams2022/stimuli/audio` DOESN'T EXIST."
-        for task_idx in self.real_durations.keys():  # 4 tasks for each subject
-            task_idx_ID = int(task_idx[-1])
+        for task_idx in range(4):  # 4 tasks for each subject
 
-            audio_paths = natsorted(glob.glob(f"data/Gwilliams2022/stimuli/audio/{task_prefixes[task_idx_ID]}*.wav"))
+            audio_paths = natsorted(glob.glob(f"data/Gwilliams2022/stimuli/audio/{task_prefixes[task_idx]}*.wav"))
 
             audio_raw = []
             for f, path in enumerate(audio_paths):
                 waveform, sample_rate = torchaudio.load(path)
 
-                cutoff = int(sample_rate * self.real_durations[task_idx][f])
+                cutoff = int(sample_rate * self.real_durations[f"task{task_idx}"][f])
                 if waveform.shape[1] > cutoff:
                     waveform = waveform[:, :cutoff]
                 else:
@@ -403,11 +305,52 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
 
             print(audio_raw.shape)
 
-            Y.update({task_idx: audio_raw})
+            Y.update({f"task{task_idx}": audio_raw})
 
         np.save(self.y_path, Y)
 
         return Y
+
+    @staticmethod
+    def to_second(onset):  # pandas Timestamp object
+        return onset.minute * 60 + onset.second + onset.microsecond * 1e-6
+
+    def trim_nosound_regions(self, meg_raw, df_annot):
+        prev_sound_id = -1.0
+        starts_ends_t = []
+        for t, desc in enumerate(df_annot.description):
+            desc = ast.literal_eval(desc)
+            if desc['sound_id'] != prev_sound_id:
+                prev_sound_id = desc['sound_id']
+
+                starts_ends_t += [t - 1, t]
+
+        starts_ends_t = starts_ends_t[1:] + [t]
+        starts_ends_t = np.reshape(starts_ends_t, (-1, 2))
+
+        meg_trimmed = []
+        real_durations = []
+        for start_t, end_t in starts_ends_t:
+            start = self.to_second(df_annot.onset[start_t])
+            end = self.to_second(df_annot.onset[end_t]) + df_annot.duration[end_t]
+
+            meg_trimmed.append(meg_raw[:, int(start * 1000):int(end * 1000)])
+
+            real_durations.append(end - start)
+
+        meg_trimmed = np.concatenate(meg_trimmed, axis=1)
+
+        return meg_trimmed, real_durations
+
+    def update_real_durations(self, real_durations, task_idx) -> None:
+        task_str = f"task{task_idx}"
+        if task_str in self.real_durations.keys():
+            if not np.allclose(self.real_durations[task_str], real_durations):
+                print(yellow("Real durations are different"))
+                print(yellow(real_durations))
+                print(yellow(self.real_durations[task_str]))
+
+        self.real_durations.update({task_str: real_durations})
 
     def _batchfy(self):
         """

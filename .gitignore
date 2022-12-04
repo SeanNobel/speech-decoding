@@ -3,11 +3,15 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Jupyter Notebook
+# Jupyter
 .ipynb_checkpoints
+tests.ipynb
+sandbox.ipynb
+cosine_similarity.ipynb
 
 # VS Code
 .vscode/
+outputs/
 
 # Data
 data/Brennan2018/audio/
@@ -22,20 +26,11 @@ data/Broderick2018/
 data/Gwilliams2022/
 !data/Gwilliams2022/.gitkeep
 
-# Runs
-runs/*
-!runs/.gitkeep
-
-# Notebooks
-tests.ipynb
-sandbox.ipynb
-cosine_similarity.ipynb
-
+# Run outputs and temp files
+outputs/
 tmp/
 
+# Micellaneous
 *.pt
-wandb
 train.sh
-README_MY.md
-debug.py
 *_debug*

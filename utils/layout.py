@@ -3,7 +3,9 @@ import numpy as np
 import torch
 
 
-def ch_locations_2d(dataset_name):
+def ch_locations_2d(args):
+    dataset_name, root_dir = args.dataset, args.root_dir
+
     if dataset_name == "Brennan2018":
         montage = mne.channels.make_standard_montage("easycap-M10")
         info = mne.create_info(ch_names=montage.ch_names, sfreq=512., ch_types="eeg")
@@ -16,7 +18,13 @@ def ch_locations_2d(dataset_name):
         loc = np.delete(loc, 28, axis=0)  # ( 60, 2 )
 
     elif dataset_name == "Gwilliams2022":
-        bids_path = mne_bids.BIDSPath(subject='01', session='0', task='0', datatype="meg", root='data/Gwilliams2022/')
+        bids_path = mne_bids.BIDSPath(
+            subject='01',
+            session='0',
+            task='0',
+            datatype="meg",
+            root=f'{root_dir}/data/Gwilliams2022/',
+        )
         raw = mne_bids.read_raw_bids(bids_path)
 
         layout = mne.channels.find_layout(raw.info, ch_type="meg")

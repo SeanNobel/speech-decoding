@@ -25,7 +25,7 @@ class SpatialAttention(nn.Module):
         k, l = a[:, 0], a[:, 1]
 
         # vectorize x- and y-positions of the sensors
-        loc = ch_locations_2d(args.dataset)
+        loc = ch_locations_2d(args)
         x, y = loc[:, 0], loc[:, 1]
 
         # make a complex-valued parameter, reshape k,l into one dimension
@@ -234,49 +234,3 @@ class Classifier(nn.Module):
             raise
 
         return top1accuracy, top10accuracy
-
-
-if __name__ == '__main__':
-    from configs.args import args
-
-    batch_size = 2
-
-    # torch.autograd.set_detect_anomaly(True)
-
-    brain_encoder = BrainEncoder(args).to(device)
-    # brain_encoder = SpatialAttention().cuda()
-    # brain_encoder = SubjectBlock().cuda()
-    # brain_encoder_ = SpatialAttentionVer1(
-    #     brain_encoder.z_re.clone(), brain_encoder.z_im.clone()
-    # ).cuda()
-
-    X = torch.rand(batch_size, 208, 256).to(device)
-    X.requires_grad = False
-
-    subject_idxs = torch.randint(args.num_subjects, size=(batch_size,))
-
-    # spatial_attention = SpatialAttention(D1=args.D1,
-    #                                      K=args.K,
-    #                                      dataset_name=args.dataset).to(device)
-    # spatial_attention_x = SpatialAttentionX(
-    #     D1=args.D1, K=args.K, dataset_name=args.dataset).to(device)
-
-    # output = spatial_attention(X)
-    # output_x = spatial_attention_x(X)
-
-    # print(torch.equal(output, output_x))
-
-    Z = brain_encoder(X, subject_idxs)
-
-    # print(torch.equal(Z, Z_))
-
-    # print((Z - Z_).sum())
-
-    # stime = time()
-    # grad = torch.autograd.grad(outputs=Z,
-    #                            inputs=X,
-    #                            grad_outputs=torch.ones_like(Z),
-    #                            create_graph=True,
-    #                            retain_graph=True,
-    #                            only_inputs=True)[0]
-    # print(f"grad {time() - stime}")
