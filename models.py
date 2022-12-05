@@ -117,8 +117,6 @@ class SubjectBlock_proto(nn.Module):
         self.D1 = args.D1
         self.K = args.K
         self.spatial_attention = SpatialAttention(args)
-        # self.spatial_attention = SpatialAttentionVer2(args)
-        # self.spatial_attention = SpatialAttentionVer1()
         self.conv = nn.Conv1d(in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1)
 
         # NOTE: The below implementations are equivalent to learning a matrix:
@@ -206,8 +204,8 @@ class BrainEncoder(nn.Module):
         self.K = args.K
         self.dataset_name = args.dataset
 
-        # self.subject_block = SubjectBlock(args)
-        self.subject_block = SubjectBlock_proto(args)
+        self.subject_block = SubjectBlock(args)
+        # self.subject_block = SubjectBlock_proto(args)
         cprint("USING THE OLD IMPLEMENTATION OF THE SUBJECT BLOCK", 'red', 'on_blue', attrs=['bold'])
 
         self.conv_blocks = nn.Sequential()

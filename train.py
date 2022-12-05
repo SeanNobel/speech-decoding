@@ -1,6 +1,6 @@
 from constants import device
 
-import os, sys
+import os, sys, random
 import numpy as np
 import torch
 import torch.nn as nn
@@ -14,6 +14,7 @@ from utils.loss import *
 from tqdm import trange
 from termcolor import cprint
 import wandb
+from utils.reproducibility import seed_worker
 
 from omegaconf import DictConfig, open_dict
 import hydra
@@ -22,16 +23,24 @@ from hydra.utils import get_original_cwd
 
 @hydra.main(version_base=None, config_path="configs", config_name="config")
 def run(args: DictConfig) -> None:
+
+    # NOTE: We do need it (IMHO).
+    if args.reproducible:
+        os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+        torch.use_deterministic_algorithms(True)
+        random.seed(0)
+        np.random.seed(0)
+        torch.manual_seed(0)
+        g = torch.Generator()
+        g.manual_seed(0)
+    else:
+        g = None
+        seed_worker = None
+
     with open_dict(args):
         args.root_dir = get_original_cwd()
     cprint(f"Current working directory : {os.getcwd()}", color='red')
     cprint(args, color='cyan')
-
-    if args.reproducible:
-        from utils.reproducibility import g, seed_worker
-    else:
-        g = None
-        seed_worker = None
 
     # -----------------------
     #       Dataloader
@@ -48,7 +57,7 @@ def run(args: DictConfig) -> None:
         train_set, test_set = torch.utils.data.random_split(
             dataset,
             lengths=[train_size, test_size],
-            generator=g if args.reproducible else None,
+            generator=g,
         )
 
         if args.use_sampler:
@@ -77,7 +86,7 @@ def run(args: DictConfig) -> None:
         train_set, test_set = torch.utils.data.random_split(
             dataset,
             lengths=[train_size, test_size],
-            generator=g if args.reproducible else None,
+            generator=g,
         )
         cprint(
             f"Number of samples: {len(train_set)} (train), {len(test_set)} (test)",
