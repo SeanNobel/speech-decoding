@@ -29,8 +29,11 @@ data/Gwilliams2022/
 # Run outputs and temp files
 outputs/
 tmp/
+runs/
+wandb/
 
 # Micellaneous
 *.pt
 train.sh
 *_debug*
+nohup.out
