@@ -93,10 +93,10 @@ class SpatialDropout(nn.Module):
 
 
 class SubjectBlock(nn.Module):
-    def __init__(self, args, layout_fn):
+    def __init__(self, args, num_subjects, layout_fn):
         super(SubjectBlock, self).__init__()
 
-        self.num_subjects = args.num_subjects
+        self.num_subjects = num_subjects
         self.D1 = args.D1
         self.K = args.K
         self.spatial_attention = SpatialAttention(args, layout_fn)
@@ -215,25 +215,25 @@ class ConvBlock(nn.Module):
 
 
 class BrainEncoder(nn.Module):
-    def __init__(self, args, layout_fn=None):
+    def __init__(self, args, num_subjects=None, layout_fn=None):
         super(BrainEncoder, self).__init__()
 
-        self.num_subjects = args.num_subjects
+        self.num_subjects = args.num_subjects if num_subjects is None else num_subjects
         self.D1 = args.D1
         self.D2 = args.D2
-        self.F = args.F if not args.preprocs["last4layers"] else 1024
+        self.F = args.F  # if not args.preprocs["last4layers"] else 1024
         self.K = args.K
         self.dataset_name = args.dataset
 
         if layout_fn is None:
             layout_fn = ch_locations_2d
-        self.subject_block = SubjectBlock(args, layout_fn)
-        cprint(
-            "USING THE OLD IMPLEMENTATION OF THE SUBJECT BLOCK",
-            "red",
-            "on_blue",
-            attrs=["bold"],
-        )
+        self.subject_block = SubjectBlock(args, self.num_subjects, layout_fn)
+        # cprint(
+        #     "USING THE OLD IMPLEMENTATION OF THE SUBJECT BLOCK",
+        #     "red",
+        #     "on_blue",
+        #     attrs=["bold"],
+        # )
 
         self.conv_blocks = nn.Sequential()
         for k in range(5):
@@ -242,12 +242,14 @@ class BrainEncoder(nn.Module):
         self.conv_final1 = nn.Conv1d(
             in_channels=self.D2,
             out_channels=2 * self.D2,
-            kernel_size=1,
+            kernel_size=args.final_kernel_size,
+            stride=args.final_stride,
         )
         self.conv_final2 = nn.Conv1d(
             in_channels=2 * self.D2,
             out_channels=self.F,
-            kernel_size=1,
+            kernel_size=args.final_kernel_size,
+            stride=args.final_stride,
         )
 
     def forward(self, X, subject_idxs):
@@ -272,8 +274,8 @@ class Classifier(nn.Module):
 
         batch_size = Z.size(0)
         diags = torch.arange(batch_size).to(device)
-        x = Z.view(batch_size, -1)
-        y = Y.view(batch_size, -1)
+        x = Z.reshape(batch_size, -1)
+        y = Y.reshape(batch_size, -1)
 
         # x_ = rearrange(x, 'b f -> 1 b f')
         # y_ = rearrange(y, 'b f -> b 1 f')
