@@ -206,7 +206,7 @@ class BrainEncoder(nn.Module):
 
         self.subject_block = SubjectBlock(args)
         # self.subject_block = SubjectBlock_proto(args)
-        cprint("USING THE OLD IMPLEMENTATION OF THE SUBJECT BLOCK", 'red', 'on_blue', attrs=['bold'])
+        # cprint("USING THE OLD IMPLEMENTATION OF THE SUBJECT BLOCK", 'red', 'on_blue', attrs=['bold'])
 
         self.conv_blocks = nn.Sequential()
         for k in range(5):

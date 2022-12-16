@@ -12,6 +12,7 @@ Works for Gwilliams2022 dataset and Brennan2018 dataset.
 
 - [ ] Full reproducibility support. Will be useful for HP tuning. 
 - [ ] Match accuracy to numbers reported in the paper. 
+- [ ] Work with huge memory consumption issue in Gwilliams multiprocessing
 
 # Usage
 

@@ -36,7 +36,6 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
         self.seq_len_samp = self.brain_resample_rate * args.preprocs["seq_len_sec"]
         self.clamp = args.preprocs["clamp"]
         self.clamp_lim = args.preprocs["clamp_lim"]
-        self.preceding_chunk_for_baseline = args.preprocs["preceding_chunk_for_baseline"]
         self.baseline_len_samp = int(self.brain_resample_rate * args.preprocs["baseline_len_sec"])
 
         self.audio_resample_rate = args.preprocs["audio_resample_rate"]
@@ -124,7 +123,7 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
 
             X = self.data_reform(X, self.seq_len_samp)  # ( num_segment=~500, ch=208, len=360 )
 
-            X = baseline_correction_single(X, self.baseline_len_samp, self.preceding_chunk_for_baseline)
+            X = baseline_correction_single(X, self.baseline_len_samp)
 
             key_wo_task = '_'.join(key.split('_')[:-1])  # e.g. 'subject01_sess0_task0' -> 'subject01_sess0'
             if not key_wo_task in X_dict.keys():
@@ -207,8 +206,7 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
                     cprint(description, color="cyan")
 
                     bids_path = mne_bids.BIDSPath(
-                        subject=str(subject_idx + 1).zfill(2),
-                        # '01', '02', ...
+                        subject=str(subject_idx + 1).zfill(2), # '01', '02', ...
                         session=str(session_idx),
                         task=str(task_idx),
                         datatype="meg",
@@ -226,24 +224,28 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
                     meg_raw = meg_raw[:num_channels]  # ( 208, 396000 )
 
                     df_annot = raw.annotations.to_data_frame()
-                    meg_trimmed, real_durations = self.trim_nosound_regions(meg_raw, df_annot)  # ( 208, <396000 )
-                    self.update_real_durations(real_durations, task_idx)
+                    # meg_trimmed, real_durations = self.trim_nosound_regions(meg_raw, df_annot)  # ( 208, <396000 )
+                    # self.update_real_durations(real_durations, task_idx)
+                    meg_onsets = [self.to_second(onset) for onset in df_annot.onset]
+                    
+                    speech_onsets = self.get_speech_onsets(df_annot)
+                    
+                    print(meg_onsets)
+                    print(speech_onsets)
+                    sys.exit()
 
                     meg_filtered = mne.filter.filter_data(
-                        meg_trimmed,
+                        meg_raw,
                         sfreq=self.brain_orig_rate,
                         l_freq=self.brain_filter_low,
                         h_freq=self.brain_filter_high,
                     )
 
                     # To 120 Hz
-                    meg_resampled = mne.filter.resample(meg_filtered,
-                                                        down=self.brain_orig_rate /
-                                                        self.brain_resample_rate)  # ( 208, 37853 )
-
-                    # scaler = RobustScaler().fit(meg_resampled)
-                    # meg_scaled = scaler.transform(meg_resampled)
-                    # cprint(meg_scaled.shape, color="cyan")
+                    meg_resampled = mne.filter.resample(
+                        meg_filtered,
+                        down=self.brain_orig_rate / self.brain_resample_rate
+                    )  # ( 208, 37853 )
 
                     # save to disk
                     X = np.load(self.x_path, allow_pickle=True).item()
@@ -277,10 +279,12 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
                     print(yellow("No audio cutoff"))
 
                 # Upsample to 16000Hz
-                waveform = F.resample(waveform,
-                                      orig_freq=sample_rate,
-                                      new_freq=self.audio_resample_rate,
-                                      lowpass_filter_width=self.lowpass_filter_width)
+                waveform = F.resample(
+                    waveform,
+                    orig_freq=sample_rate,
+                    new_freq=self.audio_resample_rate,
+                    lowpass_filter_width=self.lowpass_filter_width
+                )
                 cprint(f"Audio after resampling: {waveform.shape}", color="cyan")
 
                 if self.last4layers:
@@ -314,33 +318,55 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
     @staticmethod
     def to_second(onset):  # pandas Timestamp object
         return onset.minute * 60 + onset.second + onset.microsecond * 1e-6
+    
+    @staticmethod
+    def get_speech_onsets(df_annot):
+        """
+        Increment speech onsets that come for each separate audio file.
+        """
+        df_annot = pd.DataFrame(df_annot.description.apply(eval).to_list())
 
-    def trim_nosound_regions(self, meg_raw, df_annot):
-        prev_sound_id = -1.0
-        starts_ends_t = []
-        for t, desc in enumerate(df_annot.description):
-            desc = ast.literal_eval(desc)
-            if desc['sound_id'] != prev_sound_id:
-                prev_sound_id = desc['sound_id']
+        _speech_onsets = df_annot[0]['start'].to_numpy()
+        speech_onsets = np.zeros_like(_speech_onsets)
+        base = 0
+        
+        for i in range(len(speech_onsets)):
+            speech_onsets[i] = base + _speech_onsets[i]
+            # NOTE: avoid idx out of range at the final idx
+            try:
+                if _speech_onsets[i+1] < _speech_onsets[i]:
+                    base += _speech_onsets[i]
+            except:
+                pass
+            
+        return speech_onsets
 
-                starts_ends_t += [t - 1, t]
+    # def trim_nosound_regions(self, meg_raw, df_annot):
+    #     prev_sound_id = -1.0
+    #     starts_ends_t = []
+    #     for t, desc in enumerate(df_annot.description):
+    #         desc = ast.literal_eval(desc)
+    #         if desc['sound_id'] != prev_sound_id:
+    #             prev_sound_id = desc['sound_id']
 
-        starts_ends_t = starts_ends_t[1:] + [t]
-        starts_ends_t = np.reshape(starts_ends_t, (-1, 2))
+    #             starts_ends_t += [t - 1, t]
 
-        meg_trimmed = []
-        real_durations = []
-        for start_t, end_t in starts_ends_t:
-            start = self.to_second(df_annot.onset[start_t])
-            end = self.to_second(df_annot.onset[end_t]) + df_annot.duration[end_t]
+    #     starts_ends_t = starts_ends_t[1:] + [t]
+    #     starts_ends_t = np.reshape(starts_ends_t, (-1, 2))
 
-            meg_trimmed.append(meg_raw[:, int(start * 1000):int(end * 1000)])
+    #     meg_trimmed = []
+    #     real_durations = []
+    #     for start_t, end_t in starts_ends_t:
+    #         start = self.to_second(df_annot.onset[start_t])
+    #         end = self.to_second(df_annot.onset[end_t]) + df_annot.duration[end_t]
 
-            real_durations.append(end - start)
+    #         meg_trimmed.append(meg_raw[:, int(start * 1000):int(end * 1000)])
 
-        meg_trimmed = np.concatenate(meg_trimmed, axis=1)
+    #         real_durations.append(end - start)
 
-        return meg_trimmed, real_durations
+    #     meg_trimmed = np.concatenate(meg_trimmed, axis=1)
+
+    #     return meg_trimmed, real_durations
 
     def update_real_durations(self, real_durations, task_idx) -> None:
         task_str = f"task{task_idx}"
@@ -352,65 +378,77 @@ class Gwilliams2022Dataset(torch.utils.data.Dataset):
 
         self.real_durations.update({task_str: real_durations})
 
-    def _batchfy(self):
-        """
-        Legacy. In this way there are more than two overlapping segments in a single batch.
-        """
-        X_list = []
-        Y_list = []
-        subject_idxs_list = []
-        task_idxs_list = []
-        i_in_task_list = []
+    # def _batchfy(self):
+    #     """
+    #     Legacy. In this way there are more than two overlapping segments in a single batch.
+    #     """
+    #     X_list = []
+    #     Y_list = []
+    #     subject_idxs_list = []
+    #     task_idxs_list = []
+    #     i_in_task_list = []
 
-        # self.X.keys() -> ['subject01_sess0_task0', ..., 'subject27_sess1_task3']
-        # self.Y.keys() -> ['task0', 'task1', 'task2', 'task3']
+    #     # self.X.keys() -> ['subject01_sess0_task0', ..., 'subject27_sess1_task3']
+    #     # self.Y.keys() -> ['task0', 'task1', 'task2', 'task3']
 
-        cprint("=> Batchfying X", color="cyan")
-        for key, X in tqdm(self.X.items()):
-            if self.shift_brain:
-                X = self.shift_brain_signal(X, is_Y=False)
+    #     cprint("=> Batchfying X", color="cyan")
+    #     for key, X in tqdm(self.X.items()):
+    #         if self.shift_brain:
+    #             X = self.shift_brain_signal(X, is_Y=False)
 
-            X = scaleAndClamp_single(X, self.clamp_lim, self.clamp)  # ( ch=208, len=37835 )
+    #         X = scaleAndClamp_single(X, self.clamp_lim, self.clamp)  # ( ch=208, len=37835 )
 
-            X = self.data_reform(X, self.seq_len_samp)  # ( num_segment=~500, ch=208, len=360 )
+    #         X = self.data_reform(X, self.seq_len_samp)  # ( num_segment=~500, ch=208, len=360 )
 
-            X = baseline_correction_single(X, self.baseline_len_samp, self.preceding_chunk_for_baseline)
+    #         X = baseline_correction_single(X, self.baseline_len_samp, self.preceding_chunk_for_baseline)
 
-            X_list.append(X)
-            num_segments = X.shape[0]
+    #         X_list.append(X)
+    #         num_segments = X.shape[0]
 
-            subj_idx = int(key.split("_")[0][-2:]) - 1  # 0, 1,...
-            subj_idx *= torch.ones(num_segments, dtype=torch.int64)
-            subject_idxs_list.append(subj_idx)
+    #         subj_idx = int(key.split("_")[0][-2:]) - 1  # 0, 1,...
+    #         subj_idx *= torch.ones(num_segments, dtype=torch.int64)
+    #         subject_idxs_list.append(subj_idx)
 
-            task_idx = int(key[-1])  # 0 or 1 or 2 or 3
-            task_idxs_list += [task_idx] * num_segments
+    #         task_idx = int(key[-1])  # 0 or 1 or 2 or 3
+    #         task_idxs_list += [task_idx] * num_segments
 
-            i_in_task_list.append(torch.arange(num_segments))  # torch.int64
+    #         i_in_task_list.append(torch.arange(num_segments))  # torch.int64
 
-        cprint("=> Batchfying Y", color="cyan")
-        for key, Y in tqdm(self.Y.items()):
-            # Y: ( F=1024, len=37835 )
-            if self.shift_brain:
-                # NOTE: This doesn't shift audio. Just crops the end.
-                Y = self.shift_brain_signal(Y, is_Y=True)
+    #     cprint("=> Batchfying Y", color="cyan")
+    #     for key, Y in tqdm(self.Y.items()):
+    #         # Y: ( F=1024, len=37835 )
+    #         if self.shift_brain:
+    #             # NOTE: This doesn't shift audio. Just crops the end.
+    #             Y = self.shift_brain_signal(Y, is_Y=True)
 
-            Y = torch.from_numpy(Y.astype(np.float32))
+    #         Y = torch.from_numpy(Y.astype(np.float32))
 
-            Y = self.data_reform(Y, self.seq_len_samp)  # ( num_segment=~500, F=1024, len=360 )
+    #         Y = self.data_reform(Y, self.seq_len_samp)  # ( num_segment=~500, F=1024, len=360 )
 
-            Y_list.append(Y)
+    #         Y_list.append(Y)
 
-        return (torch.cat(X_list, dim=0), Y_list, torch.cat(subject_idxs_list),
-                torch.tensor(task_idxs_list, dtype=torch.int64), torch.cat(i_in_task_list))
+    #     return (torch.cat(X_list, dim=0), Y_list, torch.cat(subject_idxs_list),
+    #             torch.tensor(task_idxs_list, dtype=torch.int64), torch.cat(i_in_task_list))
 
 
 if __name__ == "__main__":
+    """ Cannot debug this way """
+    
+    from omegaconf import DictConfig, open_dict
+    import hydra
+    from hydra.utils import get_original_cwd
+    
+    @hydra.main(version_base=None, config_path="../configs", config_name="config")
+    def test_run(args: DictConfig):
+        
+        with open_dict(args):
+            args.root_dir = get_original_cwd()
+        
+        dataset = Gwilliams2022Dataset(args)
+        
+        dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=64, shuffle=True)
+        for _ in dataloader:
+            break
 
-    from configs.args import args
-    dataset = Gwilliams2022Dataset(args)
 
-    dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=64, shuffle=True)
-
-    for _ in dataloader:
-        break
+    test_run()

@@ -47,6 +47,8 @@ preprocs:
   clamp: True
   clamp_lim: 20
 
+memory_efficient: True
+
 # ==== Logging ==== #
 hydra:
   job:

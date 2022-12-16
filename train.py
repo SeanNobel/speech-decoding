@@ -7,7 +7,7 @@ import torch.nn as nn
 from time import time
 from tqdm import tqdm
 from data.brennan2018 import Brennan2018Dataset
-from data.gwilliams2022 import Gwilliams2022Dataset
+from data.gwilliams2022 import Gwilliams2022Dataset # , Gwilliams2022Collator
 from models import BrainEncoder, Classifier
 from utils.get_dataloaders import get_dataloaders, get_samplers
 from utils.loss import *
@@ -39,8 +39,8 @@ def run(args: DictConfig) -> None:
 
     with open_dict(args):
         args.root_dir = get_original_cwd()
-    cprint(f"Current working directory : {os.getcwd()}", color='red')
-    cprint(args, color='cyan')
+    cprint(f"Current working directory : {os.getcwd()}")
+    cprint(args, color='white')
 
     # -----------------------
     #       Dataloader
@@ -61,17 +61,19 @@ def run(args: DictConfig) -> None:
         )
 
         if args.use_sampler:
+            # collate_fn = Gwilliams2022Collator() if args.memory_efficient else None
+            
             # NOTE: currently not supporting reproducibility
-            train_loader, test_loader = get_samplers(train_set, test_set, args, test_bsz=test_size)
+            train_loader, test_loader = get_samplers(
+                train_set, test_set, args, test_bsz=test_size,
+                # collate_fn=collate_fn,
+            )
         else:
             # FIXME: maybe either get rid of reproducibility, or remove this?
             if args.reproducible:
-                train_loader, test_loader = get_dataloaders(train_set,
-                                                            test_set,
-                                                            args,
-                                                            seed_worker,
-                                                            g,
-                                                            test_bsz=test_size)
+                train_loader, test_loader = get_dataloaders(
+                    train_set, test_set, args, seed_worker, g, test_bsz=test_size
+                )
             else:
                 train_loader, test_loader = get_dataloaders(train_set, test_set, args, test_bsz=test_size)
 
