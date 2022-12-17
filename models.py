@@ -263,49 +263,57 @@ class BrainEncoder(nn.Module):
 class Classifier(nn.Module):
     # NOTE: experimental
 
-    def __init__(self, args):
+    def __init__(self, args, training=True):
         super(Classifier, self).__init__()
 
         # NOTE: Do we need to adjust the accuracies for the dataset size?
         self.factor = 1  # self.batch_size / 241
 
+        self.training = training
+
     @torch.no_grad()
     def forward(self, Z: torch.Tensor, Y: torch.Tensor) -> torch.Tensor:
 
-        batch_size = Z.size(0)
-        diags = torch.arange(batch_size).to(device)
-        x = Z.reshape(batch_size, -1)
-        y = Y.reshape(batch_size, -1)
+        batch_size_z = Z.size(0)
+        batch_size_y = Y.size(0)
+        diags = torch.arange(batch_size_y).to(device)
+        x = Z.reshape(batch_size_z, -1)
+        y = Y.reshape(batch_size_y, -1)
 
         # x_ = rearrange(x, 'b f -> 1 b f')
         # y_ = rearrange(y, 'b f -> b 1 f')
         # similarity = torch.nn.functional.cosine_similarity(x_, y_, dim=-1)  # ( B, B )
 
         # NOTE: avoid CUDA out of memory like this
-        similarity = torch.empty(batch_size, batch_size).to(device)
-        for i in range(batch_size):
-            for j in range(batch_size):
+        similarity = torch.empty(batch_size_z, batch_size_y).to(device)
+        for i in range(batch_size_z):
+            for j in range(batch_size_y):
                 similarity[i, j] = (x[i] @ y[j]) / max(
                     (x[i].norm() * y[j].norm()), 1e-8
                 )
 
-        similarity = similarity.T
+        if self.training:
 
-        # NOTE: max similarity of speech and M/EEG representations is expected for corresponding windows
-        top1accuracy = (
-            (similarity.argmax(axis=1) == diags).to(torch.float).mean().item()
-        )
-        try:
-            top10accuracy = np.mean(
-                [
-                    label in row
-                    for row, label in zip(
-                        torch.topk(similarity, 10, dim=1, largest=True)[1], diags
-                    )
-                ]
+            similarity = similarity.T
+
+            # NOTE: max similarity of speech and M/EEG representations is expected for corresponding windows
+            top1accuracy = (
+                (similarity.argmax(axis=1) == diags).to(torch.float).mean().item()
             )
-        except:
-            print(similarity.size())
-            raise
+            try:
+                top10accuracy = np.mean(
+                    [
+                        label in row
+                        for row, label in zip(
+                            torch.topk(similarity, 10, dim=1, largest=True)[1], diags
+                        )
+                    ]
+                )
+            except:
+                print(similarity.size())
+                raise
 
-        return top1accuracy, top10accuracy
+            return top1accuracy, top10accuracy
+
+        else:
+            return similarity
