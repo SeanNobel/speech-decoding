@@ -8,6 +8,7 @@ import torch.nn.functional as F
 from constants import device
 from termcolor import cprint
 from einops import rearrange
+from tqdm import tqdm
 
 
 class SpatialAttention(nn.Module):
@@ -241,7 +242,7 @@ class Classifier(nn.Module):
         self.factor = 1  # self.batch_size / 241
 
     @torch.no_grad()
-    def forward(self, Z: torch.Tensor, Y: torch.Tensor) -> torch.Tensor:
+    def forward(self, Z: torch.Tensor, Y: torch.Tensor, test=False) -> torch.Tensor:
 
         batch_size = Z.size(0)
         diags = torch.arange(batch_size).to(device)
@@ -254,9 +255,16 @@ class Classifier(nn.Module):
 
         # NOTE: avoid CUDA out of memory like this
         similarity = torch.empty(batch_size, batch_size).to(device)
+        
+        if test:
+            pbar = tqdm(total=batch_size, desc="[Similarities]")
+            
         for i in range(batch_size):
             for j in range(batch_size):
                 similarity[i, j] = (x[i] @ y[j]) / max((x[i].norm() * y[j].norm()), 1e-8)
+                
+            if test:
+                pbar.update(1)
 
         similarity = similarity.T
 
