@@ -48,17 +48,30 @@ def run(args: DictConfig) -> None:
     # NOTE: For Gwilliams dataset, dataset size is the number of speech segments
     # so that no overlapping segments are included in a single batch
     if args.dataset == "Gwilliams2022":
-        dataset = Gwilliams2022Dataset(args)
+        # NOTE: always splits fast args.split_ratio of the whole recording session
+        # to train and test set (deep split), because MEG segments that are
+        # close each other have high correlation
+        train_set = Gwilliams2022Dataset(args, train=True)
+        test_set = Gwilliams2022Dataset(args, train=False)
+        
+        assert train_set.num_subjects == test_set.num_subjects
         with open_dict(args):
-            args.num_subjects = dataset.num_subjects
+            args.num_subjects = train_set.num_subjects
+            
+        test_size = test_set.Y.shape[0]
+        cprint(f"Test segments: {test_size}", 'cyan')
+            
+        # dataset = Gwilliams2022Dataset(args)
+        # with open_dict(args):
+        #     args.num_subjects = dataset.num_subjects
 
-        train_size = int(dataset.Y.shape[0] * 0.8)
-        test_size = dataset.Y.shape[0] - train_size
-        train_set, test_set = torch.utils.data.random_split(
-            dataset,
-            lengths=[train_size, test_size],
-            generator=g,
-        )
+        # train_size = int(dataset.Y.shape[0] * 0.8)
+        # test_size = dataset.Y.shape[0] - train_size
+        # train_set, test_set = torch.utils.data.random_split(
+        #     dataset,
+        #     lengths=[train_size, test_size],
+        #     generator=g,
+        # )
 
         if args.use_sampler:
             # collate_fn = Gwilliams2022Collator() if args.memory_efficient else None
@@ -75,7 +88,9 @@ def run(args: DictConfig) -> None:
                     train_set, test_set, args, seed_worker, g, test_bsz=test_size
                 )
             else:
-                train_loader, test_loader = get_dataloaders(train_set, test_set, args, test_bsz=test_size)
+                train_loader, test_loader = get_dataloaders(
+                    train_set, test_set, args, test_bsz=test_size
+                )
 
     elif args.dataset == "Brennan2018":
         # NOTE: takes an optional debug param force_recompute to pre-process the EEG even if it exists
@@ -94,7 +109,9 @@ def run(args: DictConfig) -> None:
             f"Number of samples: {len(train_set)} (train), {len(test_set)} (test)",
             color="blue",
         )
-        train_loader, test_loader = get_dataloaders(train_set, test_set, args, g, seed_worker, test_bsz=test_size)
+        train_loader, test_loader = get_dataloaders(
+            train_set, test_set, args, g, seed_worker, test_bsz=test_size
+        )
 
     else:
         raise ValueError("Unknown dataset")
@@ -107,13 +124,14 @@ def run(args: DictConfig) -> None:
             config=wandb.config,
             save_code=True,
         )
+        wandb.run.name = args.wandb.run_name
+        wandb.run.save()
 
     # ---------------------
     #        Models
     # ---------------------
     brain_encoder = BrainEncoder(args).to(device)
 
-    # classifier
     classifier = Classifier(args)
 
     # ---------------
@@ -130,13 +148,9 @@ def run(args: DictConfig) -> None:
         lr=float(args.lr),
     )
 
-    if args.lr_scheduler == "exponential":
-        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.lr_exp_gamma)
-    elif args.lr_scheduler == "step":
-        scheduler = torch.optim.lr_scheduler.StepLR(
-            optimizer,
-            step_size=args.epochs // args.lr_step_numsteps,
-            gamma=args.lr_step_gamma,
+    if args.lr_scheduler == "cosine":
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=args.epochs, eta_min=args.lr * 0.1
         )
     elif args.lr_scheduler == "multistep":
         scheduler = torch.optim.lr_scheduler.MultiStepLR(
@@ -182,13 +196,13 @@ def run(args: DictConfig) -> None:
             trainTop1accs.append(trainTop1acc)
             trainTop10accs.append(trainTop10acc)
 
-            if isinstance(train_loader.dataset.dataset, Gwilliams2022Dataset):
+            if args.dataset == "Gwilliams2022":
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
 
         # Accumulate gradients for Gwilliams for the whole epoch
-        if isinstance(train_loader.dataset.dataset, Brennan2018Dataset):
+        if args.dataset == "Brennan2018":
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -214,7 +228,7 @@ def run(args: DictConfig) -> None:
 
                 loss = loss_func(Y, Z)
 
-                testTop1acc, testTop10acc = classifier(Z, Y)  # ( 250, 1024, 360 )
+                testTop1acc, testTop10acc = classifier(Z, Y, test=True)  # ( 250, 1024, 360 )
 
             test_losses.append(loss.item())
             testTop1accs.append(testTop1acc)

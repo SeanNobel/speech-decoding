@@ -1,6 +1,4 @@
-import os, shutil
-import sys
-from re import sub
+import os, sys, shutil
 import torch
 import torchaudio
 import torchaudio.functional as F
@@ -14,7 +12,7 @@ import scipy.io
 import mne, mne_bids
 from tqdm import tqdm
 import ast
-from typing import Union
+from typing import Union, Tuple
 from psutil import virtual_memory as vm
 
 from utils.wav2vec_util import load_wav2vec_model, getW2VLastFourLayersAvg
@@ -67,8 +65,11 @@ def get_speech_onsets(df_annot):
 
 class Gwilliams2022Dataset(Dataset):
 
-    def __init__(self, args):
+    def __init__(self, args, train=True):
         super().__init__()
+        
+        self.train = train
+        self.split_ratio = args.split_ratio
         
         self.wav2vec_model = args.wav2vec_model
         self.root_dir = args.root_dir + "/data/Gwilliams2022/"
@@ -103,7 +104,7 @@ class Gwilliams2022Dataset(Dataset):
         # ---------------------
         #     Make X (MEG)
         # ---------------------
-        if not args.preprocs["x_done"]:
+        if args.rebuild_dataset or not args.preprocs["x_done"]:
             self.meg_onsets = {}    # will be updated in brain_preproc
             self.speech_onsets = {} # will be updated in brain_preproc
             self.X = self.brain_preproc_handler()
@@ -136,30 +137,56 @@ class Gwilliams2022Dataset(Dataset):
                 json.dump(dict(args.preprocs), f)
         else:
             self.Y = np.load(self.y_path, allow_pickle=True).item()
+            # dict_keys(['task0', 'task1', 'task2', 'task3'])
 
-        self.X_list, self.Y = self.batchfy()
+        self.X, self.Y, self.meg_onsets, self.num_segments_foreach_task = self.batchfy()
+        
+        assert len(self.X) == len(self.meg_onsets)
+        # assert sum([v.shape[0] for v in list(self.meg_onsets.values())]) % self.Y.shape[0] == 0
 
-        self.num_subjects = len(self.X_list)
-
+        self.valid_subjects = np.array(list(set([k.split("_")[0] for k in self.X.keys()])))
+        self.num_subjects = len(self.valid_subjects)
+        
+        cprint(f"X keys: {self.X.keys()}", color='cyan')
+        cprint(f"Y: {self.Y.shape}", color='cyan')
+        cprint(f"num_subjects: {self.num_subjects} (each has 2 or 1 sessions)", color='cyan')
+        print(self.valid_subjects)
 
     def __len__(self):
         return len(self.Y)
 
     def __getitem__(self, i):  # NOTE: i is id of a speech segment
-        subject_idx = np.random.randint(self.num_subjects)
+        
+        i_in_task, task = self.segment_to_task(i)
+        
+        key_no_task = np.random.choice(list(self.X.keys()))
+        X = self.X[key_no_task][task] # ( 208, ~100000 )
+        onset = self.meg_onsets[key_no_task][task][i_in_task] # scalar
+        
+        # Extract MEG segment
+        X = X[:, onset:onset+self.seq_len_samp] # ( 208, 360 )
+        
+        # TODO: batch baseline correction in collator
+        X = baseline_correction_single(
+            X.unsqueeze(0), self.baseline_len_samp
+        ).squeeze()
+        
+        subject_idx = np.where(self.valid_subjects == key_no_task.split("_")[0])[0][0]
 
-        subject_X = self.X_list[subject_idx]
-        num_sessions = subject_X.shape[0]  # 1 or 2
-        session_idx = np.random.randint(num_sessions)
+        return X, self.Y[i], subject_idx
 
-        return subject_X[session_idx, i], self.Y[i], subject_idx
+    def segment_to_task(self, i) -> Tuple[int, str]:
+        
+        nseg_task_accum = np.cumsum(self.num_segments_foreach_task)
+        task = np.searchsorted(nseg_task_accum, i+1)
+        
+        i_in_task = i - np.sum(self.num_segments_foreach_task[:task])
+        
+        return int(i_in_task), f"task{task}"
 
+    def segment_speech(self, data: torch.Tensor, key: str) -> torch.Tensor:
 
-    def segment(self, data: torch.Tensor, key: str, is_Y: bool) -> torch.Tensor:
-        if not is_Y: # When it's MEG
-            onsets = self.meg_onsets[key]
-        else: # When it's speech
-            onsets = self.speech_onsets[key]
+        onsets = self.speech_onsets[key]
             
         onsets = (onsets * self.brain_resample_rate).round().astype(int)
 
@@ -172,34 +199,6 @@ class Gwilliams2022Dataset(Dataset):
         # self.Y.keys() -> ['task0', 'task1', 'task2', 'task3']
         assert natsorted(self.X.keys()) == list(self.X.keys()), "self.X.keys() not sorted"
 
-        # ------------------------------------------------------
-        #     Make X_dict (MEG are concatenated along tasks)
-        # ------------------------------------------------------
-        cprint("=> Batchfying X", color='cyan')
-
-        X_dict = {}
-        
-        for key, X in tqdm(self.X.items()):
-            # NOTE: e.g. 'subject01_sess0_task0' -> 'subject01_sess0'
-            key_no_task = "_".join(key.split("_")[:-1])
-
-            if self.shift_brain:
-                X = self.shift_brain_signal(X, is_Y=False)
-                
-            X = scaleAndClamp_single(X, self.clamp_lim, self.clamp)  # ( ch=208, len~=100000 )
-            
-            X = self.segment(X, key, is_Y=False) # ( num_segment~=2000, ch=208, len=360 )
-            
-            X = baseline_correction_single(X, self.baseline_len_samp)
-            
-            if not key_no_task in X_dict.keys():
-                X_dict.update({key_no_task: X})
-            else:
-                _X = torch.cat((X_dict[key_no_task], X))
-                X_dict.update({key_no_task: _X})
-                                
-            del X
-            
         # ----------------------------------------------------
         #    Make Y (speech are concatenated along tasks)
         # ----------------------------------------------------
@@ -215,45 +214,57 @@ class Gwilliams2022Dataset(Dataset):
 
             Y = torch.from_numpy(Y.astype(np.float32))
 
-            Y = self.segment(Y, key, is_Y=True)  # ( num_segment=~2000, F=1024, len=360 )
+            Y = self.segment_speech(Y, key)  # ( num_segment=~2000, F=1024, len=360 )
+            
+            if self.train:
+                Y = Y[:int(len(Y) * self.split_ratio)]
+            else:
+                Y = Y[int(len(Y) * self.split_ratio):]
 
             Y_list.append(Y)
+        
+        num_segments_foreach_task = [len(y) for y in Y_list]
+                        
+        # ------------------------------------
+        #      More preprocessing for MEG
+        # ------------------------------------
+        cprint("=> Segmenting X", color="cyan")
+        
+        self.drop_task_missing_sessions() # self.X.keys() 167 -> 156
+        assert len(self.X.keys()) == len(self.meg_onsets.keys())
+        assert len(self.X.keys()) % 4 == 0
+        
+        X_dict = {}
+        meg_onsets_dict = {}
 
-        Y = torch.cat(Y_list)
+        for key, X in tqdm(self.X.items()):
+            # NOTE: e.g. 'subject01_sess0_task0' -> 'task0', 'subject01_sess0'
+            key_task = key.split("_")[-1]
+            key_no_task = "_".join(key.split("_")[:-1])
 
-        # -----------------------------------------------------------------------
-        #   Drop sessions in which some tasks are missing -> X_dict to X_list
-        # -----------------------------------------------------------------------
-        X_list = []
+            if self.shift_brain:
+                X = self.shift_brain_signal(X, is_Y=False)
+                
+            X = scaleAndClamp_single(X, self.clamp_lim, self.clamp)  # ( ch=208, len~=100000 )
+            
+            
+            meg_onsets = self.meg_onsets[key]
+            # To idx in samples
+            meg_onsets = (meg_onsets * self.brain_resample_rate).round().astype(int)
+            
+            if self.train:
+                meg_onsets = meg_onsets[:int(len(meg_onsets) * self.split_ratio)]
+            else:
+                meg_onsets = meg_onsets[int(len(meg_onsets) * self.split_ratio):]
+            
+            if not key_no_task in X_dict.keys():
+                X_dict[key_no_task] = {key_task: X}
+                meg_onsets_dict[key_no_task] = {key_task: meg_onsets}
+            else:
+                X_dict[key_no_task].update({key_task: X})
+                meg_onsets_dict[key_no_task].update({key_task: meg_onsets})
 
-        subj_strs = natsorted(set(k.split("_")[0] for k in X_dict.keys()))
-        for subj_str in subj_strs:
-            # subj_str = k.split('_')[0]
-            # num_sessions_subj = sum([(subj_str in k) for k in X_dict.keys()])
-
-            sess_list = []
-            for k, X in X_dict.items():
-                if subj_str in k:
-                    if X.shape[0] == Y.shape[0]:
-                        cprint(f"{k}: {X_dict[k].shape}", color="cyan")
-                        sess_list.append(X)
-                    else:
-                        cprint(f"{k}: {X_dict[k].shape} -> dropped", color="yellow")
-
-            if len(sess_list) > 0:
-                X_list.append(torch.stack(sess_list))
-
-        print("---------------------------")
-        cprint(
-            f"Using {len(X_list)} subjects (some of them have only 1 session)",
-            color="cyan",
-        )
-        cprint(str([x.shape[0] for x in X_list]), color="cyan")
-
-        print("---------------------------")
-        cprint(f"Audio: {Y.shape}", color="cyan")
-
-        return X_list, Y  # , torch.cat(subject_idxs_list)
+        return X_dict, torch.cat(Y_list), meg_onsets_dict, num_segments_foreach_task
 
     def shift_brain_signal(self, data, is_Y: bool):
         """
@@ -266,6 +277,16 @@ class Gwilliams2022Dataset(Dataset):
             return data[:, :-shift]
         else:
             return data[:, shift:]
+        
+    def drop_task_missing_sessions(self) -> None:
+        sess_strs = list(set(["_".join(key.split("_")[:-1]) for key in self.X.keys()]))
+
+        for sess_str in sess_strs:
+            if len([key for key in self.X.keys() if sess_str in key]) < 4:
+                for key in list(self.X.keys()):
+                    if sess_str in key:
+                        self.X.pop(key)
+                        self.meg_onsets.pop(key)
 
     @staticmethod
     def brain_preproc(dat):

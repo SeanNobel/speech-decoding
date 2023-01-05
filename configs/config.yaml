@@ -6,19 +6,19 @@ rebuild_dataset: False
 use_wandb: False
 wandb:
   project: speech_decoding
-  entity: nightdude
+  entity: sensho
+  run_name: test
 use_sampler: True        # applicable to Gwilliams only
 reproducible: False      # NOTE: do we need it at all?
+split_ratio: 0.8 # train. FIXME for valid
 num_workers: 6
 batch_size: 64
 updates: 1200
 lr: 3e-4
-lr_scheduler: multistep
-lr_exp_gamma: 0.99
-lr_step_numsteps: 5
+lr_scheduler: cosine # cosine or multistep
 lr_multistep_mlstns: [0.4, 0.6, 0.8, 0.9]
 lr_step_gamma: 0.5
-epochs: 3500
+epochs: 300
 reduction: "mean"
 
 # ==== Architecture ==== #

@@ -62,8 +62,8 @@ def get_samplers(
     )
     test_sampler = RandomSampler(
         data_source=test_set,
-        replacement=True,
-        num_samples=args.updates * args.batch_size // 5,
+        replacement=False, # True,
+        num_samples=args.updates * args.batch_size // 5 if test_bsz is None else test_bsz,
         generator=g
     )
 
