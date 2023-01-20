@@ -5,6 +5,7 @@ import torchaudio.functional as F
 from torch.utils.data import Dataset
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 import glob
 import json
 from natsort import natsorted
@@ -33,42 +34,73 @@ from omegaconf import open_dict
 mne.set_log_level(verbose="WARNING")
 
 manager = Manager()
-# glob_real_durations = manager.dict()
 global_meg_onsets = manager.dict()
 global_speech_onsets = manager.dict()
+global_sentence_idxs = manager.dict()
 
 
-def to_second(onset):  # pandas Timestamp object
+def to_second(onset: pd._libs.tslibs.timestamps.Timestamp) -> np.ndarray:
     return onset.minute * 60 + onset.second + onset.microsecond * 1e-6
 
+def continuous(onsets: np.ndarray) -> np.ndarray:
+    """
+    Increments speech onsets that start from zero in each separate audio file.
+    (add final timestamp in the previous audio file)
+    """
+    base = 0
+    
+    for i in range(len(onsets)):
+        
+        update_base = i < len(onsets) - 1 and onsets[i+1] < onsets[i]
+        
+        if update_base:
+            next_base = base + onsets[i]
+            
+        onsets[i] += base
+        
+        if update_base:
+            base = next_base
+    
+    return onsets
+
+def drop_overlapping_words(word_onset_idxs, word_onsets, sentence_idxs):
+    """
+    Word onsets that have less than 3 seconds until next sentence onset
+    should be dropped so that they don't go across splits
+    """
+    # TODO: implement
+    
+    return word_onset_idxs, word_onsets, sentence_idxs
+                
 def get_speech_onsets(df_annot):
     """
-    Increment speech onsets that come for each separate audio file.
+    Extracts kind==word (exclude phoneme) from annotation data.
     """
     df_annot = pd.DataFrame(df_annot.description.apply(eval).to_list())
 
-    _speech_onsets = df_annot['start'].to_numpy()
-    speech_onsets = np.zeros_like(_speech_onsets)
-    base = 0
+    speech_onsets = df_annot['start'].to_numpy() # ( 3134, )
+    speech_onsets = continuous(speech_onsets)
     
-    for i in range(len(speech_onsets)):
-        speech_onsets[i] = base + _speech_onsets[i]
-        # NOTE: avoid idx out of range at the final idx
-        try:
-            if _speech_onsets[i+1] < _speech_onsets[i]:
-                base += _speech_onsets[i]
-        except:
-            pass
+    kinds = df_annot['kind'].to_numpy()
+    assert speech_onsets.shape == kinds.shape
+    
+    word_onset_idxs = np.where(kinds == 'word')[0]
+    word_onsets = speech_onsets[word_onset_idxs]
+    sentence_idxs = df_annot['sequence_id'].to_numpy()[word_onset_idxs]
+    
+    word_onset_idxs, word_onsets, sentence_idxs = drop_overlapping_words(
+        word_onset_idxs, word_onsets, sentence_idxs
+    )
         
-    return speech_onsets
-
+    return word_onset_idxs, word_onsets, sentence_idxs
 
 class Gwilliams2022Dataset(Dataset):
 
-    def __init__(self, args, train=True):
+    def __init__(self, args, test_word_idxs_dict=None):
         super().__init__()
-        
-        self.train = train
+
+        self.train = test_word_idxs_dict is None
+        self.test_word_idxs_dict = test_word_idxs_dict
         self.split_ratio = args.split_ratio
         
         self.wav2vec_model = args.wav2vec_model
@@ -98,33 +130,37 @@ class Gwilliams2022Dataset(Dataset):
         self.y_path = self.preproc_dir + "y_dict.npy"
         self.meg_onsets_path = self.preproc_dir + "meg_onsets.npy"
         self.speech_onsets_path = self.preproc_dir + "speech_onsets.npy"
+        self.sentence_idxs_path = self.preproc_dir + "sentence_idxs.npy"
 
         self.task_prefixes = ["lw", "cable", "easy", "the"]
 
-        # ---------------------
-        #     Make X (MEG)
-        # ---------------------
+        # ---------------------------
+        #     Preprocess X (MEG)
+        # ---------------------------
         if args.rebuild_dataset or not args.preprocs["x_done"]:
-            self.meg_onsets = {}    # will be updated in brain_preproc
-            self.speech_onsets = {} # will be updated in brain_preproc
-            self.X = self.brain_preproc_handler()
+            # self.meg_onsets = {}
+            # self.speech_onsets = {}
+            # also updates self.meg_onsets and self.speech_onsets
+            self.X, self.meg_onsets, self.speech_onsets, self.sentence_idxs = self.brain_preproc_handler()
             
+            np.save(self.x_path, self.X)
             np.save(self.meg_onsets_path, self.meg_onsets)
             np.save(self.speech_onsets_path, self.speech_onsets)
-            np.save(self.x_path, self.X)
+            np.save(self.sentence_idxs_path, self.sentence_idxs)
             
             # Record done
             args.preprocs.update({"x_done": True})
             with open(self.preproc_dir + "settings.json", "w") as f:
                 json.dump(dict(args.preprocs), f)
         else:
+            self.X = np.load(self.x_path, allow_pickle=True).item()
             self.meg_onsets = np.load(self.meg_onsets_path, allow_pickle=True).item()
             self.speech_onsets = np.load(self.speech_onsets_path, allow_pickle=True).item()
-            self.X = np.load(self.x_path, allow_pickle=True).item()
+            self.sentence_idxs = np.load(self.sentence_idxs_path, allow_pickle=True).item()
 
-        # ----------------------------------
-        #      Make Y (embedded speech)
-        # ----------------------------------
+        # ----------------------------------------
+        #      Preprocess Y (embedded speech)
+        # ----------------------------------------
         if args.rebuild_dataset or not args.preprocs["y_done"]:
             self.Y = self.audio_preproc()
             
@@ -132,17 +168,20 @@ class Gwilliams2022Dataset(Dataset):
             
             # Record done
             with open_dict(args):
-                args.preprocs.y_done = True
+                # args.preprocs.y_done = True
+                args.preprocs.update({"y_done": True})
             with open(self.preproc_dir + "settings.json", "w") as f:
                 json.dump(dict(args.preprocs), f)
         else:
             self.Y = np.load(self.y_path, allow_pickle=True).item()
             # dict_keys(['task0', 'task1', 'task2', 'task3'])
-
+            
+        # ----------------------
+        #      Make batches
+        # ----------------------
         self.X, self.Y, self.meg_onsets, self.num_segments_foreach_task = self.batchfy()
         
         assert len(self.X) == len(self.meg_onsets)
-        # assert sum([v.shape[0] for v in list(self.meg_onsets.values())]) % self.Y.shape[0] == 0
 
         self.valid_subjects = np.array(list(set([k.split("_")[0] for k in self.X.keys()])))
         self.num_subjects = len(self.valid_subjects)
@@ -193,6 +232,15 @@ class Gwilliams2022Dataset(Dataset):
         data = [data[:, onset:onset+self.seq_len_samp] for onset in onsets]
 
         return torch.stack(data)
+    
+    def sentence_to_word_idxs(self, _sentence_idxs, key):
+        return [
+            i for si, i in zip(
+                self.sentence_idxs[key],
+                np.arange(len(self.sentence_idxs[key]))
+            )
+            if si in _sentence_idxs
+        ]
 
     def batchfy(self):
         # self.X.keys() -> ['subject01_sess0_task0', ..., 'subject27_sess1_task3']
@@ -205,6 +253,8 @@ class Gwilliams2022Dataset(Dataset):
         cprint("=> Batchfying Y", color="cyan")
 
         Y_list = []
+        train_word_idxs_dict = {}
+        test_word_idxs_dict = {}
 
         for key, Y in tqdm(self.Y.items()):
             # Y: ( F=1024, len=37835 )
@@ -216,12 +266,37 @@ class Gwilliams2022Dataset(Dataset):
 
             Y = self.segment_speech(Y, key)  # ( num_segment=~2000, F=1024, len=360 )
             
+            # NOTE: In this way, the model has to test with sentences that it hasn't seen while training
+            # Probably need to change split so that sentence A goes to train for subject a and to test
+            # for subject b
+            
             if self.train:
-                Y = Y[:int(len(Y) * self.split_ratio)]
-            else:
-                Y = Y[int(len(Y) * self.split_ratio):]
+                # NOTE: unlike in preprocessing, sentence_idxs is now not for each word
+                sentence_idxs = np.unique(self.sentence_idxs[key])
+                np.random.shuffle(sentence_idxs)
+                
+                split_idx = int(len(sentence_idxs) * self.split_ratio)
+                
+                train_sentence_idxs = sentence_idxs[:split_idx]
+                # NOTE: this is passed to test dataset in train.py
+                test_sentence_idxs = sentence_idxs[split_idx:]
+                
+                # NOTE: now it's back for each word
+                train_word_idxs = self.sentence_to_word_idxs(train_sentence_idxs, key)
+                test_word_idxs = self.sentence_to_word_idxs(test_sentence_idxs, key)
+                
+                Y = Y[train_word_idxs]
+                                
+                train_word_idxs_dict.update({key: train_word_idxs})
+                test_word_idxs_dict.update({key: test_word_idxs})
+
+            else:                
+                Y = Y[self.test_word_idxs_dict[key]]                
 
             Y_list.append(Y)
+            
+        if self.train:
+            self.test_word_idxs_dict = test_word_idxs_dict
         
         num_segments_foreach_task = [len(y) for y in Y_list]
                         
@@ -253,9 +328,9 @@ class Gwilliams2022Dataset(Dataset):
             meg_onsets = (meg_onsets * self.brain_resample_rate).round().astype(int)
             
             if self.train:
-                meg_onsets = meg_onsets[:int(len(meg_onsets) * self.split_ratio)]
+                meg_onsets = meg_onsets[train_word_idxs_dict[key_task]]
             else:
-                meg_onsets = meg_onsets[int(len(meg_onsets) * self.split_ratio):]
+                meg_onsets = meg_onsets[self.test_word_idxs_dict[key_task]]
             
             if not key_no_task in X_dict.keys():
                 X_dict[key_no_task] = {key_task: X}
@@ -268,7 +343,7 @@ class Gwilliams2022Dataset(Dataset):
 
     def shift_brain_signal(self, data, is_Y: bool):
         """
-        Rates of X and Y should be 120Hz, meaning Y is processed by wav2vec then upsampled
+        Rates of X and Y should be 120Hz, meaning Y is processed by wav2vec then upsampled.
         - shift (ms): how much to shift M/EEG forward
         """
         shift = int(self.brain_resample_rate * (self.shift_len / 1000))
@@ -290,7 +365,9 @@ class Gwilliams2022Dataset(Dataset):
 
     @staticmethod
     def brain_preproc(dat):
-        subject_idx, d, speech_onsets, meg_onsets, session_idx, task_idx = dat
+        
+        subject_idx, d, speech_onsets, meg_onsets, sentence_idxs, session_idx, task_idx = dat
+        
         num_channels = d["num_channels"]
         brain_orig_rate = d["brain_orig_rate"]
         brain_filter_low = d["brain_filter_low"]
@@ -320,23 +397,26 @@ class Gwilliams2022Dataset(Dataset):
         
         df = raw.to_data_frame()
         df_annot = raw.annotations.to_data_frame()
-        df_annot_pd = pd.DataFrame(df_annot.description.apply(eval).to_list())
-        
-        words = np.where(df_annot_pd['kind'] == 'word')[0]
+                
+        word_onset_idxs, _speech_onsets, _sentence_idxs = get_speech_onsets(df_annot)
         
         _meg_onsets = np.array([to_second(onset) for onset in df_annot.onset])
-        _speech_onsets = get_speech_onsets(df_annot)
+        _meg_onsets = _meg_onsets[word_onset_idxs]
         
-        _meg_onsets, _speech_onsets = _meg_onsets[words], _speech_onsets[words]
-        cprint(f"MEG onsets: {_meg_onsets.shape}, speech onsets: {_speech_onsets.shape}", color='cyan')
+        cprint(
+            f"MEG onsets: {_meg_onsets.shape}, speech onsets: {_speech_onsets.shape}, sentence idxs: {_sentence_idxs.shape}",
+            color='cyan'
+        )
 
         task_str = f"task{task_idx}"
-        # Ensure that speech onsets are same across subjects&sessions
+        # Ensure that speech onsets are same across subjects & sessions
         if task_str in speech_onsets.keys():
             assert np.allclose(speech_onsets[task_str], _speech_onsets), "Speech onsets are different"
+            assert np.array_equal(sentence_idxs[task_str], _sentence_idxs)
 
         meg_onsets.update({description: _meg_onsets})
         speech_onsets.update({task_str: _speech_onsets})
+        sentence_idxs.update({task_str: _sentence_idxs})
 
 
         meg_raw = np.stack([df[key] for key in df.keys() if "MEG" in key])  # ( 224, 396000 )
@@ -355,15 +435,6 @@ class Gwilliams2022Dataset(Dataset):
             meg_filtered,
             down=brain_orig_rate / brain_resample_rate,
         )  # ( 208, 37853 )
-
-        # scaler = RobustScaler().fit(meg_resampled)
-        # meg_scaled = scaler.transform(meg_resampled)
-        # cprint(meg_scaled.shape, color="cyan")
-
-        # save to disk
-        # X = np.load(x_path, allow_pickle=True).item()
-        # X.update({description: meg_resampled})
-        # np.save(x_path, X)
 
         np.save(
             f"{preproc_dir}_parts/{description}",
@@ -395,11 +466,11 @@ class Gwilliams2022Dataset(Dataset):
                         consts,
                         global_speech_onsets,
                         global_meg_onsets,
+                        global_sentence_idxs,
                         session_idx,
                         task_idx
                     ))
 
-        # subj_list = [(i, c, rd) for i, c, rd in zip(range(num_subjects), repeat(consts), repeat(real_durations))]
         with Pool(processes=20) as p:
             res = list(tqdm(
                 p.imap(Gwilliams2022Dataset.brain_preproc, subj_list),
@@ -410,8 +481,9 @@ class Gwilliams2022Dataset(Dataset):
         cprint("MEG preprocessing done.", color='green')
 
         # NOTE: global shared struct
-        self.meg_onsets = dict(global_meg_onsets)
-        self.speech_onsets = dict(global_speech_onsets)
+        # self.meg_onsets = dict(global_meg_onsets)
+        # self.speech_onsets = dict(global_speech_onsets)
+        # self.sentence_idxs = dict(global_sentence_idxs)
 
         # NOTE: assemble files into one and clean up
         fnames = natsorted(os.listdir(tmp_dir))
@@ -424,7 +496,7 @@ class Gwilliams2022Dataset(Dataset):
         cprint("removing temp files for EEG data", color="white")
         shutil.rmtree(tmp_dir)
 
-        return X
+        return X, dict(global_meg_onsets), dict(global_speech_onsets), dict(global_sentence_idxs)
 
 
     @torch.no_grad()

@@ -51,8 +51,8 @@ def run(args: DictConfig) -> None:
         # NOTE: always splits fast args.split_ratio of the whole recording session
         # to train and test set (deep split), because MEG segments that are
         # close each other have high correlation
-        train_set = Gwilliams2022Dataset(args, train=True)
-        test_set = Gwilliams2022Dataset(args, train=False)
+        train_set = Gwilliams2022Dataset(args)
+        test_set = Gwilliams2022Dataset(args, train_set.test_word_idxs_dict)
         
         assert train_set.num_subjects == test_set.num_subjects
         with open_dict(args):
@@ -159,7 +159,7 @@ def run(args: DictConfig) -> None:
             gamma=args.lr_step_gamma,
         )
     else:
-        raise ValueError()
+        scheduler = None
 
     # ======================================
     for epoch in range(args.epochs):
@@ -169,8 +169,6 @@ def run(args: DictConfig) -> None:
         trainTop10accs = []
         testTop1accs = []
         testTop10accs = []
-
-        # weight_prev = brain_encoder.subject_block.spatial_attention.z_re.clone()
 
         brain_encoder.train()
         for i, batch in enumerate(tqdm(train_loader)):
@@ -206,9 +204,6 @@ def run(args: DictConfig) -> None:
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-
-        # weight_after = brain_encoder.subject_block.spatial_attention.z_re.clone()
-        # print(f"Learning: {not torch.equal(weight_prev, weight_after)}")
 
         brain_encoder.eval()
         for batch in test_loader:
@@ -258,7 +253,8 @@ def run(args: DictConfig) -> None:
             }
             wandb.log(performance_now)
 
-        scheduler.step()
+        if scheduler is not None:
+            scheduler.step()
 
         torch.save(brain_encoder.state_dict(), "model_last.pt")
 

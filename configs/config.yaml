@@ -15,7 +15,7 @@ num_workers: 6
 batch_size: 64
 updates: 1200
 lr: 3e-4
-lr_scheduler: cosine # cosine or multistep
+lr_scheduler: none # cosine or multistep or none
 lr_multistep_mlstns: [0.4, 0.6, 0.8, 0.9]
 lr_step_gamma: 0.5
 epochs: 300
@@ -26,7 +26,7 @@ D1: 270
 D2: 320
 F: 512 # NOTE: because if you set last4layers=False, then it's set to 1024 in the dataset class
 K: 32
-d_drop: 0.3 # for spatial attention, drop channels within d_drop of a randomly selected channel
+d_drop: 0.1 # for spatial attention, drop channels within d_drop of a randomly selected channel
 
 init_temperature: 5.1
 wav2vec_model: facebook/wav2vec2-large-xlsr-53 # (HuggingFace) # xlsr_53_56k (FAIR)
