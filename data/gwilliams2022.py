@@ -103,6 +103,9 @@ class Gwilliams2022Dataset(Dataset):
         self.test_word_idxs_dict = test_word_idxs_dict
         self.split_ratio = args.split_ratio
         
+        # NOTE: original number. It's ok as long as it's larger than "valid" subject number
+        self.num_subjects = 27
+        
         self.wav2vec_model = args.wav2vec_model
         self.root_dir = args.root_dir + "/data/Gwilliams2022/"
         self.brain_orig_rate = 1000
@@ -184,6 +187,7 @@ class Gwilliams2022Dataset(Dataset):
         assert len(self.X) == len(self.meg_onsets)
 
         self.valid_subjects = np.array(list(set([k.split("_")[0] for k in self.X.keys()])))
+        # NOTE: update num_subjects with number of valid subjects
         self.num_subjects = len(self.valid_subjects)
         
         cprint(f"X keys: {self.X.keys()}", color='cyan')
@@ -196,21 +200,25 @@ class Gwilliams2022Dataset(Dataset):
 
     def __getitem__(self, i):  # NOTE: i is id of a speech segment
         
-        i_in_task, task = self.segment_to_task(i)
+        # i_in_task, task = self.segment_to_task(i)
         
-        key_no_task = np.random.choice(list(self.X.keys()))
-        X = self.X[key_no_task][task] # ( 208, ~100000 )
-        onset = self.meg_onsets[key_no_task][task][i_in_task] # scalar
+        # key_no_task = np.random.choice(list(self.X.keys()))
+        # X = self.X[key_no_task][task] # ( 208, ~100000 )
+        # onset = self.meg_onsets[key_no_task][task][i_in_task] # scalar
         
-        # Extract MEG segment
-        X = X[:, onset:onset+self.seq_len_samp] # ( 208, 360 )
+        # # Extract MEG segment
+        # X = X[:, onset:onset+self.seq_len_samp] # ( 208, 360 )
         
-        # TODO: batch baseline correction in collator
-        X = baseline_correction_single(
-            X.unsqueeze(0), self.baseline_len_samp
-        ).squeeze()
+        # # TODO: batch baseline correction in collator
+        # X = baseline_correction_single(
+        #     X.unsqueeze(0), self.baseline_len_samp
+        # ).squeeze()
         
-        subject_idx = np.where(self.valid_subjects == key_no_task.split("_")[0])[0][0]
+        # subject_idx = np.where(self.valid_subjects == key_no_task.split("_")[0])[0][0]
+        
+        # NOTE: self.meg_onsets is list of tuples
+        meg_onset, task, subject_idx = self.meg_onsets[i]
+        
 
         return X, self.Y[i], subject_idx
 
@@ -234,13 +242,13 @@ class Gwilliams2022Dataset(Dataset):
         return torch.stack(data)
     
     def sentence_to_word_idxs(self, _sentence_idxs, key):
-        return [
+        return np.array([
             i for si, i in zip(
                 self.sentence_idxs[key],
                 np.arange(len(self.sentence_idxs[key]))
             )
             if si in _sentence_idxs
-        ]
+        ])
 
     def batchfy(self):
         # self.X.keys() -> ['subject01_sess0_task0', ..., 'subject27_sess1_task3']
@@ -264,34 +272,42 @@ class Gwilliams2022Dataset(Dataset):
 
             Y = torch.from_numpy(Y.astype(np.float32))
 
-            Y = self.segment_speech(Y, key)  # ( num_segment=~2000, F=1024, len=360 )
-            
-            # NOTE: In this way, the model has to test with sentences that it hasn't seen while training
-            # Probably need to change split so that sentence A goes to train for subject a and to test
-            # for subject b
+            Y = self.segment_speech(Y, key)  # ( num_segment=~1000, F=1024, len=360 )
             
             if self.train:
                 # NOTE: unlike in preprocessing, sentence_idxs is now not for each word
                 sentence_idxs = np.unique(self.sentence_idxs[key])
-                np.random.shuffle(sentence_idxs)
+                print(sentence_idxs)
+
+                # NOTE: self.num_subjects used here is not the number of "valid" subjects.
+                # Some subjects will be dropped later and thus final rows of this array won't be used.
+                sentence_idxs = np.array(
+                    [np.random.permutation(sentence_idxs) for _ in range(self.num_subjects)]
+                ) # ( 27, ~50 )
                 
-                split_idx = int(len(sentence_idxs) * self.split_ratio)
+                split_idx = int(sentence_idxs.shape[1] * self.split_ratio)
                 
-                train_sentence_idxs = sentence_idxs[:split_idx]
+                train_sentence_idxs = sentence_idxs[:, :split_idx] # ( 27, ~40 )
                 # NOTE: this is passed to test dataset in train.py
-                test_sentence_idxs = sentence_idxs[split_idx:]
+                test_sentence_idxs = sentence_idxs[:, split_idx:] # ( 27, ~10 )
                 
                 # NOTE: now it's back for each word
-                train_word_idxs = self.sentence_to_word_idxs(train_sentence_idxs, key)
-                test_word_idxs = self.sentence_to_word_idxs(test_sentence_idxs, key)
+                # NOTE: word numbers are different for subjects
+                train_word_idxs = [
+                    self.sentence_to_word_idxs(_s_i, key) for _s_i in train_sentence_idxs
+                ] # [ (534,), (524,), ...]
+                test_word_idxs = [
+                    self.sentence_to_word_idxs(_s_i, key) for _s_i in test_sentence_idxs
+                ]
                 
-                Y = Y[train_word_idxs]
+                # FIXME: can this done in __getitem__?
+                # Y = Y[train_word_idxs]
                                 
                 train_word_idxs_dict.update({key: train_word_idxs})
                 test_word_idxs_dict.update({key: test_word_idxs})
 
-            else:                
-                Y = Y[self.test_word_idxs_dict[key]]                
+            # else:                
+            #     Y = Y[self.test_word_idxs_dict[key]]                
 
             Y_list.append(Y)
             
@@ -310,7 +326,7 @@ class Gwilliams2022Dataset(Dataset):
         assert len(self.X.keys()) % 4 == 0
         
         X_dict = {}
-        meg_onsets_dict = {}
+        meg_onsets_list = []
 
         for key, X in tqdm(self.X.items()):
             # NOTE: e.g. 'subject01_sess0_task0' -> 'task0', 'subject01_sess0'
@@ -331,13 +347,17 @@ class Gwilliams2022Dataset(Dataset):
                 meg_onsets = meg_onsets[train_word_idxs_dict[key_task]]
             else:
                 meg_onsets = meg_onsets[self.test_word_idxs_dict[key_task]]
+            print(meg_onsets.shape)
+            sys.exit()
             
             if not key_no_task in X_dict.keys():
                 X_dict[key_no_task] = {key_task: X}
-                meg_onsets_dict[key_no_task] = {key_task: meg_onsets}
+                # meg_onsets_dict[key_no_task] = {key_task: meg_onsets}
             else:
                 X_dict[key_no_task].update({key_task: X})
-                meg_onsets_dict[key_no_task].update({key_task: meg_onsets})
+                # meg_onsets_dict[key_no_task].update({key_task: meg_onsets})
+                
+            # meg_onsets_list += 
 
         return X_dict, torch.cat(Y_list), meg_onsets_dict, num_segments_foreach_task
 
