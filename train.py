@@ -7,7 +7,7 @@ import torch.nn as nn
 from time import time
 from tqdm import tqdm
 from data.brennan2018 import Brennan2018Dataset
-from data.gwilliams2022 import Gwilliams2022Dataset # , Gwilliams2022Collator
+from data.gwilliams2022 import Gwilliams2022Dataset, Gwilliams2022Collator
 from models import BrainEncoder, Classifier
 from utils.get_dataloaders import get_dataloaders, get_samplers
 from utils.loss import *
@@ -59,7 +59,7 @@ def run(args: DictConfig) -> None:
             args.num_subjects = train_set.num_subjects
             
         test_size = test_set.Y.shape[0]
-        cprint(f"Test segments: {test_size}", 'cyan')
+        cprint(f"Test segments: {test_size}", 'cyan') # 1680
             
         # dataset = Gwilliams2022Dataset(args)
         # with open_dict(args):
@@ -73,13 +73,11 @@ def run(args: DictConfig) -> None:
         #     generator=g,
         # )
 
-        if args.use_sampler:
-            # collate_fn = Gwilliams2022Collator() if args.memory_efficient else None
-            
+        if args.use_sampler:            
             # NOTE: currently not supporting reproducibility
             train_loader, test_loader = get_samplers(
                 train_set, test_set, args, test_bsz=test_size,
-                # collate_fn=collate_fn,
+                collate_fn=Gwilliams2022Collator(args),
             )
         else:
             # FIXME: maybe either get rid of reproducibility, or remove this?

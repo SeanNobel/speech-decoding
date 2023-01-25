@@ -1,5 +1,6 @@
 import os, sys, shutil
 import torch
+import torch.nn as nn
 import torchaudio
 import torchaudio.functional as F
 from torch.utils.data import Dataset
@@ -13,12 +14,13 @@ import scipy.io
 import mne, mne_bids
 from tqdm import tqdm
 import ast
-from typing import Union, Tuple
+from typing import Union, Tuple, List
 from psutil import virtual_memory as vm
 
 from utils.wav2vec_util import load_wav2vec_model, getW2VLastFourLayersAvg
 from utils.preproc_utils import (
     check_preprocs,
+    scaleAndClamp,
     scaleAndClamp_single,
     baseline_correction_single,
 )
@@ -110,9 +112,9 @@ class Gwilliams2022Dataset(Dataset):
         self.brain_filter_low = args.preprocs["brain_filter_low"]
         self.brain_filter_high = args.preprocs["brain_filter_high"]
         self.seq_len_samp = self.brain_resample_rate * args.preprocs["seq_len_sec"]
-        self.clamp = args.preprocs["clamp"]
-        self.clamp_lim = args.preprocs["clamp_lim"]
-        self.baseline_len_samp = int(self.brain_resample_rate * args.preprocs["baseline_len_sec"])
+        # self.clamp = args.preprocs["clamp"]
+        # self.clamp_lim = args.preprocs["clamp_lim"]
+        # self.baseline_len_samp = int(self.brain_resample_rate * args.preprocs["baseline_len_sec"])
 
         self.audio_resample_rate = args.preprocs["audio_resample_rate"]
         self.lowpass_filter_width = args.preprocs["lowpass_filter_width"]
@@ -202,13 +204,13 @@ class Gwilliams2022Dataset(Dataset):
         X = self.X[key_no_task][task] # ( 208, ~100000 )
         onset = self.meg_onsets[key_no_task][task][i_in_task] # scalar
         
-        # Extract MEG segment
+        # NOTE: Extract MEG segment. Doing this to save memory from overlapping segments
         X = X[:, onset:onset+self.seq_len_samp] # ( 208, 360 )
         
         # TODO: batch baseline correction in collator
-        X = baseline_correction_single(
-            X.unsqueeze(0), self.baseline_len_samp
-        ).squeeze()
+        # X = baseline_correction_single(
+        #     X.unsqueeze(0), self.baseline_len_samp
+        # ).squeeze()
         
         subject_idx = np.where(self.valid_subjects == key_no_task.split("_")[0])[0][0]
 
@@ -266,10 +268,6 @@ class Gwilliams2022Dataset(Dataset):
 
             Y = self.segment_speech(Y, key)  # ( num_segment=~2000, F=1024, len=360 )
             
-            # NOTE: In this way, the model has to test with sentences that it hasn't seen while training
-            # Probably need to change split so that sentence A goes to train for subject a and to test
-            # for subject b
-            
             if self.train:
                 # NOTE: unlike in preprocessing, sentence_idxs is now not for each word
                 sentence_idxs = np.unique(self.sentence_idxs[key])
@@ -320,8 +318,8 @@ class Gwilliams2022Dataset(Dataset):
             if self.shift_brain:
                 X = self.shift_brain_signal(X, is_Y=False)
                 
-            X = scaleAndClamp_single(X, self.clamp_lim, self.clamp)  # ( ch=208, len~=100000 )
-            
+            # X = scaleAndClamp_single(X, self.clamp_lim, self.clamp)  # ( ch=208, len~=100000 )
+            X = torch.from_numpy(X.astype(np.float32))
             
             meg_onsets = self.meg_onsets[key]
             # To idx in samples
@@ -419,9 +417,9 @@ class Gwilliams2022Dataset(Dataset):
         sentence_idxs.update({task_str: _sentence_idxs})
 
 
-        meg_raw = np.stack([df[key] for key in df.keys() if "MEG" in key])  # ( 224, 396000 )
+        meg_raw = np.stack([df[key] for key in df.keys() if "MEG" in key])  # ( 224, ~396000 )
         # NOTE: (kind of) confirmed that last 16 channels are REF
-        meg_raw = meg_raw[:num_channels]  # ( 208, 396000 )
+        meg_raw = meg_raw[:num_channels]  # ( 208, ~396000 )
         
         meg_filtered = mne.filter.filter_data(
             meg_raw,
@@ -518,12 +516,6 @@ class Gwilliams2022Dataset(Dataset):
             for path in audio_paths:
                 waveform, sample_rate = torchaudio.load(path)
 
-                # cutoff = int(sample_rate * self.real_durations[task_idx][f])
-                # if waveform.shape[1] > cutoff:
-                #     waveform = waveform[:, :cutoff]
-                # else:
-                #     print(yellow("No audio cutoff"))
-
                 # Upsample to 16000Hz
                 waveform = F.resample(
                     waveform,
@@ -562,3 +554,25 @@ class Gwilliams2022Dataset(Dataset):
             Y.update({task_idx: audio_raw})
 
         return Y
+    
+    
+class Gwilliams2022Collator(nn.Module):
+    def __init__(self, args):
+        super(Gwilliams2022Collator, self).__init__()
+        
+        self.brain_resample_rate = args.preprocs["brain_resample_rate"]
+        self.baseline_len_samp = int(self.brain_resample_rate * args.preprocs["baseline_len_sec"])
+        self.clamp = args.preprocs["clamp"]
+        self.clamp_lim = args.preprocs["clamp_lim"]
+        
+    def forward(self, batch: List[tuple]):
+        X = torch.stack([item[0] for item in batch]) # ( 64, 208, 360 )
+        Y = torch.stack([item[1] for item in batch])
+        subject_idx = torch.IntTensor([item[2] for item in batch])
+        
+        X = baseline_correction_single(X, self.baseline_len_samp)
+        X = scaleAndClamp(X, self.clamp_lim, self.clamp)
+        
+        print(X.shape, Y.shape, subject_idx.shape)
+        
+        return X, Y, subject_idx
