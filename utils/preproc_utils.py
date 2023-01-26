@@ -75,12 +75,18 @@ def scaleAndClamp(X, clamp_lim, clamp):
         X (size=subj, chan, time) scaled and clampted channel-wise, subject-wise
     """
     res = []
+    
     for subjID in range(X.shape[0]):
-        scaler = RobustScaler().fit(X[subjID, :, :].T)  # NOTE: must be samples x features
-        _X = torch.from_numpy(scaler.transform(X[subjID, :, :].T)).to(torch.float)  # must be samples x features !!!
+        # NOTE: must be samples x features!
+        scaler = RobustScaler().fit(X[subjID, :, :].T) 
+        
+        _X = torch.from_numpy(scaler.transform(X[subjID, :, :].T)).to(torch.float)
+        
         if clamp:
             _X.clamp_(min=-clamp_lim, max=clamp_lim)
+            
         res.append(_X.to(torch.float))
+        
     return torch.stack(res).permute(0, 2, 1)  # NOTE: make (subj, ch, time) again
 
 

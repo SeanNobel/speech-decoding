@@ -41,61 +41,6 @@ global_speech_onsets = manager.dict()
 global_sentence_idxs = manager.dict()
 
 
-def to_second(onset: pd._libs.tslibs.timestamps.Timestamp) -> np.ndarray:
-    return onset.minute * 60 + onset.second + onset.microsecond * 1e-6
-
-def continuous(onsets: np.ndarray) -> np.ndarray:
-    """
-    Increments speech onsets that start from zero in each separate audio file.
-    (add final timestamp in the previous audio file)
-    """
-    base = 0
-    
-    for i in range(len(onsets)):
-        
-        update_base = i < len(onsets) - 1 and onsets[i+1] < onsets[i]
-        
-        if update_base:
-            next_base = base + onsets[i]
-            
-        onsets[i] += base
-        
-        if update_base:
-            base = next_base
-    
-    return onsets
-
-def drop_overlapping_words(word_onset_idxs, word_onsets, sentence_idxs):
-    """
-    Word onsets that have less than 3 seconds until next sentence onset
-    should be dropped so that they don't go across splits
-    """
-    # TODO: implement
-    
-    return word_onset_idxs, word_onsets, sentence_idxs
-                
-def get_speech_onsets(df_annot):
-    """
-    Extracts kind==word (exclude phoneme) from annotation data.
-    """
-    df_annot = pd.DataFrame(df_annot.description.apply(eval).to_list())
-
-    speech_onsets = df_annot['start'].to_numpy() # ( 3134, )
-    speech_onsets = continuous(speech_onsets)
-    
-    kinds = df_annot['kind'].to_numpy()
-    assert speech_onsets.shape == kinds.shape
-    
-    word_onset_idxs = np.where(kinds == 'word')[0]
-    word_onsets = speech_onsets[word_onset_idxs]
-    sentence_idxs = df_annot['sequence_id'].to_numpy()[word_onset_idxs]
-    
-    word_onset_idxs, word_onsets, sentence_idxs = drop_overlapping_words(
-        word_onset_idxs, word_onsets, sentence_idxs
-    )
-        
-    return word_onset_idxs, word_onsets, sentence_idxs
-
 class Gwilliams2022Dataset(Dataset):
 
     def __init__(self, args, test_word_idxs_dict=None):
@@ -573,6 +518,62 @@ class Gwilliams2022Collator(nn.Module):
         X = baseline_correction_single(X, self.baseline_len_samp)
         X = scaleAndClamp(X, self.clamp_lim, self.clamp)
         
-        print(X.shape, Y.shape, subject_idx.shape)
+        # print(X.shape, Y.shape, subject_idx.shape)
         
         return X, Y, subject_idx
+    
+    
+def to_second(onset: pd._libs.tslibs.timestamps.Timestamp) -> np.ndarray:
+    return onset.minute * 60 + onset.second + onset.microsecond * 1e-6
+
+def continuous(onsets: np.ndarray) -> np.ndarray:
+    """
+    Increments speech onsets that start from zero in each separate audio file.
+    (add final timestamp in the previous audio file)
+    """
+    base = 0
+    
+    for i in range(len(onsets)):
+        
+        update_base = i < len(onsets) - 1 and onsets[i+1] < onsets[i]
+        
+        if update_base:
+            next_base = base + onsets[i]
+            
+        onsets[i] += base
+        
+        if update_base:
+            base = next_base
+    
+    return onsets
+
+def drop_overlapping_words(word_onset_idxs, word_onsets, sentence_idxs):
+    """
+    Word onsets that have less than 3 seconds until next sentence onset
+    should be dropped so that they don't go across splits
+    """
+    # TODO: implement
+    
+    return word_onset_idxs, word_onsets, sentence_idxs
+                
+def get_speech_onsets(df_annot):
+    """
+    Extracts kind==word (exclude phoneme) from annotation data.
+    """
+    df_annot = pd.DataFrame(df_annot.description.apply(eval).to_list())
+
+    speech_onsets = df_annot['start'].to_numpy() # ( 3134, )
+    speech_onsets = continuous(speech_onsets)
+    
+    kinds = df_annot['kind'].to_numpy()
+    assert speech_onsets.shape == kinds.shape
+    
+    word_onset_idxs = np.where(kinds == 'word')[0]
+    word_onsets = speech_onsets[word_onset_idxs]
+    sentence_idxs = df_annot['sequence_id'].to_numpy()[word_onset_idxs]
+    
+    word_onset_idxs, word_onsets, sentence_idxs = drop_overlapping_words(
+        word_onset_idxs, word_onsets, sentence_idxs
+    )
+        
+    return word_onset_idxs, word_onsets, sentence_idxs
