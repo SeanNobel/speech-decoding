@@ -43,12 +43,12 @@ global_sentence_idxs = manager.dict()
 
 class Gwilliams2022Dataset(Dataset):
 
-    def __init__(self, args, test_word_idxs_dict=None):
+    def __init__(self, args): # , test_word_idxs_dict=None):
         super().__init__()
 
-        self.train = test_word_idxs_dict is None
-        self.test_word_idxs_dict = test_word_idxs_dict
-        self.split_ratio = args.split_ratio
+        # self.train = test_word_idxs_dict is None
+        # self.test_word_idxs_dict = test_word_idxs_dict
+        # self.split_ratio = args.split_ratio
         
         self.wav2vec_model = args.wav2vec_model
         self.root_dir = args.root_dir + "/data/Gwilliams2022/"
@@ -213,33 +213,33 @@ class Gwilliams2022Dataset(Dataset):
 
             Y = self.segment_speech(Y, key)  # ( num_segment=~2000, F=1024, len=360 )
             
-            if self.train:
-                # NOTE: unlike in preprocessing, sentence_idxs is now not for each word
-                sentence_idxs = np.unique(self.sentence_idxs[key])
-                np.random.shuffle(sentence_idxs)
+            # if self.train:
+            #     # NOTE: unlike in preprocessing, sentence_idxs is now not for each word
+            #     sentence_idxs = np.unique(self.sentence_idxs[key])
+            #     np.random.shuffle(sentence_idxs)
                 
-                split_idx = int(len(sentence_idxs) * self.split_ratio)
+            #     split_idx = int(len(sentence_idxs) * self.split_ratio)
                 
-                train_sentence_idxs = sentence_idxs[:split_idx]
-                # NOTE: this is passed to test dataset in train.py
-                test_sentence_idxs = sentence_idxs[split_idx:]
+            #     train_sentence_idxs = sentence_idxs[:split_idx]
+            #     # NOTE: this is passed to test dataset in train.py
+            #     test_sentence_idxs = sentence_idxs[split_idx:]
                 
-                # NOTE: now it's back for each word
-                train_word_idxs = self.sentence_to_word_idxs(train_sentence_idxs, key)
-                test_word_idxs = self.sentence_to_word_idxs(test_sentence_idxs, key)
+            #     # NOTE: now it's back for each word
+            #     train_word_idxs = self.sentence_to_word_idxs(train_sentence_idxs, key)
+            #     test_word_idxs = self.sentence_to_word_idxs(test_sentence_idxs, key)
                 
-                Y = Y[train_word_idxs]
+            #     Y = Y[train_word_idxs]
                                 
-                train_word_idxs_dict.update({key: train_word_idxs})
-                test_word_idxs_dict.update({key: test_word_idxs})
+            #     train_word_idxs_dict.update({key: train_word_idxs})
+            #     test_word_idxs_dict.update({key: test_word_idxs})
 
-            else:                
-                Y = Y[self.test_word_idxs_dict[key]]                
+            # else:                
+            #     Y = Y[self.test_word_idxs_dict[key]]                
 
             Y_list.append(Y)
             
-        if self.train:
-            self.test_word_idxs_dict = test_word_idxs_dict
+        # if self.train:
+        #     self.test_word_idxs_dict = test_word_idxs_dict
         
         num_segments_foreach_task = [len(y) for y in Y_list]
                         
@@ -270,10 +270,10 @@ class Gwilliams2022Dataset(Dataset):
             # To idx in samples
             meg_onsets = (meg_onsets * self.brain_resample_rate).round().astype(int)
             
-            if self.train:
-                meg_onsets = meg_onsets[train_word_idxs_dict[key_task]]
-            else:
-                meg_onsets = meg_onsets[self.test_word_idxs_dict[key_task]]
+            # if self.train:
+            #     meg_onsets = meg_onsets[train_word_idxs_dict[key_task]]
+            # else:
+            #     meg_onsets = meg_onsets[self.test_word_idxs_dict[key_task]]
             
             if not key_no_task in X_dict.keys():
                 X_dict[key_no_task] = {key_task: X}

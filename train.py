@@ -51,27 +51,31 @@ def run(args: DictConfig) -> None:
         # NOTE: always splits fast args.split_ratio of the whole recording session
         # to train and test set (deep split), because MEG segments that are
         # close each other have high correlation
-        train_set = Gwilliams2022Dataset(args)
-        test_set = Gwilliams2022Dataset(args, train_set.test_word_idxs_dict)
         
-        assert train_set.num_subjects == test_set.num_subjects
-        with open_dict(args):
-            args.num_subjects = train_set.num_subjects
+        if args.split_mode == "sentence":
             
-        test_size = test_set.Y.shape[0]
-        cprint(f"Test segments: {test_size}", 'cyan') # 1680
-            
-        # dataset = Gwilliams2022Dataset(args)
-        # with open_dict(args):
-        #     args.num_subjects = dataset.num_subjects
+            train_set = Gwilliams2022Dataset(args)
+            test_set = Gwilliams2022Dataset(args, train_set.test_word_idxs_dict)
+            assert train_set.num_subjects == test_set.num_subjects
+            with open_dict(args):
+                args.num_subjects = train_set.num_subjects
+            test_size = test_set.Y.shape[0]
 
-        # train_size = int(dataset.Y.shape[0] * 0.8)
-        # test_size = dataset.Y.shape[0] - train_size
-        # train_set, test_set = torch.utils.data.random_split(
-        #     dataset,
-        #     lengths=[train_size, test_size],
-        #     generator=g,
-        # )
+        elif args.split_mode == "shallow":
+            
+            dataset = Gwilliams2022Dataset(args)
+            with open_dict(args):
+                args.num_subjects = dataset.num_subjects
+
+            train_size = int(dataset.Y.shape[0] * 0.8)
+            test_size = dataset.Y.shape[0] - train_size
+            train_set, test_set = torch.utils.data.random_split(
+                dataset,
+                lengths=[train_size, test_size],
+                generator=g,
+            )
+        
+        cprint(f"Test segments: {test_size}", 'cyan') # 1680
 
         if args.use_sampler:            
             # NOTE: currently not supporting reproducibility

@@ -7,10 +7,11 @@ use_wandb: False
 wandb:
   project: speech_decoding
   entity: sensho
-  run_name: test
+  run_name: word-onsets_shallow
 use_sampler: True        # applicable to Gwilliams only
 reproducible: False      # NOTE: do we need it at all?
 split_ratio: 0.8 # train. FIXME for valid
+split_mode: shallow # sentence, shallow, deep
 num_workers: 6
 batch_size: 64
 updates: 1200
@@ -19,7 +20,7 @@ lr_scheduler: none # cosine or multistep or none
 lr_multistep_mlstns: [0.4, 0.6, 0.8, 0.9]
 lr_step_gamma: 0.5
 epochs: 300
-reduction: "mean"
+reduction: mean
 
 # ==== Architecture ==== #
 D1: 270
