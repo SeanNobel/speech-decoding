@@ -41,13 +41,11 @@ global_speech_onsets = manager.dict()
 global_sentence_idxs = manager.dict()
 
 
-class Gwilliams2022Dataset(Dataset):
+class Gwilliams2022DatasetBase(Dataset):
 
-    def __init__(self, args): # , test_word_idxs_dict=None):
+    def __init__(self, args):
         super().__init__()
 
-        # self.train = test_word_idxs_dict is None
-        # self.test_word_idxs_dict = test_word_idxs_dict
         # self.split_ratio = args.split_ratio
         
         self.wav2vec_model = args.wav2vec_model
@@ -499,7 +497,22 @@ class Gwilliams2022Dataset(Dataset):
             Y.update({task_idx: audio_raw})
 
         return Y
+
+
+class Gwilliams2022SentenceSplit(Gwilliams2022DatasetBase):
     
+    def __init__(self, args):
+        super().__init__(args)
+
+
+class Gwilliams2022ShallowSplit(Gwilliams2022DatasetBase):
+    
+    def __init__(self, args, test_word_idxs_dict=None):
+        super().__init__(args)
+        
+        self.train = test_word_idxs_dict is None
+        self.test_word_idxs_dict = test_word_idxs_dict
+        
     
 class Gwilliams2022Collator(nn.Module):
     def __init__(self, args):

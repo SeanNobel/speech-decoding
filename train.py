@@ -7,7 +7,11 @@ import torch.nn as nn
 from time import time
 from tqdm import tqdm
 from data.brennan2018 import Brennan2018Dataset
-from data.gwilliams2022 import Gwilliams2022Dataset, Gwilliams2022Collator
+from data.gwilliams2022 import (
+    Gwilliams2022SentenceSplit,
+    Gwilliams2022ShallowSplit,
+    Gwilliams2022Collator,
+)
 from models import BrainEncoder, Classifier
 from utils.get_dataloaders import get_dataloaders, get_samplers
 from utils.loss import *
@@ -45,25 +49,24 @@ def run(args: DictConfig) -> None:
     # -----------------------
     #       Dataloader
     # -----------------------
-    # NOTE: For Gwilliams dataset, dataset size is the number of speech segments
-    # so that no overlapping segments are included in a single batch
+    # NOTE: Segmentation is always by word onsets, not just every 3 seconds
     if args.dataset == "Gwilliams2022":
-        # NOTE: always splits fast args.split_ratio of the whole recording session
-        # to train and test set (deep split), because MEG segments that are
-        # close each other have high correlation
         
         if args.split_mode == "sentence":
             
-            train_set = Gwilliams2022Dataset(args)
-            test_set = Gwilliams2022Dataset(args, train_set.test_word_idxs_dict)
+            train_set = Gwilliams2022SentenceSplit(args)
+            test_set = Gwilliams2022SentenceSplit(args, train_set.test_word_idxs_dict)
+            
             assert train_set.num_subjects == test_set.num_subjects
             with open_dict(args):
                 args.num_subjects = train_set.num_subjects
+                
             test_size = test_set.Y.shape[0]
 
         elif args.split_mode == "shallow":
             
-            dataset = Gwilliams2022Dataset(args)
+            dataset = Gwilliams2022ShallowSplit(args)
+            
             with open_dict(args):
                 args.num_subjects = dataset.num_subjects
 
