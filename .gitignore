@@ -8,6 +8,7 @@ __pycache__/
 tests.ipynb
 sandbox.ipynb
 cosine_similarity.ipynb
+gwilliams2022.ipynb
 
 # VS Code
 .vscode/
@@ -25,12 +26,16 @@ data/Brennan2018/_processed_X.pt
 data/Broderick2018/
 data/Gwilliams2022/
 !data/Gwilliams2022/.gitkeep
+data/gwilliams2022_proto.py
 
 # Run outputs and temp files
 outputs/
 tmp/
+runs/
+wandb/
 
 # Micellaneous
 *.pt
 train.sh
 *_debug*
+nohup.out

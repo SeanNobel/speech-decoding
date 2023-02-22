@@ -6,7 +6,7 @@ from transformers import Wav2Vec2Model
 
 
 def load_wav2vec_model(wav2vec_model):
-    cprint("LOADING HUGGINGFACE'S WAV2VEC2", "red", "on_yellow")
+    cprint("Loading HuggingFace'S Wav2Vec2.0", "cyan")
     model = Wav2Vec2Model.from_pretrained(wav2vec_model)
     return model
 

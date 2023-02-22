@@ -1,32 +1,33 @@
 # ==== Dataset ==== #
-dataset: Brennan2018     # for Gwilliams2022, override with Gwilliams2022 in CLI
+dataset: Gwilliams2022 # for Brennan2018, override with Brennan2018 in CLI
 rebuild_dataset: False
 
 # ==== Training ==== #
 use_wandb: False
 wandb:
   project: speech_decoding
-  entity: nightdude
+  entity: sensho
+  run_name: word-onsets
 use_sampler: True        # applicable to Gwilliams only
 reproducible: False      # NOTE: do we need it at all?
+split_ratio: 0.8 # train. FIXME for valid
+split_mode: shallow # sentence, shallow, deep
 num_workers: 6
 batch_size: 64
 updates: 1200
 lr: 3e-4
-lr_scheduler: multistep
-lr_exp_gamma: 0.99
-lr_step_numsteps: 5
+lr_scheduler: none # cosine or multistep or none
 lr_multistep_mlstns: [0.4, 0.6, 0.8, 0.9]
 lr_step_gamma: 0.5
-epochs: 3500
-reduction: "mean"
+epochs: 300
+reduction: mean
 
 # ==== Architecture ==== #
 D1: 270
 D2: 320
 F: 512 # NOTE: because if you set last4layers=False, then it's set to 1024 in the dataset class
 K: 32
-d_drop: 0.3 # for spatial attention, drop channels within d_drop of a randomly selected channel
+d_drop: 0.1 # for spatial attention, drop channels within d_drop of a randomly selected channel
 
 init_temperature: 5.1
 wav2vec_model: facebook/wav2vec2-large-xlsr-53 # (HuggingFace) # xlsr_53_56k (FAIR)
@@ -46,6 +47,8 @@ preprocs:
   subject_wise: True       # whether to scale each subject's EEG dataset individually (only for Brennan2018)
   clamp: True
   clamp_lim: 20
+
+memory_efficient: True
 
 # ==== Logging ==== #
 hydra:

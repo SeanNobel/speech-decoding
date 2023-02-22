@@ -5,13 +5,17 @@ import numpy as np
 import torch
 import torch.nn as nn
 from time import time
-from tqdm import tqdm
+from tqdm import tqdm, trange
 from data.brennan2018 import Brennan2018Dataset
-from data.gwilliams2022 import Gwilliams2022Dataset
+from data.gwilliams2022 import (
+    Gwilliams2022SentenceSplit,
+    Gwilliams2022ShallowSplit,
+    Gwilliams2022DeepSplit,
+    Gwilliams2022Collator,
+)
 from models import BrainEncoder, Classifier
 from utils.get_dataloaders import get_dataloaders, get_samplers
 from utils.loss import *
-from tqdm import trange
 from termcolor import cprint
 import wandb
 from utils.reproducibility import seed_worker
@@ -39,41 +43,71 @@ def run(args: DictConfig) -> None:
 
     with open_dict(args):
         args.root_dir = get_original_cwd()
-    cprint(f"Current working directory : {os.getcwd()}", color='red')
-    cprint(args, color='cyan')
+    cprint(f"Current working directory : {os.getcwd()}")
+    cprint(args, color='white')
 
     # -----------------------
     #       Dataloader
     # -----------------------
-    # NOTE: For Gwilliams dataset, dataset size is the number of speech segments
-    # so that no overlapping segments are included in a single batch
+    # NOTE: Segmentation should always be by word onsets, not just every 3 seconds
     if args.dataset == "Gwilliams2022":
-        dataset = Gwilliams2022Dataset(args)
-        with open_dict(args):
-            args.num_subjects = dataset.num_subjects
+        
+        if args.split_mode == "sentence":
+            
+            train_set = Gwilliams2022SentenceSplit(args)
+            test_set = Gwilliams2022SentenceSplit(args, train_set.test_word_idxs_dict)
+            
+            assert train_set.num_subjects == test_set.num_subjects
+            with open_dict(args):
+                args.num_subjects = train_set.num_subjects
+                
+            test_size = test_set.Y.shape[0]
 
-        train_size = int(dataset.Y.shape[0] * 0.8)
-        test_size = dataset.Y.shape[0] - train_size
-        train_set, test_set = torch.utils.data.random_split(
-            dataset,
-            lengths=[train_size, test_size],
-            generator=g,
-        )
+        elif args.split_mode == "shallow":
+            
+            dataset = Gwilliams2022ShallowSplit(args)
+            
+            with open_dict(args):
+                args.num_subjects = dataset.num_subjects
 
-        if args.use_sampler:
+            train_size = int(dataset.Y.shape[0] * 0.8)
+            test_size = dataset.Y.shape[0] - train_size
+            train_set, test_set = torch.utils.data.random_split(
+                dataset,
+                lengths=[train_size, test_size],
+                generator=g,
+            )
+            
+        elif args.split_mode == "deep":
+            
+            train_set = Gwilliams2022DeepSplit(args, train=True)
+            test_set = Gwilliams2022DeepSplit(args, train=False)
+            assert train_set.num_subjects == test_set.num_subjects
+            
+            with open_dict(args):
+                args.num_subjects = train_set.num_subjects
+                
+            test_size = test_set.Y.shape[0]
+            
+        
+        cprint(f"Test segments: {test_size}", 'cyan')
+
+        if args.use_sampler:            
             # NOTE: currently not supporting reproducibility
-            train_loader, test_loader = get_samplers(train_set, test_set, args, test_bsz=test_size)
+            train_loader, test_loader = get_samplers(
+                train_set, test_set, args, test_bsz=test_size,
+                collate_fn=Gwilliams2022Collator(args),
+            )
         else:
             # FIXME: maybe either get rid of reproducibility, or remove this?
             if args.reproducible:
-                train_loader, test_loader = get_dataloaders(train_set,
-                                                            test_set,
-                                                            args,
-                                                            seed_worker,
-                                                            g,
-                                                            test_bsz=test_size)
+                train_loader, test_loader = get_dataloaders(
+                    train_set, test_set, args, seed_worker, g, test_bsz=test_size
+                )
             else:
-                train_loader, test_loader = get_dataloaders(train_set, test_set, args, test_bsz=test_size)
+                train_loader, test_loader = get_dataloaders(
+                    train_set, test_set, args, test_bsz=test_size
+                )
 
     elif args.dataset == "Brennan2018":
         # NOTE: takes an optional debug param force_recompute to pre-process the EEG even if it exists
@@ -92,7 +126,9 @@ def run(args: DictConfig) -> None:
             f"Number of samples: {len(train_set)} (train), {len(test_set)} (test)",
             color="blue",
         )
-        train_loader, test_loader = get_dataloaders(train_set, test_set, args, g, seed_worker, test_bsz=test_size)
+        train_loader, test_loader = get_dataloaders(
+            train_set, test_set, args, g, seed_worker, test_bsz=test_size
+        )
 
     else:
         raise ValueError("Unknown dataset")
@@ -105,13 +141,14 @@ def run(args: DictConfig) -> None:
             config=wandb.config,
             save_code=True,
         )
+        wandb.run.name = args.wandb.run_name + '_' + args.split_mode
+        wandb.run.save()
 
     # ---------------------
     #        Models
     # ---------------------
     brain_encoder = BrainEncoder(args).to(device)
 
-    # classifier
     classifier = Classifier(args)
 
     # ---------------
@@ -128,13 +165,9 @@ def run(args: DictConfig) -> None:
         lr=float(args.lr),
     )
 
-    if args.lr_scheduler == "exponential":
-        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.lr_exp_gamma)
-    elif args.lr_scheduler == "step":
-        scheduler = torch.optim.lr_scheduler.StepLR(
-            optimizer,
-            step_size=args.epochs // args.lr_step_numsteps,
-            gamma=args.lr_step_gamma,
+    if args.lr_scheduler == "cosine":
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=args.epochs, eta_min=args.lr * 0.1
         )
     elif args.lr_scheduler == "multistep":
         scheduler = torch.optim.lr_scheduler.MultiStepLR(
@@ -143,7 +176,7 @@ def run(args: DictConfig) -> None:
             gamma=args.lr_step_gamma,
         )
     else:
-        raise ValueError()
+        scheduler = None
 
     # ======================================
     for epoch in range(args.epochs):
@@ -153,8 +186,6 @@ def run(args: DictConfig) -> None:
         trainTop10accs = []
         testTop1accs = []
         testTop10accs = []
-
-        # weight_prev = brain_encoder.subject_block.spatial_attention.z_re.clone()
 
         brain_encoder.train()
         for i, batch in enumerate(tqdm(train_loader)):
@@ -180,19 +211,16 @@ def run(args: DictConfig) -> None:
             trainTop1accs.append(trainTop1acc)
             trainTop10accs.append(trainTop10acc)
 
-            if isinstance(train_loader.dataset.dataset, Gwilliams2022Dataset):
+            if args.dataset == "Gwilliams2022":
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
 
         # Accumulate gradients for Gwilliams for the whole epoch
-        if isinstance(train_loader.dataset.dataset, Brennan2018Dataset):
+        if args.dataset == "Brennan2018":
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-
-        # weight_after = brain_encoder.subject_block.spatial_attention.z_re.clone()
-        # print(f"Learning: {not torch.equal(weight_prev, weight_after)}")
 
         brain_encoder.eval()
         for batch in test_loader:
@@ -212,7 +240,7 @@ def run(args: DictConfig) -> None:
 
                 loss = loss_func(Y, Z)
 
-                testTop1acc, testTop10acc = classifier(Z, Y)  # ( 250, 1024, 360 )
+                testTop1acc, testTop10acc = classifier(Z, Y, test=True)  # ( 250, 1024, 360 )
 
             test_losses.append(loss.item())
             testTop1accs.append(testTop1acc)
@@ -242,7 +270,8 @@ def run(args: DictConfig) -> None:
             }
             wandb.log(performance_now)
 
-        scheduler.step()
+        if scheduler is not None:
+            scheduler.step()
 
         torch.save(brain_encoder.state_dict(), "model_last.pt")
 
