@@ -45,8 +45,6 @@ class Gwilliams2022DatasetBase(Dataset):
 
     def __init__(self, args):
         super().__init__()
-
-        # self.split_ratio = args.split_ratio
         
         self.wav2vec_model = args.wav2vec_model
         self.root_dir = args.root_dir + "/data/Gwilliams2022/"
@@ -55,9 +53,6 @@ class Gwilliams2022DatasetBase(Dataset):
         self.brain_filter_low = args.preprocs["brain_filter_low"]
         self.brain_filter_high = args.preprocs["brain_filter_high"]
         self.seq_len_samp = self.brain_resample_rate * args.preprocs["seq_len_sec"]
-        # self.clamp = args.preprocs["clamp"]
-        # self.clamp_lim = args.preprocs["clamp_lim"]
-        # self.baseline_len_samp = int(self.brain_resample_rate * args.preprocs["baseline_len_sec"])
 
         self.audio_resample_rate = args.preprocs["audio_resample_rate"]
         self.lowpass_filter_width = args.preprocs["lowpass_filter_width"]
@@ -83,10 +78,8 @@ class Gwilliams2022DatasetBase(Dataset):
         #     Preprocess X (MEG)
         # ---------------------------
         if args.rebuild_dataset or not args.preprocs["x_done"]:
-            # self.meg_onsets = {}
-            # self.speech_onsets = {}
-            # also updates self.meg_onsets and self.speech_onsets
-            self.X, self.meg_onsets, self.speech_onsets, self.sentence_idxs = self.brain_preproc_handler()
+            _out = self.brain_preproc_handler()
+            self.X, self.meg_onsets, self.speech_onsets, self.sentence_idxs = _out
             
             np.save(self.x_path, self.X)
             np.save(self.meg_onsets_path, self.meg_onsets)
@@ -136,6 +129,7 @@ class Gwilliams2022DatasetBase(Dataset):
         cprint(f"num_subjects: {self.num_subjects} (each has 2 or 1 sessions)", color='cyan')
         print(self.valid_subjects)
 
+
     def __len__(self):
         return len(self.Y)
 
@@ -149,11 +143,6 @@ class Gwilliams2022DatasetBase(Dataset):
         
         # NOTE: Extract MEG segment. Doing this to save memory from overlapping segments
         X = X[:, onset:onset+self.seq_len_samp] # ( 208, 360 )
-        
-        # TODO: batch baseline correction in collator
-        # X = baseline_correction_single(
-        #     X.unsqueeze(0), self.baseline_len_samp
-        # ).squeeze()
         
         subject_idx = np.where(self.valid_subjects == key_no_task.split("_")[0])[0][0]
 
@@ -186,101 +175,6 @@ class Gwilliams2022DatasetBase(Dataset):
             )
             if si in _sentence_idxs
         ]
-
-    def batchfy(self):
-        # self.X.keys() -> ['subject01_sess0_task0', ..., 'subject27_sess1_task3']
-        # self.Y.keys() -> ['task0', 'task1', 'task2', 'task3']
-        assert natsorted(self.X.keys()) == list(self.X.keys()), "self.X.keys() not sorted"
-
-        # ----------------------------------------------------
-        #    Make Y (speech are concatenated along tasks)
-        # ----------------------------------------------------
-        cprint("=> Batchfying Y", color="cyan")
-
-        Y_list = []
-        train_word_idxs_dict = {}
-        test_word_idxs_dict = {}
-
-        for key, Y in tqdm(self.Y.items()):
-            # Y: ( F=1024, len=37835 )
-            if self.shift_brain:
-                # NOTE: This doesn't shift audio. Just crops the end.
-                Y = self.shift_brain_signal(Y, is_Y=True)
-
-            Y = torch.from_numpy(Y.astype(np.float32))
-
-            Y = self.segment_speech(Y, key)  # ( num_segment=~2000, F=1024, len=360 )
-            
-            # if self.train:
-            #     # NOTE: unlike in preprocessing, sentence_idxs is now not for each word
-            #     sentence_idxs = np.unique(self.sentence_idxs[key])
-            #     np.random.shuffle(sentence_idxs)
-                
-            #     split_idx = int(len(sentence_idxs) * self.split_ratio)
-                
-            #     train_sentence_idxs = sentence_idxs[:split_idx]
-            #     # NOTE: this is passed to test dataset in train.py
-            #     test_sentence_idxs = sentence_idxs[split_idx:]
-                
-            #     # NOTE: now it's back for each word
-            #     train_word_idxs = self.sentence_to_word_idxs(train_sentence_idxs, key)
-            #     test_word_idxs = self.sentence_to_word_idxs(test_sentence_idxs, key)
-                
-            #     Y = Y[train_word_idxs]
-                                
-            #     train_word_idxs_dict.update({key: train_word_idxs})
-            #     test_word_idxs_dict.update({key: test_word_idxs})
-
-            # else:                
-            #     Y = Y[self.test_word_idxs_dict[key]]                
-
-            Y_list.append(Y)
-            
-        # if self.train:
-        #     self.test_word_idxs_dict = test_word_idxs_dict
-        
-        num_segments_foreach_task = [len(y) for y in Y_list]
-                        
-        # ------------------------------------
-        #      More preprocessing for MEG
-        # ------------------------------------
-        cprint("=> Segmenting X", color="cyan")
-        
-        self.drop_task_missing_sessions() # self.X.keys() 167 -> 156
-        assert len(self.X.keys()) == len(self.meg_onsets.keys())
-        assert len(self.X.keys()) % 4 == 0
-        
-        X_dict = {}
-        meg_onsets_dict = {}
-
-        for key, X in tqdm(self.X.items()):
-            # NOTE: e.g. 'subject01_sess0_task0' -> 'task0', 'subject01_sess0'
-            key_task = key.split("_")[-1]
-            key_no_task = "_".join(key.split("_")[:-1])
-
-            if self.shift_brain:
-                X = self.shift_brain_signal(X, is_Y=False)
-                
-            # X = scaleAndClamp_single(X, self.clamp_lim, self.clamp)  # ( ch=208, len~=100000 )
-            X = torch.from_numpy(X.astype(np.float32))
-            
-            meg_onsets = self.meg_onsets[key]
-            # To idx in samples
-            meg_onsets = (meg_onsets * self.brain_resample_rate).round().astype(int)
-            
-            # if self.train:
-            #     meg_onsets = meg_onsets[train_word_idxs_dict[key_task]]
-            # else:
-            #     meg_onsets = meg_onsets[self.test_word_idxs_dict[key_task]]
-            
-            if not key_no_task in X_dict.keys():
-                X_dict[key_no_task] = {key_task: X}
-                meg_onsets_dict[key_no_task] = {key_task: meg_onsets}
-            else:
-                X_dict[key_no_task].update({key_task: X})
-                meg_onsets_dict[key_no_task].update({key_task: meg_onsets})
-
-        return X_dict, torch.cat(Y_list), meg_onsets_dict, num_segments_foreach_task
 
     def shift_brain_signal(self, data, is_Y: bool):
         """
@@ -414,7 +308,7 @@ class Gwilliams2022DatasetBase(Dataset):
 
         with Pool(processes=20) as p:
             res = list(tqdm(
-                p.imap(Gwilliams2022Dataset.brain_preproc, subj_list),
+                p.imap(self.brain_preproc, subj_list),
                 total=len(subj_list),
                 bar_format=bar_format,
             ))
@@ -501,20 +395,261 @@ class Gwilliams2022DatasetBase(Dataset):
 
 class Gwilliams2022SentenceSplit(Gwilliams2022DatasetBase):
     
-    def __init__(self, args):
+    def __init__(self, args, test_word_idxs_dict=None):
+        
+        self.train = test_word_idxs_dict is None
+        self.test_word_idxs_dict = test_word_idxs_dict
+        self.split_ratio = args.split_ratio
+        
         super().__init__(args)
+        
+    def batchfy(self):
+        # self.X.keys() -> ['subject01_sess0_task0', ..., 'subject27_sess1_task3']
+        # self.Y.keys() -> ['task0', 'task1', 'task2', 'task3']
+        assert natsorted(self.X.keys()) == list(self.X.keys()), "self.X.keys() not sorted"
+
+        # ----------------------------------------------------
+        #    Make Y (speech are concatenated along tasks)
+        # ----------------------------------------------------
+        cprint("=> Batchfying Y", color="cyan")
+
+        Y_list = []
+        train_word_idxs_dict = {}
+        test_word_idxs_dict = {}
+
+        for key, Y in tqdm(self.Y.items()):
+            # Y: ( F=1024, len=37835 )
+            if self.shift_brain:
+                # NOTE: This doesn't shift audio. Just crops the end.
+                Y = self.shift_brain_signal(Y, is_Y=True)
+
+            Y = torch.from_numpy(Y.astype(np.float32))
+
+            Y = self.segment_speech(Y, key)  # ( num_segment=~2000, F=1024, len=360 )
+            
+            if self.train:
+                # NOTE: unlike in preprocessing, sentence_idxs is now not for each word
+                sentence_idxs = np.unique(self.sentence_idxs[key])
+                np.random.shuffle(sentence_idxs)
+                
+                split_idx = int(len(sentence_idxs) * self.split_ratio)
+                
+                train_sentence_idxs = sentence_idxs[:split_idx]
+                # NOTE: this is passed to test dataset in train.py
+                test_sentence_idxs = sentence_idxs[split_idx:]
+                
+                # NOTE: now it's back for each word
+                train_word_idxs = self.sentence_to_word_idxs(train_sentence_idxs, key)
+                test_word_idxs = self.sentence_to_word_idxs(test_sentence_idxs, key)
+                
+                Y = Y[train_word_idxs]
+                                
+                train_word_idxs_dict.update({key: train_word_idxs})
+                test_word_idxs_dict.update({key: test_word_idxs})
+
+            else:                
+                Y = Y[self.test_word_idxs_dict[key]]                
+
+            Y_list.append(Y)
+            
+        if self.train:
+            self.test_word_idxs_dict = test_word_idxs_dict
+        
+        num_segments_foreach_task = [len(y) for y in Y_list]
+                        
+        # ------------------------------------
+        #      More preprocessing for MEG
+        # ------------------------------------
+        cprint("=> Segmenting X", color="cyan")
+        
+        self.drop_task_missing_sessions() # self.X.keys() 167 -> 156
+        assert len(self.X.keys()) == len(self.meg_onsets.keys())
+        assert len(self.X.keys()) % 4 == 0
+        
+        X_dict = {}
+        meg_onsets_dict = {}
+
+        for key, X in tqdm(self.X.items()):
+            # NOTE: e.g. 'subject01_sess0_task0' -> 'task0', 'subject01_sess0'
+            key_task = key.split("_")[-1]
+            key_no_task = "_".join(key.split("_")[:-1])
+
+            if self.shift_brain:
+                X = self.shift_brain_signal(X, is_Y=False)
+                
+            X = torch.from_numpy(X.astype(np.float32))
+            
+            meg_onsets = self.meg_onsets[key]
+            # To idx in samples
+            meg_onsets = (meg_onsets * self.brain_resample_rate).round().astype(int)
+            
+            if self.train:
+                meg_onsets = meg_onsets[train_word_idxs_dict[key_task]]
+            else:
+                meg_onsets = meg_onsets[self.test_word_idxs_dict[key_task]]
+            
+            if not key_no_task in X_dict.keys():
+                X_dict[key_no_task] = {key_task: X}
+                meg_onsets_dict[key_no_task] = {key_task: meg_onsets}
+            else:
+                X_dict[key_no_task].update({key_task: X})
+                meg_onsets_dict[key_no_task].update({key_task: meg_onsets})
+
+        return X_dict, torch.cat(Y_list), meg_onsets_dict, num_segments_foreach_task
 
 
 class Gwilliams2022ShallowSplit(Gwilliams2022DatasetBase):
     
-    def __init__(self, args, test_word_idxs_dict=None):
+    def __init__(self, args):
         super().__init__(args)
         
-        self.train = test_word_idxs_dict is None
-        self.test_word_idxs_dict = test_word_idxs_dict
+    def batchfy(self):
+        # self.X.keys() -> ['subject01_sess0_task0', ..., 'subject27_sess1_task3']
+        # self.Y.keys() -> ['task0', 'task1', 'task2', 'task3']
+        assert natsorted(self.X.keys()) == list(self.X.keys()), "self.X.keys() not sorted"
+
+        # ----------------------------------------------------
+        #    Make Y (speech are concatenated along tasks)
+        # ----------------------------------------------------
+        cprint("=> Batchfying Y", color="cyan")
+
+        Y_list = []
+
+        for key, Y in tqdm(self.Y.items()):
+            # Y: ( F=1024, len=37835 )
+            if self.shift_brain:
+                # NOTE: This doesn't shift audio. Just crops the end.
+                Y = self.shift_brain_signal(Y, is_Y=True)
+
+            Y = torch.from_numpy(Y.astype(np.float32))
+
+            Y = self.segment_speech(Y, key)  # ( num_segment=~2000, F=1024, len=360 )
+
+            Y_list.append(Y)
+        
+        num_segments_foreach_task = [len(y) for y in Y_list]
+                        
+        # ------------------------------------
+        #      More preprocessing for MEG
+        # ------------------------------------
+        cprint("=> Segmenting X", color="cyan")
+        
+        self.drop_task_missing_sessions() # self.X.keys() 167 -> 156
+        assert len(self.X.keys()) == len(self.meg_onsets.keys())
+        assert len(self.X.keys()) % 4 == 0
+        
+        X_dict = {}
+        meg_onsets_dict = {}
+
+        for key, X in tqdm(self.X.items()):
+            # NOTE: e.g. 'subject01_sess0_task0' -> 'task0', 'subject01_sess0'
+            key_task = key.split("_")[-1]
+            key_no_task = "_".join(key.split("_")[:-1])
+
+            if self.shift_brain:
+                X = self.shift_brain_signal(X, is_Y=False)
+                
+            X = torch.from_numpy(X.astype(np.float32))
+            
+            meg_onsets = self.meg_onsets[key]
+            # To idx in samples
+            meg_onsets = (meg_onsets * self.brain_resample_rate).round().astype(int)
+            
+            if not key_no_task in X_dict.keys():
+                X_dict[key_no_task] = {key_task: X}
+                meg_onsets_dict[key_no_task] = {key_task: meg_onsets}
+            else:
+                X_dict[key_no_task].update({key_task: X})
+                meg_onsets_dict[key_no_task].update({key_task: meg_onsets})
+
+        return X_dict, torch.cat(Y_list), meg_onsets_dict, num_segments_foreach_task
+    
+    
+class Gwilliams2022DeepSplit(Gwilliams2022DatasetBase):
+    
+    def __init__(self, args, train):
+        
+        self.train = train
+        self.split_ratio = args.split_ratio
+        
+        super().__init__(args)
+        
+    def batchfy(self):
+        # self.X.keys() -> ['subject01_sess0_task0', ..., 'subject27_sess1_task3']
+        # self.Y.keys() -> ['task0', 'task1', 'task2', 'task3']
+        assert natsorted(self.X.keys()) == list(self.X.keys()), "self.X.keys() not sorted"
+
+        # ----------------------------------------------------
+        #    Make Y (speech are concatenated along tasks)
+        # ----------------------------------------------------
+        cprint("=> Batchfying Y", color="cyan")
+
+        Y_list = []
+
+        for key, Y in tqdm(self.Y.items()):
+            # Y: ( F=1024, len=37835 )
+            if self.shift_brain:
+                # NOTE: This doesn't shift audio. Just crops the end.
+                Y = self.shift_brain_signal(Y, is_Y=True)
+
+            Y = torch.from_numpy(Y.astype(np.float32))
+
+            Y = self.segment_speech(Y, key)  # ( num_segment=~2000, F=1024, len=360 )
+            
+            if self.train:
+                Y = Y[:int(len(Y) * self.split_ratio)]
+            else:                
+                Y = Y[int(len(Y) * self.split_ratio):]
+
+            Y_list.append(Y)
+        
+        num_segments_foreach_task = [len(y) for y in Y_list]
+                        
+        # ------------------------------------
+        #      More preprocessing for MEG
+        # ------------------------------------
+        cprint("=> Segmenting X", color="cyan")
+        
+        self.drop_task_missing_sessions() # self.X.keys() 167 -> 156
+        assert len(self.X.keys()) == len(self.meg_onsets.keys())
+        assert len(self.X.keys()) % 4 == 0
+        
+        X_dict = {}
+        meg_onsets_dict = {}
+
+        for key, X in tqdm(self.X.items()):
+            # NOTE: e.g. 'subject01_sess0_task0' -> 'task0', 'subject01_sess0'
+            key_task = key.split("_")[-1]
+            key_no_task = "_".join(key.split("_")[:-1])
+
+            if self.shift_brain:
+                X = self.shift_brain_signal(X, is_Y=False)
+                
+            X = torch.from_numpy(X.astype(np.float32))
+            
+            meg_onsets = self.meg_onsets[key]
+            # To idx in samples
+            meg_onsets = (meg_onsets * self.brain_resample_rate).round().astype(int)
+            
+            if self.train:
+                meg_onsets = meg_onsets[:int(len(meg_onsets) * self.split_ratio)]
+            else:
+                meg_onsets = meg_onsets[int(len(meg_onsets) * self.split_ratio):]
+            
+            if not key_no_task in X_dict.keys():
+                X_dict[key_no_task] = {key_task: X}
+                meg_onsets_dict[key_no_task] = {key_task: meg_onsets}
+            else:
+                X_dict[key_no_task].update({key_task: X})
+                meg_onsets_dict[key_no_task].update({key_task: meg_onsets})
+
+        return X_dict, torch.cat(Y_list), meg_onsets_dict, num_segments_foreach_task
         
     
 class Gwilliams2022Collator(nn.Module):
+    """
+    Runs baseline correction and robust scaling and clamping for batch
+    """
     def __init__(self, args):
         super(Gwilliams2022Collator, self).__init__()
         
@@ -530,9 +665,7 @@ class Gwilliams2022Collator(nn.Module):
         
         X = baseline_correction_single(X, self.baseline_len_samp)
         X = scaleAndClamp(X, self.clamp_lim, self.clamp)
-        
-        # print(X.shape, Y.shape, subject_idx.shape)
-        
+                
         return X, Y, subject_idx
     
     

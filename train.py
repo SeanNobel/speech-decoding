@@ -5,17 +5,17 @@ import numpy as np
 import torch
 import torch.nn as nn
 from time import time
-from tqdm import tqdm
+from tqdm import tqdm, trange
 from data.brennan2018 import Brennan2018Dataset
 from data.gwilliams2022 import (
     Gwilliams2022SentenceSplit,
     Gwilliams2022ShallowSplit,
+    Gwilliams2022DeepSplit,
     Gwilliams2022Collator,
 )
 from models import BrainEncoder, Classifier
 from utils.get_dataloaders import get_dataloaders, get_samplers
 from utils.loss import *
-from tqdm import trange
 from termcolor import cprint
 import wandb
 from utils.reproducibility import seed_worker
@@ -49,7 +49,7 @@ def run(args: DictConfig) -> None:
     # -----------------------
     #       Dataloader
     # -----------------------
-    # NOTE: Segmentation is always by word onsets, not just every 3 seconds
+    # NOTE: Segmentation should always be by word onsets, not just every 3 seconds
     if args.dataset == "Gwilliams2022":
         
         if args.split_mode == "sentence":
@@ -77,8 +77,20 @@ def run(args: DictConfig) -> None:
                 lengths=[train_size, test_size],
                 generator=g,
             )
+            
+        elif args.split_mode == "deep":
+            
+            train_set = Gwilliams2022DeepSplit(args, train=True)
+            test_set = Gwilliams2022DeepSplit(args, train=False)
+            assert train_set.num_subjects == test_set.num_subjects
+            
+            with open_dict(args):
+                args.num_subjects = train_set.num_subjects
+                
+            test_size = test_set.Y.shape[0]
+            
         
-        cprint(f"Test segments: {test_size}", 'cyan') # 1680
+        cprint(f"Test segments: {test_size}", 'cyan')
 
         if args.use_sampler:            
             # NOTE: currently not supporting reproducibility
@@ -129,7 +141,7 @@ def run(args: DictConfig) -> None:
             config=wandb.config,
             save_code=True,
         )
-        wandb.run.name = args.wandb.run_name
+        wandb.run.name = args.wandb.run_name + '_' + args.split_mode
         wandb.run.save()
 
     # ---------------------

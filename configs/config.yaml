@@ -1,5 +1,5 @@
 # ==== Dataset ==== #
-dataset: Brennan2018     # for Gwilliams2022, override with Gwilliams2022 in CLI
+dataset: Gwilliams2022 # for Brennan2018, override with Brennan2018 in CLI
 rebuild_dataset: False
 
 # ==== Training ==== #
@@ -7,7 +7,7 @@ use_wandb: False
 wandb:
   project: speech_decoding
   entity: sensho
-  run_name: word-onsets_shallow
+  run_name: word-onsets
 use_sampler: True        # applicable to Gwilliams only
 reproducible: False      # NOTE: do we need it at all?
 split_ratio: 0.8 # train. FIXME for valid
