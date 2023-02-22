@@ -8,7 +8,7 @@ from termcolor import cprint
 from einops import rearrange
 from tqdm import tqdm
 
-from speech_decoding.constants import device
+from constants import device
 from speech_decoding.utils.layout import ch_locations_2d
 
 

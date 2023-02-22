@@ -11,7 +11,7 @@ from omegaconf import DictConfig, open_dict
 import hydra
 from hydra.utils import get_original_cwd
 
-from speech_decoding.constants import device
+from constants import device
 from speech_decoding.dataclass.brennan2018 import Brennan2018Dataset
 from speech_decoding.dataclass.gwilliams2022 import (
     Gwilliams2022SentenceSplit,

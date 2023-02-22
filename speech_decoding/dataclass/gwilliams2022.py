@@ -23,7 +23,7 @@ from multiprocessing import Pool, Manager
 from itertools import repeat
 from omegaconf import open_dict
 
-from speech_decoding.constants import bar_format
+from constants import bar_format
 from speech_decoding.utils.wav2vec_util import load_wav2vec_model, getW2VLastFourLayersAvg
 from speech_decoding.utils.preproc_utils import (
     check_preprocs,

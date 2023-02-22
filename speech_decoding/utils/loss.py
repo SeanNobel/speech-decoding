@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 
-from speech_decoding.constants import device
+from constants import device
 
 
 def torch_exp(x: torch.Tensor):  # x: ( N, )
