@@ -14,20 +14,17 @@ import mne, mne_bids
 from tqdm import tqdm
 import ast
 from typing import Union
-from utils.bcolors import cyan, yellow
-from utils.wav2vec_util import load_wav2vec_model, getW2VLastFourLayersAvg
-
-# from utils.preproc_utils import scaleAndClamp_single, scaleAndClamp
 from termcolor import cprint
 from pprint import pprint
 from einops import rearrange
 from sklearn.preprocessing import RobustScaler, StandardScaler
 
+from speech_decoding.utils.wav2vec_util import load_wav2vec_model, getW2VLastFourLayersAvg
+
 mne.set_log_level(verbose="WARNING")
 
 
 class Brennan2018Dataset(Dataset):
-
     def __init__(self, args, train=True):
         super().__init__()
 
@@ -58,11 +55,7 @@ class Brennan2018Dataset(Dataset):
             cprint(f"Pre-processing EEG...", color="red")
             self.X, srate = self.brain_preproc(self.Y.shape[-1])
             torch.save(
-                {
-                    "X": self.X,
-                    "srate": srate,
-                },
-                X_path,
+                {"X": self.X, "srate": srate,}, X_path,
             )
 
         cprint(f"Loading preprocessed EEG...", color="green", attrs=["bold"])
@@ -70,9 +63,7 @@ class Brennan2018Dataset(Dataset):
         self.X = preprocessed_eeg["X"]
         srate = preprocessed_eeg["srate"]  # ( 33, 60, 99712 )
         cprint(
-            f"Using existing pre-processed data {self.X.shape}, srate={srate}",
-            "red",
-            "on_yellow",
+            f"Using existing pre-processed data {self.X.shape}, srate={srate}", "red", "on_yellow",
         )
 
         self.num_subjects = self.X.shape[0]
@@ -123,9 +114,12 @@ class Brennan2018Dataset(Dataset):
         if self.subject_wise:
             res = []
             for subjID in range(self.X.shape[0]):
-                scaler = RobustScaler().fit(self.X[subjID, :, :].T)  # NOTE: must be samples x features
+                scaler = RobustScaler().fit(
+                    self.X[subjID, :, :].T
+                )  # NOTE: must be samples x features
                 _X = torch.from_numpy(scaler.transform(self.X[subjID, :, :].T)).to(
-                    torch.float)  # must be samples x features !!!
+                    torch.float
+                )  # must be samples x features !!!
                 if self.clamp:
                     _X.clamp_(min=-self.clamp_lim, max=self.clamp_lim)
                 res.append(_X.to(torch.float))
@@ -143,7 +137,7 @@ class Brennan2018Dataset(Dataset):
         baseline_corrected_X = []
         # NOTE: now X is a tuple of 358 matrices of size torch.Size([subj, ch, time]))
         for chunk_id in range(len(self.X)):
-            baseline = self.X[chunk_id][..., :self.baseline_len_samp].mean(axis=-1, keepdim=True)
+            baseline = self.X[chunk_id][..., : self.baseline_len_samp].mean(axis=-1, keepdim=True)
             baseline_corrected_X.append(self.X[chunk_id] - baseline)
         return baseline_corrected_X
 
@@ -169,12 +163,16 @@ class Brennan2018Dataset(Dataset):
         # waveform: ( 1, 31908132 )
         waveform = torch.cat([w[0] for w in waveform], dim=1)
 
-        cprint(f"Audio before resampling: {waveform.shape}", color="yellow")  # shape of the original audio
+        cprint(
+            f"Audio before resampling: {waveform.shape}", color="yellow"
+        )  # shape of the original audio
 
         # NOTE: the base model was pre-trained on audio sampled @ 16kHz
         resample_rate = 16000
         waveform = F.resample(waveform, sample_rate, resample_rate, lowpass_filter_width=128)
-        cprint(f"Audio after resampling: {waveform.shape}", color="red")  # shape of the resampled audio
+        cprint(
+            f"Audio after resampling: {waveform.shape}", color="red"
+        )  # shape of the resampled audio
         len_audio_s = waveform.shape[1] / resample_rate
         cprint(f"Audio length: {len_audio_s} s.", color="yellow")
 
@@ -186,7 +184,9 @@ class Brennan2018Dataset(Dataset):
             cprint(f"Generating audio embeddings", "yellow", "on_red")
             embeddings = getW2VLastFourLayersAvg(model, waveform)  # torch.Size([1024, 36170])
         else:
-            embeddings = model.feature_extractor(waveform).squeeze()  # (512, 36176 @16kHz) ( 512, 99712 @44.1kHz)
+            embeddings = model.feature_extractor(
+                waveform
+            ).squeeze()  # (512, 36176 @16kHz) ( 512, 99712 @44.1kHz)
 
         embedding_srate = embeddings.shape[-1] / len_audio_s
         cprint(
@@ -261,24 +261,17 @@ class Brennan2018Dataset(Dataset):
             # label = [e[0] for e in mat_raw["label"].squeeze()]
 
             eeg_filtered = mne.filter.filter_data(
-                eeg_raw,
-                sfreq=fsample,
-                l_freq=self.brain_filter_low,
-                h_freq=self.brain_filter_high,
+                eeg_raw, sfreq=fsample, l_freq=self.brain_filter_low, h_freq=self.brain_filter_high,
             )
 
             # NOTE: This resamples EEG from 500Hz down to around 135Hz
             # NOTE: Two conditions must be met here: (1) that w2v and brain_encoder get the same length of data, AND (2) that the outputs of w2v and brain_encoder have the SAME dimension (this is required by CLIPLoss). Since the brain_encoder outputs the same number of time samples, we just need to resample EEG to so that the resampled EEG has the same number of time samples as the NUMBER of embeddings coming out of the FE.
             downsampling_factor = eeg_filtered.shape[-1] / audio_embd_len
-            eeg_resampled = mne.filter.resample(
-                eeg_filtered,
-                down=downsampling_factor,
-            )
+            eeg_resampled = mne.filter.resample(eeg_filtered, down=downsampling_factor,)
 
             new_srate = fsample / downsampling_factor
             cprint(
-                f"Downsampling EEG from {fsample} Hz to {new_srate:.4f} Hz",
-                color="cyan",
+                f"Downsampling EEG from {fsample} Hz to {new_srate:.4f} Hz", color="cyan",
             )
 
             X.append(eeg_resampled)
