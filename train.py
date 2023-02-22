@@ -70,7 +70,7 @@ def run(args: DictConfig) -> None:
             with open_dict(args):
                 args.num_subjects = dataset.num_subjects
 
-            train_size = int(dataset.Y.shape[0] * 0.8)
+            train_size = int(dataset.Y.shape[0] * args.split_ratio)
             test_size = dataset.Y.shape[0] - train_size
             train_set, test_set = torch.utils.data.random_split(
                 dataset,
@@ -115,7 +115,7 @@ def run(args: DictConfig) -> None:
         with open_dict(args):
             args.num_subjects = dataset.num_subjects
 
-        train_size = int(len(dataset) * 0.8)
+        train_size = int(len(dataset) * args.split_ratio)
         test_size = len(dataset) - train_size
         train_set, test_set = torch.utils.data.random_split(
             dataset,
