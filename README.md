@@ -43,4 +43,4 @@ To do that, set `entity` and `project` in the `wandb` section of `config.yaml`.
 
 - Dataset https://deepblue.lib.umich.edu/data/concern/data_sets/bg257f92t
 
-You will need `S01.mat` to `S49.mat` placed under `data/Brennan2018/raw/` to run the code.
+You will need `S01.mat` to `S49.mat` placed under `data/Brennan2018/raw/` and `audio.zip` unzipped to `data/Brennan2018/audio/` to run the code.

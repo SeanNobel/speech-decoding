@@ -1,28 +1,28 @@
-from constants import device
-
 import os, sys, random
 import numpy as np
 import torch
 import torch.nn as nn
 from time import time
 from tqdm import tqdm, trange
-from data.brennan2018 import Brennan2018Dataset
-from data.gwilliams2022 import (
+from termcolor import cprint
+import wandb
+
+from omegaconf import DictConfig, open_dict
+import hydra
+from hydra.utils import get_original_cwd
+
+from constants import device
+from speech_decoding.dataclass.brennan2018 import Brennan2018Dataset
+from speech_decoding.dataclass.gwilliams2022 import (
     Gwilliams2022SentenceSplit,
     Gwilliams2022ShallowSplit,
     Gwilliams2022DeepSplit,
     Gwilliams2022Collator,
 )
-from models import BrainEncoder, Classifier
-from utils.get_dataloaders import get_dataloaders, get_samplers
-from utils.loss import *
-from termcolor import cprint
-import wandb
-from utils.reproducibility import seed_worker
-
-from omegaconf import DictConfig, open_dict
-import hydra
-from hydra.utils import get_original_cwd
+from speech_decoding.models import BrainEncoder, Classifier
+from speech_decoding.utils.get_dataloaders import get_dataloaders, get_samplers
+from speech_decoding.utils.loss import *
+from speech_decoding.utils.reproducibility import seed_worker
 
 
 @hydra.main(version_base=None, config_path="configs", config_name="config")
@@ -44,58 +44,58 @@ def run(args: DictConfig) -> None:
     with open_dict(args):
         args.root_dir = get_original_cwd()
     cprint(f"Current working directory : {os.getcwd()}")
-    cprint(args, color='white')
+    cprint(args, color="white")
 
     # -----------------------
     #       Dataloader
     # -----------------------
     # NOTE: Segmentation should always be by word onsets, not just every 3 seconds
     if args.dataset == "Gwilliams2022":
-        
+
         if args.split_mode == "sentence":
-            
+
             train_set = Gwilliams2022SentenceSplit(args)
             test_set = Gwilliams2022SentenceSplit(args, train_set.test_word_idxs_dict)
-            
+
             assert train_set.num_subjects == test_set.num_subjects
             with open_dict(args):
                 args.num_subjects = train_set.num_subjects
-                
+
             test_size = test_set.Y.shape[0]
 
         elif args.split_mode == "shallow":
-            
+
             dataset = Gwilliams2022ShallowSplit(args)
-            
+
             with open_dict(args):
                 args.num_subjects = dataset.num_subjects
 
-            train_size = int(dataset.Y.shape[0] * 0.8)
+            train_size = int(dataset.Y.shape[0] * args.split_ratio)
             test_size = dataset.Y.shape[0] - train_size
             train_set, test_set = torch.utils.data.random_split(
-                dataset,
-                lengths=[train_size, test_size],
-                generator=g,
+                dataset, lengths=[train_size, test_size], generator=g,
             )
-            
+
         elif args.split_mode == "deep":
-            
+
             train_set = Gwilliams2022DeepSplit(args, train=True)
             test_set = Gwilliams2022DeepSplit(args, train=False)
             assert train_set.num_subjects == test_set.num_subjects
-            
+
             with open_dict(args):
                 args.num_subjects = train_set.num_subjects
-                
-            test_size = test_set.Y.shape[0]
-            
-        
-        cprint(f"Test segments: {test_size}", 'cyan')
 
-        if args.use_sampler:            
+            test_size = test_set.Y.shape[0]
+
+        cprint(f"Test segments: {test_size}", "cyan")
+
+        if args.use_sampler:
             # NOTE: currently not supporting reproducibility
             train_loader, test_loader = get_samplers(
-                train_set, test_set, args, test_bsz=test_size,
+                train_set,
+                test_set,
+                args,
+                test_bsz=test_size,
                 collate_fn=Gwilliams2022Collator(args),
             )
         else:
@@ -115,16 +115,13 @@ def run(args: DictConfig) -> None:
         with open_dict(args):
             args.num_subjects = dataset.num_subjects
 
-        train_size = int(len(dataset) * 0.8)
+        train_size = int(len(dataset) * args.split_ratio)
         test_size = len(dataset) - train_size
         train_set, test_set = torch.utils.data.random_split(
-            dataset,
-            lengths=[train_size, test_size],
-            generator=g,
+            dataset, lengths=[train_size, test_size], generator=g,
         )
         cprint(
-            f"Number of samples: {len(train_set)} (train), {len(test_set)} (test)",
-            color="blue",
+            f"Number of samples: {len(train_set)} (train), {len(test_set)} (test)", color="blue",
         )
         train_loader, test_loader = get_dataloaders(
             train_set, test_set, args, g, seed_worker, test_bsz=test_size
@@ -134,14 +131,14 @@ def run(args: DictConfig) -> None:
         raise ValueError("Unknown dataset")
 
     if args.use_wandb:
-        wandb.config = {k: v for k, v in dict(args).items() if k not in ['root_dir', 'wandb']}
+        wandb.config = {k: v for k, v in dict(args).items() if k not in ["root_dir", "wandb"]}
         wandb.init(
             project=args.wandb.project,
             entity=args.wandb.entity,
             config=wandb.config,
             save_code=True,
         )
-        wandb.run.name = args.wandb.run_name + '_' + args.split_mode
+        wandb.run.name = args.wandb.run_name + "_" + args.split_mode
         wandb.run.save()
 
     # ---------------------
@@ -161,8 +158,7 @@ def run(args: DictConfig) -> None:
     #      Optimizer
     # --------------------
     optimizer = torch.optim.Adam(
-        list(brain_encoder.parameters()) + list(loss_func.parameters()),
-        lr=float(args.lr),
+        list(brain_encoder.parameters()) + list(loss_func.parameters()), lr=float(args.lr),
     )
 
     if args.lr_scheduler == "cosine":
@@ -194,7 +190,9 @@ def run(args: DictConfig) -> None:
                 X, Y, subject_idxs = batch
             elif len(batch) == 4:
                 X, Y, subject_idxs, chunkIDs = batch
-                assert (len(chunkIDs.unique()) == X.shape[0]), "Duplicate segments in batch are not allowed. Aborting."
+                assert (
+                    len(chunkIDs.unique()) == X.shape[0]
+                ), "Duplicate segments in batch are not allowed. Aborting."
             else:
                 raise ValueError("Unexpected number of items from dataloader.")
 

@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
+
 from constants import device
 
 
@@ -27,7 +28,6 @@ class MSELoss(nn.Module):
 
 
 class CLIPLoss(nn.Module):
-
     def __init__(self, args):
         super().__init__()
         self.device = device
@@ -48,8 +48,8 @@ class CLIPLoss(nn.Module):
 
         if not fast:
             # less efficient way
-            x_ = rearrange(x, 'b f t -> 1 b (f t)')
-            y_ = rearrange(y, 'b f t -> b 1 (f t)')
+            x_ = rearrange(x, "b f t -> 1 b (f t)")
+            y_ = rearrange(y, "b f t -> b 1 (f t)")
             logits = self.compute_similarity(x_, y_)  # s
 
             # unnecessary steps for the less efficient way (this might be needed for fancy contrastive losses)

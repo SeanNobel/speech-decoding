@@ -3,12 +3,13 @@ import numpy as np
 import torch
 import torch.nn as nn
 from time import time
-from utils.layout import ch_locations_2d
 import torch.nn.functional as F
-from constants import device
 from termcolor import cprint
 from einops import rearrange
 from tqdm import tqdm
+
+from constants import device
+from speech_decoding.utils.layout import ch_locations_2d
 
 
 class SpatialAttention(nn.Module):
@@ -30,10 +31,14 @@ class SpatialAttention(nn.Module):
         x, y = loc[:, 0], loc[:, 1]
 
         # make a complex-valued parameter, reshape k,l into one dimension
-        self.z = nn.Parameter(torch.rand(size=(args.D1, args.K**2), dtype=torch.cfloat)).to(device)
+        self.z = nn.Parameter(torch.rand(size=(args.D1, args.K ** 2), dtype=torch.cfloat)).to(
+            device
+        )
 
         # NOTE: pre-compute the values of cos and sin (they depend on k, l, x and y which repeat)
-        phi = 2 * torch.pi * (torch.einsum('k,x->kx', k, x) + torch.einsum('l,y->ly', l, y))  # torch.Size([1024, 60]))
+        phi = (
+            2 * torch.pi * (torch.einsum("k,x->kx", k, x) + torch.einsum("l,y->ly", l, y))
+        )  # torch.Size([1024, 60]))
         self.cos = torch.cos(phi).to(device)
         self.sin = torch.sin(phi).to(device)
 
@@ -41,11 +46,14 @@ class SpatialAttention(nn.Module):
         self.spatial_dropout = SpatialDropout(loc, args.d_drop)
 
     def forward(self, X):
+        """X: (batch_size, num_channels, T)"""
 
         # NOTE: do hadamard product and and sum over l and m (i.e. m, which is l X m)
-        re = torch.einsum('jm, me -> je', self.z.real, self.cos)  # torch.Size([270, 60])
-        im = torch.einsum('jm, me -> je', self.z.imag, self.sin)
-        a = re + im  # essentially (unnormalized) weights with which to mix input channels into ouput channels
+        re = torch.einsum("jm, me -> je", self.z.real, self.cos)  # torch.Size([270, 60])
+        im = torch.einsum("jm, me -> je", self.z.imag, self.sin)
+        a = (
+            re + im
+        )  # essentially (unnormalized) weights with which to mix input channels into ouput channels
         # ( D1, num_channels )
 
         # NOTE: to get the softmax spatial attention weights over input electrodes,
@@ -57,7 +65,7 @@ class SpatialAttention(nn.Module):
         dropped_X = self.spatial_dropout(X)
 
         # NOTE: each output is a diff weighted sum over each input channel
-        return torch.einsum('oi,bit->bot', SA_wts, dropped_X)
+        return torch.einsum("oi,bit->bot", SA_wts, dropped_X)
 
 
 class SpatialDropout(nn.Module):
@@ -75,14 +83,13 @@ class SpatialDropout(nn.Module):
         if self.training:
             drop_center = self.loc[np.random.randint(self.num_channels)]  # ( 2, )
             distances = (self.loc - drop_center).norm(dim=-1)  # ( num_channels, )
-            mask = torch.where(distances < self.d_drop, 0., 1.).to(device)  # ( num_channels, )
-            return torch.einsum('c,bct->bct', mask, X)
+            mask = torch.where(distances < self.d_drop, 0.0, 1.0).to(device)  # ( num_channels, )
+            return torch.einsum("c,bct->bct", mask, X)
         else:
             return X
 
 
 class SubjectBlock(nn.Module):
-
     def __init__(self, args):
         super(SubjectBlock, self).__init__()
 
@@ -91,60 +98,30 @@ class SubjectBlock(nn.Module):
         self.K = args.K
         self.spatial_attention = SpatialAttention(args)
         self.conv = nn.Conv1d(in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1)
-        self.subject_layer = nn.ModuleList([
-            nn.Conv1d(
-                in_channels=self.D1,
-                out_channels=self.D1,
-                kernel_size=1,
-                bias=False,
-                stride=1,
-                device=device,
-            ) for _ in range(self.num_subjects)
-        ])
+        self.subject_layer = nn.ModuleList(
+            [
+                nn.Conv1d(
+                    in_channels=self.D1,
+                    out_channels=self.D1,
+                    kernel_size=1,
+                    bias=False,
+                    stride=1,
+                    device=device,
+                )
+                for _ in range(self.num_subjects)
+            ]
+        )
 
     def forward(self, X, subject_idxs):
         X = self.spatial_attention(X)  # ( B, 270, 256 )
         X = self.conv(X)  # ( B, 270, 256 )
-        X = torch.cat([self.subject_layer[i](x.unsqueeze(dim=0)) for i, x in zip(subject_idxs, X)])  # ( B, 270, 256 )
+        X = torch.cat(
+            [self.subject_layer[i](x.unsqueeze(dim=0)) for i, x in zip(subject_idxs, X)]
+        )  # ( B, 270, 256 )
         return X
 
 
-class SubjectBlock_proto(nn.Module):
-
-    def __init__(self, args):
-        super(SubjectBlock_proto, self).__init__()
-
-        self.num_subjects = args.num_subjects
-        self.D1 = args.D1
-        self.K = args.K
-        self.spatial_attention = SpatialAttention(args)
-        self.conv = nn.Conv1d(in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1)
-
-        # NOTE: The below implementations are equivalent to learning a matrix:
-        self.subject_matrix = nn.Parameter(torch.rand(self.num_subjects, self.D1, self.D1))
-        # self.subject_layer = [
-        #     nn.Conv1d(in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1, device=device)
-        #     for _ in range(self.num_subjects)
-        # ]
-
-    def forward(self, X, subject_idxs):
-        X = self.spatial_attention(X)  # ( B, 270, 256 )
-        X = self.conv(X)  # ( B, 270, 256 )
-
-        # NOTE to Sensho: this has caused problems. I slighly changed it here. Hope it doesn't break anything for you
-        _subject_idxs = subject_idxs.tolist()
-        X = self.subject_matrix[_subject_idxs] @ X  # ( 270, 270 ) @ ( B , 270, 256 ) -> ( B, 270, 256 )
-        # _X = []
-        # for i, x in enumerate(X):  # x: ( 270, 256 )
-        #     x = self.subject_layer[subject_idxs[i]](x.unsqueeze(0))  # ( 1, 270, 256 )
-        #     _X.append(x.squeeze())
-        # X = torch.stack(_X)
-
-        return X  # ( B, 270, 256 )
-
-
 class ConvBlock(nn.Module):
-
     def __init__(self, k, D1, D2):
         super(ConvBlock, self).__init__()
 
@@ -156,24 +133,24 @@ class ConvBlock(nn.Module):
             in_channels=self.in_channels,
             out_channels=self.D2,
             kernel_size=3,
-            padding='same',
-            dilation=2**((2 * k) % 5),
+            padding="same",
+            dilation=2 ** ((2 * k) % 5),
         )
         self.batchnorm0 = nn.BatchNorm1d(num_features=self.D2)
         self.conv1 = nn.Conv1d(
             in_channels=self.D2,
             out_channels=self.D2,
             kernel_size=3,
-            padding='same',
-            dilation=2**((2 * k + 1) % 5),
+            padding="same",
+            dilation=2 ** ((2 * k + 1) % 5),
         )
         self.batchnorm1 = nn.BatchNorm1d(num_features=self.D2)
         self.conv2 = nn.Conv1d(
             in_channels=self.D2,
             out_channels=2 * self.D2,
             kernel_size=3,
-            padding='same',
-            dilation=2,  #FIXME: The text doesn't say this, but the picture shows dilation=2
+            padding="same",
+            dilation=2,  # FIXME: The text doesn't say this, but the picture shows dilation=2
         )
 
     def forward(self, X):
@@ -194,7 +171,6 @@ class ConvBlock(nn.Module):
 
 
 class BrainEncoder(nn.Module):
-
     def __init__(self, args):
         super(BrainEncoder, self).__init__()
 
@@ -213,16 +189,8 @@ class BrainEncoder(nn.Module):
         for k in range(5):
             self.conv_blocks.add_module(f"conv{k}", ConvBlock(k, self.D1, self.D2))
 
-        self.conv_final1 = nn.Conv1d(
-            in_channels=self.D2,
-            out_channels=2 * self.D2,
-            kernel_size=1,
-        )
-        self.conv_final2 = nn.Conv1d(
-            in_channels=2 * self.D2,
-            out_channels=self.F,
-            kernel_size=1,
-        )
+        self.conv_final1 = nn.Conv1d(in_channels=self.D2, out_channels=2 * self.D2, kernel_size=1,)
+        self.conv_final2 = nn.Conv1d(in_channels=2 * self.D2, out_channels=self.F, kernel_size=1,)
 
     def forward(self, X, subject_idxs):
         X = self.subject_block(X, subject_idxs)
@@ -255,14 +223,14 @@ class Classifier(nn.Module):
 
         # NOTE: avoid CUDA out of memory like this
         similarity = torch.empty(batch_size, batch_size).to(device)
-        
+
         if test:
             pbar = tqdm(total=batch_size, desc="[Similarities]")
-            
+
         for i in range(batch_size):
             for j in range(batch_size):
                 similarity[i, j] = (x[i] @ y[j]) / max((x[i].norm() * y[j].norm()), 1e-8)
-                
+
             if test:
                 pbar.update(1)
 
@@ -272,7 +240,11 @@ class Classifier(nn.Module):
         top1accuracy = (similarity.argmax(axis=1) == diags).to(torch.float).mean().item()
         try:
             top10accuracy = np.mean(
-                [label in row for row, label in zip(torch.topk(similarity, 10, dim=1, largest=True)[1], diags)])
+                [
+                    label in row
+                    for row, label in zip(torch.topk(similarity, 10, dim=1, largest=True)[1], diags)
+                ]
+            )
         except:
             print(similarity.size())
             raise
