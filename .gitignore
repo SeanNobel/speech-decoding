@@ -21,9 +21,6 @@ data/Brennan2018/proc/
 data/Brennan2018/raw/
 data/Brennan2018/audio_embeds/*.pt
 data/Brennan2018/processed_X.pt
-data/Brennan2018/merged_audio.wav
-data/Brennan2018/merged.wav
-data/Brennan2018/_processed_X.pt
 data/Broderick2018/
 data/Gwilliams2022/
 !data/Gwilliams2022/.gitkeep
