@@ -8,7 +8,6 @@ from termcolor import cprint
 from einops import rearrange
 from tqdm import tqdm
 
-from constants import device
 from speech_decoding.utils.layout import ch_locations_2d
 
 
@@ -31,16 +30,14 @@ class SpatialAttention(nn.Module):
         x, y = loc[:, 0], loc[:, 1]
 
         # make a complex-valued parameter, reshape k,l into one dimension
-        self.z = nn.Parameter(torch.rand(size=(args.D1, args.K ** 2), dtype=torch.cfloat)).to(
-            device
-        )
+        self.z = nn.Parameter(torch.rand(size=(args.D1, args.K ** 2), dtype=torch.cfloat))
 
         # NOTE: pre-compute the values of cos and sin (they depend on k, l, x and y which repeat)
         phi = (
             2 * torch.pi * (torch.einsum("k,x->kx", k, x) + torch.einsum("l,y->ly", l, y))
         )  # torch.Size([1024, 60]))
-        self.cos = torch.cos(phi).to(device)
-        self.sin = torch.sin(phi).to(device)
+        self.register_buffer('cos', torch.cos(phi))
+        self.register_buffer('sin', torch.sin(phi))
 
         # self.spatial_dropout = SpatialDropoutX(args)
         self.spatial_dropout = SpatialDropout(loc, args.d_drop)
@@ -83,7 +80,7 @@ class SpatialDropout(nn.Module):
         if self.training:
             drop_center = self.loc[np.random.randint(self.num_channels)]  # ( 2, )
             distances = (self.loc - drop_center).norm(dim=-1)  # ( num_channels, )
-            mask = torch.where(distances < self.d_drop, 0.0, 1.0).to(device)  # ( num_channels, )
+            mask = torch.where(distances < self.d_drop, 0.0, 1.0).to(device=X.device)  # ( num_channels, )
             return torch.einsum("c,bct->bct", mask, X)
         else:
             return X
@@ -105,8 +102,7 @@ class SubjectBlock(nn.Module):
                     out_channels=self.D1,
                     kernel_size=1,
                     bias=False,
-                    stride=1,
-                    device=device,
+                    stride=1
                 )
                 for _ in range(self.num_subjects)
             ]
@@ -213,7 +209,7 @@ class Classifier(nn.Module):
     def forward(self, Z: torch.Tensor, Y: torch.Tensor, test=False) -> torch.Tensor:
 
         batch_size = Z.size(0)
-        diags = torch.arange(batch_size).to(device)
+        diags = torch.arange(batch_size).to(device=Z.device)
         x = Z.view(batch_size, -1)
         y = Y.view(batch_size, -1)
 
@@ -222,7 +218,7 @@ class Classifier(nn.Module):
         # similarity = torch.nn.functional.cosine_similarity(x_, y_, dim=-1)  # ( B, B )
 
         # NOTE: avoid CUDA out of memory like this
-        similarity = torch.empty(batch_size, batch_size).to(device)
+        similarity = torch.empty(batch_size, batch_size).to(device=Z.device)
 
         if test:
             pbar = tqdm(total=batch_size, desc="[Similarities]")

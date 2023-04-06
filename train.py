@@ -12,7 +12,6 @@ from torch import nn
 from tqdm import tqdm, trange
 import wandb
 
-from constants import device
 from speech_decoding.dataclass.brennan2018 import Brennan2018Dataset
 from speech_decoding.dataclass.gwilliams2022 import (
     Gwilliams2022SentenceSplit,
@@ -29,6 +28,7 @@ from speech_decoding.utils.reproducibility import seed_worker
 @hydra.main(version_base=None, config_path="configs", config_name="config")
 def run(args: DictConfig) -> None:
 
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
     # NOTE: We do need it (IMHO).
     if args.reproducible:
         os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
