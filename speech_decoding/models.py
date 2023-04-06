@@ -46,6 +46,7 @@ class SpatialAttention(nn.Module):
         self.spatial_dropout = SpatialDropout(loc, args.d_drop)
 
     def forward(self, X):
+        """X: (batch_size, num_channels, T)"""
 
         # NOTE: do hadamard product and and sum over l and m (i.e. m, which is l X m)
         re = torch.einsum("jm, me -> je", self.z.real, self.cos)  # torch.Size([270, 60])
