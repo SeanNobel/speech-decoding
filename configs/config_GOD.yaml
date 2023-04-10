@@ -1,0 +1,59 @@
+# ==== Dataset ==== #
+dataset: GOD # for Brennan2018, override with Brennan2018 in CLI
+rebuild_dataset: False
+
+# ==== Training ==== #
+use_wandb: False
+wandb:
+  project: speech_decoding
+  entity: sensho
+  run_name: word-onsets
+use_sampler: True        # applicable to Gwilliams only
+reproducible: False      # NOTE: do we need it at all?
+split_ratio: 0.8 # train. FIXME for valid
+split_mode: shallow # sentence, shallow, deep
+num_workers: 6
+batch_size: 64
+updates: 1200
+lr: 3e-4
+lr_scheduler: none # cosine or multistep or none
+lr_multistep_mlstns: [0.4, 0.6, 0.8, 0.9]
+lr_step_gamma: 0.5
+epochs: 300
+reduction: mean
+
+# ==== Architecture ==== #
+D1: 270
+D2: 320
+F: 512 # NOTE: because if you set last4layers=False, then it's set to 1024 in the dataset class
+K: 32
+d_drop: 0.1 # for spatial attention, drop channels within d_drop of a randomly selected channel
+
+init_temperature: 5.1
+wav2vec_model: facebook/wav2vec2-large-xlsr-53 # (HuggingFace) # xlsr_53_56k (FAIR)
+
+# == Data pre-processing parameters === #
+preprocs:
+  audio_resample_rate: 16000 # before wav2vec
+  lowpass_filter_width: 128
+  brain_resample_rate: 120 # Hz
+  brain_filter_low: 1.0    # Hz
+  brain_filter_high: 60    # Hz
+  seq_len_sec: 3           # segment length in seconds
+  baseline_len_sec: 0.5    # baseline period in seconds
+  shift_brain: True        # whether to shift M/EEG into the future relative to audio
+  shift_len: 150           # if True, by how many ms
+  last4layers: True        # if True, the brain_encoder's emsize will be 1024, not 512
+  subject_wise: True       # whether to scale each subject's EEG dataset individually (only for Brennan2018)
+  clamp: True
+  clamp_lim: 20
+
+memory_efficient: True
+
+# ====
+num_subjects: 2
+
+# ==== Logging ==== #
+hydra:
+  job:
+    chdir: True

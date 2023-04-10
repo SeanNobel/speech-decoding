@@ -31,6 +31,10 @@ def ch_locations_2d(args):
 
         loc = layout.pos[:, :2]
 
+    elif args.dataset == "GOD":
+        raise NotImplementedError()
+        # train_loader, test_loader ='', ''
+
     else:
         raise ValueError()
 
