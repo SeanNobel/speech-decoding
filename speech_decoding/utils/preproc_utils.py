@@ -7,6 +7,7 @@ from termcolor import cprint
 import torch
 from sklearn.preprocessing import RobustScaler
 from omegaconf import open_dict
+from typing import Union
 
 
 # NOTE currently only works for gwilliams2022.yml
@@ -32,7 +33,9 @@ def check_preprocs(args, data_dir):
             # NOTE: should be just:
             # is_processed = np.all([v == args.preprocs[k] for k, v in settings.items() if not k in excluded_keys])
             excluded_keys = ["preceding_chunk_for_baseline", "mode"]
-            is_processed = np.all([v == args.preprocs[k] for k, v in settings.items() if k not in excluded_keys])
+            is_processed = np.all(
+                [v == args.preprocs[k] for k, v in settings.items() if k not in excluded_keys]
+            )
             if is_processed:
                 cprint(
                     f"All preproc params matched to {preproc_name} -> using",
@@ -66,7 +69,24 @@ def check_preprocs(args, data_dir):
     return args, preproc_dir
 
 
-def scaleAndClamp(X, clamp_lim, clamp):
+def shift_brain_signal(
+    X: Union[torch.Tensor, np.ndarray],
+    Y: Union[torch.Tensor, np.ndarray],
+    srate_x: int,
+    srate_y: int = 16000,
+    shift_ms=150,
+):
+    """
+    - resampled_rate (Hz): rates of M/EEG after resampling and speech after wav2vec2.0 encoding
+    - shift (ms): how much to shift M/EEG forward
+    """
+    X = X[:, :, int(srate_x * (shift_ms / 1000)) :]  # ( 33, 60, 99692 )
+    Y = Y[:, : -int(srate_y * (shift_ms / 1000))]  # ( 1, ? )
+
+    return X, Y
+
+
+def scale_and_clamp(X, clamp_lim, clamp):
     """subject-wise scaling and clamping of EEG
     args:
         clamp_lim: float, abs limit (will be applied for min and max)
@@ -75,22 +95,22 @@ def scaleAndClamp(X, clamp_lim, clamp):
         X (size=subj, chan, time) scaled and clampted channel-wise, subject-wise
     """
     res = []
-    
+
     for subjID in range(X.shape[0]):
         # NOTE: must be samples x features!
-        scaler = RobustScaler().fit(X[subjID, :, :].T) 
-        
+        scaler = RobustScaler().fit(X[subjID, :, :].T)
+
         _X = torch.from_numpy(scaler.transform(X[subjID, :, :].T)).to(torch.float)
-        
+
         if clamp:
             _X.clamp_(min=-clamp_lim, max=clamp_lim)
-            
+
         res.append(_X.to(torch.float))
-        
+
     return torch.stack(res).permute(0, 2, 1)  # NOTE: make (subj, ch, time) again
 
 
-def scaleAndClamp_single(X: np.ndarray, clamp_lim, clamp) -> torch.Tensor:
+def scale_and_clamp_single(X: np.ndarray, clamp_lim, clamp) -> torch.Tensor:
     """args:
     X: ( ch, time )
     """
