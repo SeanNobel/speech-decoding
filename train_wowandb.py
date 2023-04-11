@@ -19,15 +19,17 @@ from constants import device
 #     Gwilliams2022DeepSplit,
 #     Gwilliams2022Collator,
 # )
-from speech_decoding.models import BrainEncoder, Classifier
-from speech_decoding.utils.get_dataloaders import get_dataloaders, get_samplers
-from speech_decoding.utils.loss import *
-from speech_decoding.utils.reproducibility import seed_worker
+from torch.utils.data import DataLoader, RandomSampler, BatchSampler
 
+from meg_decoding.models import BrainEncoder, Classifier
+from meg_decoding.utils.get_dataloaders import get_dataloaders, get_samplers
+from meg_decoding.utils.loss import *
+from meg_decoding.dataclass.god import GODDatasetBase
+from meg_decoding.utils.loggers import Pickleogger
 
-@hydra.main(version_base=None, config_path="configs", config_name="config_GOD")
 def run(args: DictConfig) -> None:
 
+    from meg_decoding.utils.reproducibility import seed_worker
     # NOTE: We do need it (IMHO).
     if args.reproducible:
         os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
@@ -37,12 +39,15 @@ def run(args: DictConfig) -> None:
         torch.manual_seed(0)
         g = torch.Generator()
         g.manual_seed(0)
+        seed_worker = seed_worker
     else:
         g = None
         seed_worker = None
 
-    with open_dict(args):
-        args.root_dir = get_original_cwd()
+    pkl_logger = Pickleogger(os.path.join(args.save_root, 'runs'))
+
+    # with open_dict(args):
+    #     args.root_dir = get_original_cwd()
     cprint(f"Current working directory : {os.getcwd()}")
     cprint(args, color="white")
 
@@ -128,9 +133,33 @@ def run(args: DictConfig) -> None:
         )
 
     elif args.dataset == "GOD":
-        train_loader, test_loader ='', ''
-    else:
+        train_dataset = GODDatasetBase(args, 'train')
+        val_dataset = GODDatasetBase(args, 'val')
+        with open_dict(args):
+            args.num_subjects = train_dataset.num_subjects
+            print('num subject is {}'.format(args.num_subjects))
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=args.batch_size,
+            drop_last=True,
+            shuffle=True,
+            num_workers=args.num_workers,
+            pin_memory=True,
+            worker_init_fn=seed_worker,
+            generator=g,
+        )
+        test_loader = DataLoader(
+            val_dataset,
+            batch_size=args.batch_size,
+            drop_last=True,
+            shuffle=False,
+            num_workers=args.num_workers,
+            pin_memory=True,
+            worker_init_fn=seed_worker,
+            generator=g,
+        )
 
+    else:
         raise ValueError("Unknown dataset")
 
     if args.use_wandb:
@@ -178,7 +207,9 @@ def run(args: DictConfig) -> None:
         scheduler = None
 
     # ======================================
-    for epoch in range(args.epochs):
+    pbar = tqdm(range(args.epochs))
+    for epoch in pbar:
+        pbar.set_description("training {}/{} epoch".format(epoch, args.epochs))
         train_losses = []
         test_losses = []
         trainTop1accs = []
@@ -187,7 +218,8 @@ def run(args: DictConfig) -> None:
         testTop10accs = []
 
         brain_encoder.train()
-        for i, batch in enumerate(tqdm(train_loader)):
+        pbar2 = tqdm(train_loader)
+        for i, batch in enumerate(pbar2):
 
             if len(batch) == 3:
                 X, Y, subject_idxs = batch
@@ -200,9 +232,7 @@ def run(args: DictConfig) -> None:
                 raise ValueError("Unexpected number of items from dataloader.")
 
             X, Y = X.to(device), Y.to(device)
-            # print([(s.item(), chid.item()) for s, chid in zip(subject_idxs, chunkIDs)])
             Z = brain_encoder(X, subject_idxs)
-
             loss = loss_func(Y, Z)
 
             with torch.no_grad():
@@ -212,6 +242,7 @@ def run(args: DictConfig) -> None:
             trainTop1accs.append(trainTop1acc)
             trainTop10accs.append(trainTop10acc)
 
+            pbar.set_description("training {}/{} iters Train/Loss: {}, Train/Top1Acc: {}, Train/Top10Acc: {}".format(i, len(train_loader), loss.item(), trainTop1acc, trainTop10acc))
             if args.dataset == "Gwilliams2022":
                 optimizer.zero_grad()
                 loss.backward()
@@ -256,6 +287,17 @@ def run(args: DictConfig) -> None:
             f"lr: {optimizer.param_groups[0]['lr']:.5f}",
             f"temp: {loss_func.temp.item():.3f}",
         )
+        pkl_logger.log({
+                "epoch": epoch,
+                "train_loss": np.mean(train_losses),
+                "test_loss": np.mean(test_losses),
+                "trainTop1acc": np.mean(trainTop1accs),
+                "trainTop10acc": np.mean(trainTop10accs),
+                "testTop1acc": np.mean(testTop1accs),
+                "testTop10acc": np.mean(testTop10accs),
+                "lrate": optimizer.param_groups[0]["lr"],
+                "temp": loss_func.temp.item(),
+            }, 'logs')
 
         if args.use_wandb:
             performance_now = {
@@ -274,8 +316,16 @@ def run(args: DictConfig) -> None:
         if scheduler is not None:
             scheduler.step()
 
-        torch.save(brain_encoder.state_dict(), "model_last.pt")
+        savedir = os.path.join(args.save_root, 'weights')
+        last_weight_file = os.path.join(savedir, "model_last.pt")
+        torch.save(brain_encoder.state_dict(), last_weight_file)
+        print('model is saved as ', last_weight_file)
 
 
 if __name__ == "__main__":
-    run()
+    from hydra import initialize, compose
+    with initialize(version_base=None, config_path="../configs/"):
+        args = compose(config_name='test')
+    if not os.path.exists(os.path.join(args.save_root, 'weights')):
+        os.makedirs(os.path.join(args.save_root, 'weights'))
+    run(args)

@@ -1,7 +1,7 @@
 import mne, mne_bids
 import numpy as np
 import torch
-
+from meg_decoding.matlab_utils.load_meg import read_montage
 
 def ch_locations_2d(args):
     dataset_name, root_dir = args.dataset, args.root_dir
@@ -32,8 +32,8 @@ def ch_locations_2d(args):
         loc = layout.pos[:, :2]
 
     elif args.dataset == "GOD":
-        raise NotImplementedError()
-        # train_loader, test_loader ='', ''
+        montage = read_montage(args)
+        loc = montage[:, :2]
 
     else:
         raise ValueError()

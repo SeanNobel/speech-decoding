@@ -1,4 +1,5 @@
 import sys
+from turtle import forward
 import numpy as np
 import torch
 import torch.nn as nn
@@ -9,7 +10,7 @@ from einops import rearrange
 from tqdm import tqdm
 
 from constants import device
-from speech_decoding.utils.layout import ch_locations_2d
+from meg_decoding.utils.layout import ch_locations_2d
 
 
 class SpatialAttention(nn.Module):
@@ -191,12 +192,27 @@ class BrainEncoder(nn.Module):
 
         self.conv_final1 = nn.Conv1d(in_channels=self.D2, out_channels=2 * self.D2, kernel_size=1,)
         self.conv_final2 = nn.Conv1d(in_channels=2 * self.D2, out_channels=self.F, kernel_size=1,)
+        if args.seq2seq:
+            self._forward = self._forward_seq_seq
+        else:
+            self._forward = self._forward_seq_static
 
     def forward(self, X, subject_idxs):
+        return self._forward(X, subject_idxs)
+
+    def _forward_seq_seq(self, X, subject_idxs):
         X = self.subject_block(X, subject_idxs)
         X = self.conv_blocks(X)
         X = F.gelu(self.conv_final1(X))
         X = F.gelu(self.conv_final2(X))
+        return X
+
+    def _forward_seq_static(self, X, subject_idxs):
+        X = self.subject_block(X, subject_idxs)
+        X = self.conv_blocks(X)
+        X = F.gelu(self.conv_final1(X))
+        X = F.gelu(self.conv_final2(X))
+        X = torch.mean(X, axis=2)
         return X
 
 
