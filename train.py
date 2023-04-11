@@ -11,7 +11,7 @@ from omegaconf import DictConfig, open_dict
 import hydra
 from hydra.utils import get_original_cwd
 
-from constants import device
+from speech_decoding.constants import DEVICE
 from speech_decoding.dataclass.brennan2018 import Brennan2018Dataset
 from speech_decoding.dataclass.gwilliams2022 import (
     Gwilliams2022SentenceSplit,
@@ -27,7 +27,6 @@ from speech_decoding.utils.reproducibility import seed_worker
 
 @hydra.main(version_base=None, config_path="configs", config_name="config")
 def run(args: DictConfig) -> None:
-
     # NOTE: We do need it (IMHO).
     if args.reproducible:
         os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
@@ -51,9 +50,7 @@ def run(args: DictConfig) -> None:
     # -----------------------
     # NOTE: Segmentation should always be by word onsets, not just every 3 seconds
     if args.dataset == "Gwilliams2022":
-
         if args.split_mode == "sentence":
-
             train_set = Gwilliams2022SentenceSplit(args)
             test_set = Gwilliams2022SentenceSplit(args, train_set.test_word_idxs_dict)
 
@@ -64,7 +61,6 @@ def run(args: DictConfig) -> None:
             test_size = test_set.Y.shape[0]
 
         elif args.split_mode == "shallow":
-
             dataset = Gwilliams2022ShallowSplit(args)
 
             with open_dict(args):
@@ -73,11 +69,12 @@ def run(args: DictConfig) -> None:
             train_size = int(dataset.Y.shape[0] * args.split_ratio)
             test_size = dataset.Y.shape[0] - train_size
             train_set, test_set = torch.utils.data.random_split(
-                dataset, lengths=[train_size, test_size], generator=g,
+                dataset,
+                lengths=[train_size, test_size],
+                generator=g,
             )
 
         elif args.split_mode == "deep":
-
             train_set = Gwilliams2022DeepSplit(args, train=True)
             test_set = Gwilliams2022DeepSplit(args, train=False)
             assert train_set.num_subjects == test_set.num_subjects
@@ -118,10 +115,13 @@ def run(args: DictConfig) -> None:
         train_size = int(len(dataset) * args.split_ratio)
         test_size = len(dataset) - train_size
         train_set, test_set = torch.utils.data.random_split(
-            dataset, lengths=[train_size, test_size], generator=g,
+            dataset,
+            lengths=[train_size, test_size],
+            generator=g,
         )
         cprint(
-            f"Number of samples: {len(train_set)} (train), {len(test_set)} (test)", color="blue",
+            f"Number of samples: {len(train_set)} (train), {len(test_set)} (test)",
+            color="blue",
         )
         train_loader, test_loader = get_dataloaders(
             train_set, test_set, args, g, seed_worker, test_bsz=test_size
@@ -144,21 +144,22 @@ def run(args: DictConfig) -> None:
     # ---------------------
     #        Models
     # ---------------------
-    brain_encoder = BrainEncoder(args).to(device)
+    brain_encoder = BrainEncoder(args).to(DEVICE)
 
     classifier = Classifier(args)
 
     # ---------------
     #      Loss
     # ---------------
-    loss_func = CLIPLoss(args).to(device)
+    loss_func = CLIPLoss(args).to(DEVICE)
     loss_func.train()
 
     # --------------------
     #      Optimizer
     # --------------------
     optimizer = torch.optim.Adam(
-        list(brain_encoder.parameters()) + list(loss_func.parameters()), lr=float(args.lr),
+        list(brain_encoder.parameters()) + list(loss_func.parameters()),
+        lr=float(args.lr),
     )
 
     if args.lr_scheduler == "cosine":
@@ -185,7 +186,6 @@ def run(args: DictConfig) -> None:
 
         brain_encoder.train()
         for i, batch in enumerate(tqdm(train_loader)):
-
             if len(batch) == 3:
                 X, Y, subject_idxs = batch
             elif len(batch) == 4:
@@ -196,7 +196,7 @@ def run(args: DictConfig) -> None:
             else:
                 raise ValueError("Unexpected number of items from dataloader.")
 
-            X, Y = X.to(device), Y.to(device)
+            X, Y = X.to(DEVICE), Y.to(DEVICE)
             # print([(s.item(), chid.item()) for s, chid in zip(subject_idxs, chunkIDs)])
             Z = brain_encoder(X, subject_idxs)
 
@@ -222,9 +222,7 @@ def run(args: DictConfig) -> None:
 
         brain_encoder.eval()
         for batch in test_loader:
-
             with torch.no_grad():
-
                 if len(batch) == 3:
                     X, Y, subject_idxs = batch
                 elif len(batch) == 4:
@@ -232,7 +230,7 @@ def run(args: DictConfig) -> None:
                 else:
                     raise ValueError("Unexpected number of items from dataloader.")
 
-                X, Y = X.to(device), Y.to(device)
+                X, Y = X.to(DEVICE), Y.to(DEVICE)
 
                 Z = brain_encoder(X, subject_idxs)  # 0.96 GB
 

@@ -34,9 +34,7 @@ wav2vec_model: facebook/wav2vec2-large-xlsr-53 # (HuggingFace) # xlsr_53_56k (FA
 
 # == Data pre-processing parameters === #
 preprocs:
-  audio_resample_rate: 16000 # before wav2vec
   lowpass_filter_width: 128
-  brain_resample_rate: 120 # Hz
   brain_filter_low: 1.0    # Hz
   brain_filter_high: 60    # Hz
   seq_len_sec: 3           # segment length in seconds

@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 
-from constants import device
+from speech_decoding.constants import DEVICE
 
 
 def torch_exp(x: torch.Tensor):  # x: ( N, )
@@ -30,7 +30,7 @@ class MSELoss(nn.Module):
 class CLIPLoss(nn.Module):
     def __init__(self, args):
         super().__init__()
-        self.device = device
+        self.device = DEVICE
         self.compute_similarity = nn.CosineSimilarity(dim=-1)
         self._criterion = nn.CrossEntropyLoss(reduction=args.reduction)
         # self.targets = torch.zeros(size=(batch_size, )).long() # that's for the slow method

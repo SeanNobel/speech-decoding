@@ -17,13 +17,13 @@ Works for Gwilliams2022 dataset and Brennan2018 dataset.
 # Usage
 
 ## For EEG (Brennan et al. 2022)
-Run `python train.py dataset=Brennan2018 rebuild_datasets=True`.
-When `rebuild_datasets=False`, existing pre-processed M/EEG and pre-computing embeddings are used. This is useful if you want to run the model on exactly the same data and embeddings several times. Otherwise, the both audio embeddings are pre-computed and M/EEG data are pre-processed before training begins.
+Run `python train.py dataset=Brennan2018 rebuild_dataset=True`.
+When `rebuild_dataset=False`, existing pre-processed M/EEG and pre-computing embeddings are used. This is useful if you want to run the model on exactly the same data and embeddings several times. Otherwise, the both audio embeddings are pre-computed and M/EEG data are pre-processed before training begins.
 
 ## For MEG (Gwilliams et al. 2022)
 
-Run `python train.py dataset=Gwilliams2022 rebuild_datasets=True`
-When `rebuild_datasets=False`, existing pre-processed M/EEG and pre-computing embeddings are used. This is useful if you want to run the model on exactly the same data and embeddings several times. It takes ~30 minutes to pre-process Gwilliams2022 and compute embeddings on 20 cores. Set `rebuild_datasets=False` for subsequent runs (or don't specify it, becuase by default `rebuild_datasets=False`). Otherwise, the both audio embeddings are pre-computed and M/EEG data are pre-processed before training begins.
+Run `python train.py dataset=Gwilliams2022 rebuild_dataset=True`
+When `rebuild_dataset=False`, existing pre-processed M/EEG and pre-computing embeddings are used. This is useful if you want to run the model on exactly the same data and embeddings several times. It takes ~30 minutes to pre-process Gwilliams2022 and compute embeddings on 20 cores. Set `rebuild_dataset=False` for subsequent runs (or don't specify it, becuase by default `rebuild_dataset=False`). Otherwise, the both audio embeddings are pre-computed and M/EEG data are pre-processed before training begins.
 
 ## Monitoring training progress with W&B
 

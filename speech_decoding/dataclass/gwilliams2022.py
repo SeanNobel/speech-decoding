@@ -23,12 +23,12 @@ from multiprocessing import Pool, Manager
 from itertools import repeat
 from omegaconf import open_dict
 
-from constants import bar_format
-from speech_decoding.utils.wav2vec_util import load_wav2vec_model, getW2VLastFourLayersAvg
+from speech_decoding.constants import BAR_FORMAT
+from speech_decoding.utils.wav2vec_util import get_last4layers_avg
 from speech_decoding.utils.preproc_utils import (
     check_preprocs,
-    scaleAndClamp,
-    scaleAndClamp_single,
+    scale_and_clamp,
+    scale_and_clamp_single,
     baseline_correction_single,
 )
 
@@ -60,7 +60,10 @@ class Gwilliams2022DatasetBase(Dataset):
         self.shift_len = args.preprocs["shift_len"]
 
         # NOTE: x_done and y_done are added to args.preprocs
-        args, self.preproc_dir = check_preprocs(args, self.root_dir + "preprocessed/",)
+        args, self.preproc_dir = check_preprocs(
+            args,
+            self.root_dir + "preprocessed/",
+        )
         self.x_path = self.preproc_dir + "x_dict.npy"
         self.y_path = self.preproc_dir + "y_dict.npy"
         self.meg_onsets_path = self.preproc_dir + "meg_onsets.npy"
@@ -128,7 +131,6 @@ class Gwilliams2022DatasetBase(Dataset):
         return len(self.Y)
 
     def __getitem__(self, i):  # NOTE: i is id of a speech segment
-
         i_in_task, task = self.segment_to_task(i)
 
         key_no_task = np.random.choice(list(self.X.keys()))
@@ -143,7 +145,6 @@ class Gwilliams2022DatasetBase(Dataset):
         return X, self.Y[i], subject_idx
 
     def segment_to_task(self, i) -> Tuple[int, str]:
-
         nseg_task_accum = np.cumsum(self.num_segments_foreach_task)
         task = np.searchsorted(nseg_task_accum, i + 1)
 
@@ -152,7 +153,6 @@ class Gwilliams2022DatasetBase(Dataset):
         return int(i_in_task), f"task{task}"
 
     def segment_speech(self, data: torch.Tensor, key: str) -> torch.Tensor:
-
         onsets = self.speech_onsets[key]
 
         onsets = (onsets * self.brain_resample_rate).round().astype(int)
@@ -192,7 +192,6 @@ class Gwilliams2022DatasetBase(Dataset):
 
     @staticmethod
     def brain_preproc(dat):
-
         subject_idx, d, speech_onsets, meg_onsets, sentence_idxs, session_idx, task_idx = dat
 
         num_channels = d["num_channels"]
@@ -252,16 +251,21 @@ class Gwilliams2022DatasetBase(Dataset):
         meg_raw = meg_raw[:num_channels]  # ( 208, ~396000 )
 
         meg_filtered = mne.filter.filter_data(
-            meg_raw, sfreq=brain_orig_rate, l_freq=brain_filter_low, h_freq=brain_filter_high,
+            meg_raw,
+            sfreq=brain_orig_rate,
+            l_freq=brain_filter_low,
+            h_freq=brain_filter_high,
         )
 
         # To 120 Hz
         meg_resampled = mne.filter.resample(
-            meg_filtered, down=brain_orig_rate / brain_resample_rate,
+            meg_filtered,
+            down=brain_orig_rate / brain_resample_rate,
         )  # ( 208, 37853 )
 
         np.save(
-            f"{preproc_dir}_parts/{description}", meg_resampled,
+            f"{preproc_dir}_parts/{description}",
+            meg_resampled,
         )
         return 0
 
@@ -301,7 +305,7 @@ class Gwilliams2022DatasetBase(Dataset):
                 tqdm(
                     p.imap(self.brain_preproc, subj_list),
                     total=len(subj_list),
-                    bar_format=bar_format,
+                    bar_format=BAR_FORMAT,
                 )
             )
 
@@ -390,7 +394,6 @@ class Gwilliams2022DatasetBase(Dataset):
 
 class Gwilliams2022SentenceSplit(Gwilliams2022DatasetBase):
     def __init__(self, args, test_word_idxs_dict=None):
-
         self.train = test_word_idxs_dict is None
         self.test_word_idxs_dict = test_word_idxs_dict
         self.split_ratio = args.split_ratio
@@ -560,7 +563,6 @@ class Gwilliams2022ShallowSplit(Gwilliams2022DatasetBase):
 
 class Gwilliams2022DeepSplit(Gwilliams2022DatasetBase):
     def __init__(self, args, train):
-
         self.train = train
         self.split_ratio = args.split_ratio
 
@@ -674,7 +676,6 @@ def continuous(onsets: np.ndarray) -> np.ndarray:
     base = 0
 
     for i in range(len(onsets)):
-
         update_base = i < len(onsets) - 1 and onsets[i + 1] < onsets[i]
 
         if update_base:
