@@ -17,6 +17,6 @@ def parse_data(data):
         import pdb; pdb.set_trace()
 
 if __name__ == '__main__':
-    filepath = '/home/yainoue/meg2image/results/test/2023-04-11 18:06:44.273986'
+    filepath = '/home/yainoue/meg2image/results/20230412_mini/runs/2023-04-12 22:23:57.324970' #'/home/yainoue/meg2image/results/test/2023-04-11 18:06:44.273986'
     data = get_data(filepath)
     parse_data(data)
