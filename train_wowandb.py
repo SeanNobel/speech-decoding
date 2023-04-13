@@ -26,6 +26,8 @@ from meg_decoding.utils.get_dataloaders import get_dataloaders, get_samplers
 from meg_decoding.utils.loss import *
 from meg_decoding.dataclass.god import GODDatasetBase
 from meg_decoding.utils.loggers import Pickleogger
+from meg_decoding.utils.vis_grad import get_grad
+
 
 def run(args: DictConfig) -> None:
 
@@ -247,6 +249,11 @@ def run(args: DictConfig) -> None:
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
+            if args.dataset == "GOD":
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                # get_grad(brain_encoder)
 
         # Accumulate gradients for Gwilliams for the whole epoch
         if args.dataset == "Brennan2018":
