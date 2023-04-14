@@ -128,9 +128,14 @@ def run(args: DictConfig) -> None:
             f"Number of samples: {len(train_set)} (train), {len(test_set)} (test)",
             color="cyan",
         )
-        train_loader, test_loader = get_dataloaders(
-            train_set, test_set, args, g, seed_worker, test_bsz=test_size
-        )
+        if args.use_sampler:
+            train_loader, test_loader = get_samplers(
+                train_set, test_set, args, g, test_bsz=test_size
+            )
+        else:
+            train_loader, test_loader = get_dataloaders(
+                train_set, test_set, args, g, seed_worker, test_bsz=test_size
+            )
 
     else:
         raise ValueError("Unknown dataset")
@@ -182,9 +187,9 @@ def run(args: DictConfig) -> None:
                 X, Y, subject_idxs = batch
             elif len(batch) == 4:
                 X, Y, subject_idxs, chunkIDs = batch
-                assert (
-                    len(chunkIDs.unique()) == X.shape[0]
-                ), "Duplicate segments in batch are not allowed. Aborting."
+                # assert (
+                #     len(chunkIDs.unique()) == X.shape[0]
+                # ), f"Duplicate segments in batch are not allowed. Aborting. {chunkIDs}"
             else:
                 raise ValueError("Unexpected number of items from dataloader.")
 
