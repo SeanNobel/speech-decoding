@@ -121,7 +121,7 @@ def run(args: DictConfig) -> None:
         )
         cprint(
             f"Number of samples: {len(train_set)} (train), {len(test_set)} (test)",
-            color="blue",
+            color="cyan",
         )
         train_loader, test_loader = get_dataloaders(
             train_set, test_set, args, g, seed_worker, test_bsz=test_size
@@ -232,7 +232,7 @@ def run(args: DictConfig) -> None:
 
                 X, Y = X.to(DEVICE), Y.to(DEVICE)
 
-                Z = brain_encoder(X, subject_idxs)  # 0.96 GB
+                Z = brain_encoder(X, subject_idxs)
 
                 loss = loss_func(Y, Z)
 

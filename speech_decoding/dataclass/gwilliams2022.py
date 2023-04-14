@@ -27,9 +27,8 @@ from speech_decoding.constants import BAR_FORMAT
 from speech_decoding.utils.wav2vec_util import get_last4layers_avg
 from speech_decoding.utils.preproc_utils import (
     check_preprocs,
+    continuous,
     scale_and_clamp,
-    scale_and_clamp_single,
-    baseline_correction_single,
 )
 
 mne.set_log_level(verbose="WARNING")
@@ -666,27 +665,6 @@ class Gwilliams2022Collator(nn.Module):
 
 def to_second(onset: pd._libs.tslibs.timestamps.Timestamp) -> np.ndarray:
     return onset.minute * 60 + onset.second + onset.microsecond * 1e-6
-
-
-def continuous(onsets: np.ndarray) -> np.ndarray:
-    """
-    Increments speech onsets that start from zero in each separate audio file.
-    (add final timestamp in the previous audio file)
-    """
-    base = 0
-
-    for i in range(len(onsets)):
-        update_base = i < len(onsets) - 1 and onsets[i + 1] < onsets[i]
-
-        if update_base:
-            next_base = base + onsets[i]
-
-        onsets[i] += base
-
-        if update_base:
-            base = next_base
-
-    return onsets
 
 
 def drop_overlapping_words(word_onset_idxs, word_onsets, sentence_idxs):
