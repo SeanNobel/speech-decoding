@@ -4,8 +4,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 
-from constants import device
-
 
 def torch_exp(x: torch.Tensor):  # x: ( N, )
     return torch.exp(x.clamp(max=10))
@@ -30,7 +28,6 @@ class MSELoss(nn.Module):
 class CLIPLoss(nn.Module):
     def __init__(self, args):
         super().__init__()
-        self.device = device
         self.compute_similarity = nn.CosineSimilarity(dim=-1)
         self._criterion = nn.CrossEntropyLoss(reduction=args.reduction)
         # self.targets = torch.zeros(size=(batch_size, )).long() # that's for the slow method
@@ -44,7 +41,7 @@ class CLIPLoss(nn.Module):
         # if not self.registered_targets:
         #   self.register_buffer('targets', torch.arange(self.batch_size, requires_grad=False).to(self.device))
         #   self.registered_targets = True
-        targets = torch.arange(batch_size, requires_grad=False).long().to(self.device)
+        targets = torch.arange(batch_size, requires_grad=False).long().to(device=x.device)
 
         if not fast:
             # less efficient way

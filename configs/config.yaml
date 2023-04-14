@@ -16,9 +16,6 @@ num_workers: 6
 batch_size: 64
 updates: 1200
 lr: 3e-4
-lr_scheduler: none # cosine or multistep or none
-lr_multistep_mlstns: [0.4, 0.6, 0.8, 0.9]
-lr_step_gamma: 0.5
 epochs: 300
 reduction: mean
 

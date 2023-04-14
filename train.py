@@ -1,17 +1,17 @@
-import os, sys, random
-import numpy as np
-import torch
-import torch.nn as nn
-from time import time
-from tqdm import tqdm, trange
-from termcolor import cprint
-import wandb
+import os
+import sys
+import random
 
-from omegaconf import DictConfig, open_dict
 import hydra
 from hydra.utils import get_original_cwd
+import numpy as np
+from omegaconf import DictConfig, open_dict
+from termcolor import cprint
+import torch
+from torch import nn
+from tqdm import tqdm, trange
+import wandb
 
-from constants import device
 from speech_decoding.dataclass.brennan2018 import Brennan2018Dataset
 from speech_decoding.dataclass.gwilliams2022 import (
     Gwilliams2022SentenceSplit,
@@ -28,6 +28,7 @@ from speech_decoding.utils.reproducibility import seed_worker
 @hydra.main(version_base=None, config_path="configs", config_name="config")
 def run(args: DictConfig) -> None:
 
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
     # NOTE: We do need it (IMHO).
     if args.reproducible:
         os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
@@ -161,19 +162,6 @@ def run(args: DictConfig) -> None:
         list(brain_encoder.parameters()) + list(loss_func.parameters()), lr=float(args.lr),
     )
 
-    if args.lr_scheduler == "cosine":
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=args.epochs, eta_min=args.lr * 0.1
-        )
-    elif args.lr_scheduler == "multistep":
-        scheduler = torch.optim.lr_scheduler.MultiStepLR(
-            optimizer,
-            milestones=[int(m * args.epochs) for m in args.lr_multistep_mlstns],
-            gamma=args.lr_step_gamma,
-        )
-    else:
-        scheduler = None
-
     # ======================================
     for epoch in range(args.epochs):
         train_losses = []
@@ -267,9 +255,6 @@ def run(args: DictConfig) -> None:
                 "temp": loss_func.temp.item(),
             }
             wandb.log(performance_now)
-
-        if scheduler is not None:
-            scheduler.step()
 
         torch.save(brain_encoder.state_dict(), "model_last.pt")
 
