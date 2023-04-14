@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-from constants import device
+from speech_decoding.constants import device
 from speech_decoding.models import *
 from speech_decoding.utils.layout import ch_locations_2d
 
@@ -144,7 +144,6 @@ class SpatialAttentionTest2(nn.Module):
         self.ch_locations_2d = ch_locations_2d(args).to(device)
 
     def fourier_space(self, x: torch.Tensor, y: torch.Tensor):  # x: ( 60, ) y: ( 60, )
-
         rad1 = torch.einsum("k,c->kc", self.K_arange, x)
         rad2 = torch.einsum("l,c->lc", self.K_arange, y)
         # rad = torch.einsum('kc,lc->kcl', rad1, rad2)
@@ -231,7 +230,7 @@ class SpatialAttentionTest(nn.Module):
         x, y = loc[:, 0], loc[:, 1]
 
         # make a complex-valued parameter, reshape k,l into one dimension
-        self.z = nn.Parameter(torch.rand(size=(D1, K ** 2), dtype=torch.cfloat)).to(device)
+        self.z = nn.Parameter(torch.rand(size=(D1, K**2), dtype=torch.cfloat)).to(device)
 
         # NOTE: pre-compute the values of cos and sin (they depend on k, l, x and y which repeat)
         phi = (
@@ -243,7 +242,6 @@ class SpatialAttentionTest(nn.Module):
         self.spatial_dropout = SpatialDropout(x, y, d_drop)
 
     def forward(self, X):
-
         # NOTE: do hadamard product and and sum over l and m (i.e. m, which is l X m)
         re = torch.einsum("jm, me -> je", self.z.real, self.cos)  # torch.Size([270, 60])
         im = torch.einsum("jm, me -> je", self.z.imag, self.sin)
@@ -331,8 +329,16 @@ class BrainEncoderTest(nn.Module):
         for k in range(1, 6):
             self.conv_blocks.add_module(f"conv{k}", ConvBlock(k, self.D1, self.D2))
 
-        self.conv_final1 = nn.Conv1d(in_channels=self.D2, out_channels=2 * self.D2, kernel_size=1,)
-        self.conv_final2 = nn.Conv1d(in_channels=2 * self.D2, out_channels=self.F, kernel_size=1,)
+        self.conv_final1 = nn.Conv1d(
+            in_channels=self.D2,
+            out_channels=2 * self.D2,
+            kernel_size=1,
+        )
+        self.conv_final2 = nn.Conv1d(
+            in_channels=2 * self.D2,
+            out_channels=self.F,
+            kernel_size=1,
+        )
 
     def forward(self, X, subject_idxs):
         X = self.subject_block(X, subject_idxs)
