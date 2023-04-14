@@ -42,6 +42,7 @@ preprocs:
   subject_wise: True       # whether to scale each subject's EEG dataset individually (only for Brennan2018)
   clamp: True
   clamp_lim: 20
+  y_upsample: interpolate # interpolate / pad
 
 memory_efficient: True
 

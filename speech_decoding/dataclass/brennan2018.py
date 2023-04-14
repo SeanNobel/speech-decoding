@@ -32,6 +32,7 @@ from speech_decoding.utils.preproc_utils import (
     baseline_correction,
     scale_and_clamp,
     pad_y_time,
+    interpolate_y_time,
 )
 from speech_decoding.constants import BRAIN_RESAMPLE_RATE, AUDIO_RESAMPLE_RATE
 
@@ -121,7 +122,12 @@ class Brennan2018Dataset(Dataset):
         self.num_subjects = self.X.shape[1]
         cprint(f"Number of subjects: {self.num_subjects}", color="cyan")
 
-        self.Y = pad_y_time(self.Y, self.brain_num_samples)
+        if args.preprocs.y_upsample == "interpolate":
+            self.Y = interpolate_y_time(self.Y, self.brain_num_samples)
+        elif args.preprocs.y_upsample == "pad":
+            self.Y = pad_y_time(self.Y, self.brain_num_samples)
+        else:
+            raise ValueError(f"Unknown upsampling strategy: {args.preprocs.y_upsample}")
 
     def embed_audio(self, audio: torch.Tensor) -> torch.Tensor:
         """

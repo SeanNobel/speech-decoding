@@ -39,3 +39,9 @@ def test_continuous():
 
     plt.plot(onsets)
     plt.savefig("data/Brennan2018/word-onsets-continuous.png")
+
+
+def test_interpolate_y_time():
+    input = torch.rand(2, 1024, 149)
+
+    assert interpolate_y_time(input, 360).shape == (2, 1024, 360)

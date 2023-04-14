@@ -213,3 +213,13 @@ def pad_y_time(Y: torch.Tensor, num_samples: int) -> torch.Tensor:
         Y: ( segment, features@w2v, time@w2v-freq//segment + pad )
     """
     return F.pad(Y, (0, num_samples - Y.shape[-1]), "constant", 0)
+
+
+def interpolate_y_time(Y: torch.Tensor, num_samples: int) -> torch.Tensor:
+    """
+    args:
+        Y: ( segment, features@w2v, time@w2v-freq//segment )
+    returns:
+        Y: ( segment, features@w2v, time@120Hz//segment )
+    """
+    return F.interpolate(Y, size=num_samples, mode="linear")
