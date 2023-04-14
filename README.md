@@ -1,6 +1,6 @@
 # Reimplementation of speech decoding paper by MetaAI
 
-Paper: https://arxiv.org/pdf/2208.12266.pdf
+[Paper Link](https://arxiv.org/pdf/2208.12266.pdf)
 
 <div align="center"><img src="assets/overview_meta2022.png" width=300></div>
 
@@ -16,7 +16,17 @@ Works for Gwilliams2022 dataset and Brennan2018 dataset.
 
 # Usage
 
+```bash
+conda create -n speech-decoding python=3.9
+conda activate speech-decoding
+pip install -r requirements.txt
+pip install -e .
+```
+
 ## For EEG (Brennan et al. 2022)
+
+[Paper Link](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0207741)
+
 Run `python train.py dataset=Brennan2018 rebuild_dataset=True`.
 When `rebuild_dataset=False`, existing pre-processed M/EEG and pre-computing embeddings are used. This is useful if you want to run the model on exactly the same data and embeddings several times. Otherwise, the both audio embeddings are pre-computed and M/EEG data are pre-processed before training begins.
 
