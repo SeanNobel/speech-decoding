@@ -1,10 +1,15 @@
-import os, sys, random
+import os
+import sys
+import random
+
+import hydra
+from hydra.utils import get_original_cwd
 import numpy as np
-import torch
-import torch.nn as nn
-from time import time
-from tqdm import tqdm, trange
+from omegaconf import DictConfig, open_dict
 from termcolor import cprint
+import torch
+from torch import nn
+from tqdm import tqdm, trange
 import wandb
 
 from omegaconf import DictConfig, open_dict
@@ -162,19 +167,6 @@ def run(args: DictConfig) -> None:
         lr=float(args.lr),
     )
 
-    if args.lr_scheduler == "cosine":
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=args.epochs, eta_min=args.lr * 0.1
-        )
-    elif args.lr_scheduler == "multistep":
-        scheduler = torch.optim.lr_scheduler.MultiStepLR(
-            optimizer,
-            milestones=[int(m * args.epochs) for m in args.lr_multistep_mlstns],
-            gamma=args.lr_step_gamma,
-        )
-    else:
-        scheduler = None
-
     # ======================================
     for epoch in range(args.epochs):
         train_losses = []
@@ -265,9 +257,6 @@ def run(args: DictConfig) -> None:
                 "temp": loss_func.temp.item(),
             }
             wandb.log(performance_now)
-
-        if scheduler is not None:
-            scheduler.step()
 
         torch.save(brain_encoder.state_dict(), "model_last.pt")
 
