@@ -38,7 +38,7 @@ def zero_shot_classification(Z: torch.Tensor, Y: torch.Tensor, test=False, top_k
     # x_ = rearrange(x, 'b f -> 1 b f')
     # y_ = rearrange(y, 'b f -> b 1 f')
     # similarity = torch.nn.functional.cosine_similarity(x_, y_, dim=-1)  # ( B, B )
-
+    import pdb; pdb.set_trace()
     # NOTE: avoid CUDA out of memory like this
     similarity = torch.empty(batch_size, batch_size).to(device)
 
