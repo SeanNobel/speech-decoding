@@ -75,7 +75,7 @@ def run(args: DictConfig) -> None:
 
     else:
         raise ValueError("Unknown dataset")
-
+    assert len(test_loader) == 1
     brain_encoder = get_model(args).to(device) #BrainEncoder(args).to(device)
 
     weight_dir = os.path.join(args.save_root, 'weights')
