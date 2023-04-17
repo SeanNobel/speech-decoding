@@ -78,6 +78,11 @@ def run(args: DictConfig) -> None:
 
     brain_encoder = get_model(args).to(device) #BrainEncoder(args).to(device)
 
+    weight_dir = os.path.join(args.save_root, 'weights')
+    last_weight_file = os.path.join(weight_dir, "model_last.pt")
+    brain_encoder.load_state_dict(torch.load(last_weight_file))
+    print('weight is loaded from ', last_weight_file)
+
     testTop1accs = []
     testTop10accs = []
     testTopKaccs = []
@@ -111,3 +116,13 @@ def run(args: DictConfig) -> None:
             f"testTop10acc: {np.mean(testTop10accs):.3f} | "
             f"testTop{half_k}acc: {np.mean(testTopKaccs):.3f} | "
         )
+
+
+
+if __name__ == "__main__":
+    from hydra import initialize, compose
+    with initialize(version_base=None, config_path="../configs/"):
+        args = compose(config_name='20230414_sbj01_seq2stat')
+    if not os.path.exists(os.path.join(args.save_root, 'weights')):
+        os.makedirs(os.path.join(args.save_root, 'weights'))
+    run(args)
