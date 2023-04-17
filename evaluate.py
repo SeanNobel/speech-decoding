@@ -29,6 +29,60 @@ from meg_decoding.utils.loggers import Pickleogger
 from meg_decoding.utils.vis_grad import get_grad
 
 
+def zero_shot_classification(Z: torch.Tensor, Y: torch.Tensor, test=False, top_k=None)-> torch.Tensor:
+    batch_size = Z.size(0)
+    diags = torch.arange(batch_size).to(device)
+    x = Z # .view(batch_size, -1) # 300 x 512
+    y = Y # .view(batch_size, -1) # 50 x 512
+
+    # x_ = rearrange(x, 'b f -> 1 b f')
+    # y_ = rearrange(y, 'b f -> b 1 f')
+    # similarity = torch.nn.functional.cosine_similarity(x_, y_, dim=-1)  # ( B, B )
+
+    # NOTE: avoid CUDA out of memory like this
+    similarity = torch.empty(batch_size, batch_size).to(device)
+
+    if test:
+        pbar = tqdm(total=batch_size, desc="[Similarities]")
+
+    for i in range(batch_size):
+        for j in range(batch_size):
+            similarity[i, j] = (x[i] @ y[j]) / max((x[i].norm() * y[j].norm()), 1e-8)
+
+        if test:
+            pbar.update(1)
+
+    similarity = similarity.T
+
+    # NOTE: max similarity of speech and M/EEG representations is expected for corresponding windows
+    top1accuracy = (similarity.argmax(axis=1) == diags).to(torch.float).mean().item()
+    try:
+        top10accuracy = np.mean(
+            [
+                label in row
+                for row, label in zip(torch.topk(similarity, 10, dim=1, largest=True)[1], diags)
+            ]
+        )
+    except:
+        print(similarity.size())
+        raise
+    if top_k is None:
+
+        return top1accuracy, top10accuracy
+    else:
+        try:
+            topkaccuracy = np.mean(
+                [
+                    label in row
+                    for row, label in zip(torch.topk(similarity, top_k, dim=1, largest=True)[1], diags)
+                ]
+                )
+        except:
+            print(similarity.size())
+            raise
+        return top1accuracy, top10accuracy, topkaccuracy
+
+
 def run(args: DictConfig) -> None:
     from meg_decoding.utils.reproducibility import seed_worker
     if args.reproducible:
@@ -45,8 +99,8 @@ def run(args: DictConfig) -> None:
         seed_worker = None
 
     if args.dataset == "GOD":
-        train_dataset = GODDatasetBase(args, 'train')
-        val_dataset = GODDatasetBase(args, 'val')
+        train_dataset = GODDatasetBase(args, 'train', return_label=True)
+        val_dataset = GODDatasetBase(args, 'val', return_label=True)
         with open_dict(args):
             args.num_subjects = train_dataset.num_subjects
             print('num subject is {}'.format(args.num_subjects))
@@ -90,14 +144,17 @@ def run(args: DictConfig) -> None:
     classifier.eval()
     brain_encoder.eval()
     half_k = int(test_size/2)
+
+    sorted_image_features = np.load('./data/GOD/image_features.npy')
+    Y = torch.Tensor(sorted_image_features)
     for batch in test_loader:
 
         with torch.no_grad():
 
             if len(batch) == 3:
-                X, Y, subject_idxs = batch
+                X, _, subject_idxs = batch
             elif len(batch) == 4:
-                X, Y, subject_idxs, chunkIDs = batch
+                X, _, subject_idxs, label = batch
             else:
                 raise ValueError("Unexpected number of items from dataloader.")
 
@@ -105,7 +162,7 @@ def run(args: DictConfig) -> None:
 
             Z = brain_encoder(X, subject_idxs)  # 0.96 GB
 
-            testTop1acc, testTop10acc, testTopKacc = classifier(Z, Y, test=True, topk=half_k)  # ( 250, 1024, 360 )
+            testTop1acc, testTop10acc, testTopKacc = zero_shot_classification(Z, Y, test=True, topk=half_k)  # ( 250, 1024, 360 )
 
         testTop1accs.append(testTop1acc)
         testTop10accs.append(testTop10acc)

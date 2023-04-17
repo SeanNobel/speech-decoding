@@ -18,7 +18,7 @@ mne.set_log_level(verbose="WARNING")
 
 
 class GODDatasetBase(Dataset):
-    def __init__(self, args, split, preprocess_pipleine:list=[]):
+    def __init__(self, args, split, preprocess_pipleine:list=[], return_label:bool=False):
         self.args = args
         self.sub_id_map = {s:i for i, s in enumerate(list(self.args.subjects.keys()))}
         self.preprocess_pipeline = preprocess_pipleine
@@ -32,13 +32,18 @@ class GODDatasetBase(Dataset):
         self.labels = label_epochs # epochs (x 1)
 
         self.num_subjects = len(np.unique(self.subs))
+        self.return_label = return_label
 
     def __len__(self):
         return len(self.Y)
 
     def __getitem__(self, i):  # NOTE: i is id of a speech segment
         x, y, s = self.X[i], self.Y[i], self.subs[i]
-        return x, y, s
+        if self.return_label:
+            l = self.labels[i]
+            return x, y, s, l
+        else:
+            return x, y, s
 
     def prepare_data(self, args, split:str):
         DATAROOT = args.data_root
