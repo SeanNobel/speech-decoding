@@ -31,27 +31,30 @@ from meg_decoding.utils.vis_grad import get_grad
 
 def zero_shot_classification(Z: torch.Tensor, Y: torch.Tensor, label: torch.Tensor, test=False, top_k=None)-> torch.Tensor:
     batch_size = Z.size(0)
+    sample_size = Y.size(0)
     label = label -1 # labelは1始まり
     x = Z # .view(batch_size, -1) # 300 x 512
     y = Y # .view(batch_size, -1) # 50 x 512
-
+    # import pdb; pdb.set_trace()
     # NOTE: avoid CUDA out of memory like this
-    similarity = torch.empty(batch_size, batch_size).to(device)
+    similarity = torch.empty(batch_size, sample_size).to(device)
 
     if test:
         pbar = tqdm(total=batch_size, desc="[Similarities]")
 
     for i in range(batch_size):
-        for j in range(batch_size):
+        for j in range(sample_size):
             similarity[i, j] = (x[i] @ y[j]) / max((x[i].norm() * y[j].norm()), 1e-8)
 
         if test:
             pbar.update(1)
 
-    similarity = similarity.T
+    # similarity = similarity.T # brain x image -> image x brain
 
     # NOTE: max similarity of speech and M/EEG representations is expected for corresponding windows
+    # import pdb; pdb.set_trace()
     top1accuracy = (similarity.argmax(axis=1) == label).to(torch.float).cpu().numpy()
+    
     try:
         top10accuracy = np.array(
             [
@@ -125,7 +128,7 @@ def run(args: DictConfig) -> None:
 
     else:
         raise ValueError("Unknown dataset")
-    assert len(test_loader) == 1
+    # assert len(test_loader) == 1
     brain_encoder = get_model(args).to(device) #BrainEncoder(args).to(device)
 
     weight_dir = os.path.join(args.save_root, 'weights')
@@ -139,10 +142,10 @@ def run(args: DictConfig) -> None:
     classifier = Classifier(args)
     classifier.eval()
     brain_encoder.eval()
-    half_k = int(test_size/2)
 
     sorted_image_features = np.load('./data/GOD/image_features.npy')
-    Y = torch.Tensor(sorted_image_features)
+    Y = torch.Tensor(sorted_image_features) 
+    half_k = int(len(sorted_image_features)/2)
     for batch in tqdm(test_loader):
 
         with torch.no_grad():
@@ -158,7 +161,7 @@ def run(args: DictConfig) -> None:
 
             Z = brain_encoder(X, subject_idxs)  # 0.96 GB
 
-            testTop1acc, testTop10acc, testTopKacc = zero_shot_classification(Z, Y, test=True, topk=half_k)  # ( 250, 1024, 360 )
+            testTop1acc, testTop10acc, testTopKacc = zero_shot_classification(Z, Y, label,test=True, top_k=half_k)  # ( 250, 1024, 360 )
 
         testTop1accs.append(testTop1acc)
         testTop10accs.append(testTop10acc)
