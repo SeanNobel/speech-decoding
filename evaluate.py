@@ -29,16 +29,12 @@ from meg_decoding.utils.loggers import Pickleogger
 from meg_decoding.utils.vis_grad import get_grad
 
 
-def zero_shot_classification(Z: torch.Tensor, Y: torch.Tensor, test=False, top_k=None)-> torch.Tensor:
+def zero_shot_classification(Z: torch.Tensor, Y: torch.Tensor, label: torch.Tensor, test=False, top_k=None)-> torch.Tensor:
     batch_size = Z.size(0)
-    diags = torch.arange(batch_size).to(device)
+    label = label -1 # labelは1始まり
     x = Z # .view(batch_size, -1) # 300 x 512
     y = Y # .view(batch_size, -1) # 50 x 512
 
-    # x_ = rearrange(x, 'b f -> 1 b f')
-    # y_ = rearrange(y, 'b f -> b 1 f')
-    # similarity = torch.nn.functional.cosine_similarity(x_, y_, dim=-1)  # ( B, B )
-    import pdb; pdb.set_trace()
     # NOTE: avoid CUDA out of memory like this
     similarity = torch.empty(batch_size, batch_size).to(device)
 
@@ -55,12 +51,12 @@ def zero_shot_classification(Z: torch.Tensor, Y: torch.Tensor, test=False, top_k
     similarity = similarity.T
 
     # NOTE: max similarity of speech and M/EEG representations is expected for corresponding windows
-    top1accuracy = (similarity.argmax(axis=1) == diags).to(torch.float).mean().item()
+    top1accuracy = (similarity.argmax(axis=1) == label).to(torch.float).cpu().numpy()
     try:
-        top10accuracy = np.mean(
+        top10accuracy = np.array(
             [
                 label in row
-                for row, label in zip(torch.topk(similarity, 10, dim=1, largest=True)[1], diags)
+                for row, label in zip(torch.topk(similarity, 10, dim=1, largest=True)[1], label)
             ]
         )
     except:
@@ -71,10 +67,10 @@ def zero_shot_classification(Z: torch.Tensor, Y: torch.Tensor, test=False, top_k
         return top1accuracy, top10accuracy
     else:
         try:
-            topkaccuracy = np.mean(
+            topkaccuracy = np.array(
                 [
                     label in row
-                    for row, label in zip(torch.topk(similarity, top_k, dim=1, largest=True)[1], diags)
+                    for row, label in zip(torch.topk(similarity, top_k, dim=1, largest=True)[1], label)
                 ]
                 )
         except:
@@ -112,13 +108,13 @@ def run(args: DictConfig) -> None:
                 train_dataset,
                 val_dataset,
                 args,
-                test_bsz=test_size,
+                test_bsz=args.batch_size,
                 collate_fn=GODCollator(args),)
 
         else:
             test_loader = DataLoader(
                 val_dataset,
-                batch_size=test_size,
+                batch_size=args.batch_size,
                 drop_last=True,
                 shuffle=False,
                 num_workers=args.num_workers,
@@ -147,7 +143,7 @@ def run(args: DictConfig) -> None:
 
     sorted_image_features = np.load('./data/GOD/image_features.npy')
     Y = torch.Tensor(sorted_image_features)
-    for batch in test_loader:
+    for batch in tqdm(test_loader):
 
         with torch.no_grad():
 
@@ -168,6 +164,9 @@ def run(args: DictConfig) -> None:
         testTop10accs.append(testTop10acc)
         testTopKaccs.append(testTopKacc)
 
+    testTop1accs = np.concatenate(testTop1accs)
+    testTop10acc = np.concatenate(testTop10acc)
+    testTopKaccs = np.concatenate(testTopKaccs)
     print(
             f"testTop1acc: {np.mean(testTop1accs):.3f} | "
             f"testTop10acc: {np.mean(testTop10accs):.3f} | "
