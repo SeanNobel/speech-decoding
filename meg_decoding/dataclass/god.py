@@ -85,10 +85,10 @@ class GODDatasetBase(Dataset):
                     brain_filter_high = args.preprocess.brain_filter[1]
                     ROI_MEG_Data = mne.filter.filter_data(ROI_MEG_Data, sfreq=fs, l_freq=brain_filter_low, h_freq=brain_filter_high,)
                     print(f'band path filter: {brain_filter_low}-{brain_filter_high}')
-                if args.resample_fs is not None:
-                    ROI_MEG_Data = mne.filter.resample(ROI_MEG_Data, down=fs / args.resample_fs)
-                    print('resample {} to {} Hz'.format(fs,args.resample_fs))
-                    window = time_window(args, triggers, args.resample_fs)
+                if args.preprocs.brain_resample_rate is not None:
+                    ROI_MEG_Data = mne.filter.resample(ROI_MEG_Data, down=fs / args.preprocs.brain_resample_rate)
+                    print('resample {} to {} Hz'.format(fs,args.preprocs.brain_resample_rate))
+                    window = time_window(args, triggers, args.preprocs.brain_resample_rate)
                 else:
                     window = time_window(args, triggers, fs)
                 ROI_MEG_epochs = epoching(ROI_MEG_Data, window)
