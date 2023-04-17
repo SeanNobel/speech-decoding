@@ -24,7 +24,7 @@ from torch.utils.data import DataLoader, RandomSampler, BatchSampler
 from meg_decoding.models import BrainEncoder, Classifier
 from meg_decoding.utils.get_dataloaders import get_dataloaders, get_samplers
 from meg_decoding.utils.loss import *
-from meg_decoding.dataclass.god import GODDatasetBase
+from meg_decoding.dataclass.god import GODDatasetBase, GODCollator
 from meg_decoding.utils.loggers import Pickleogger
 
 def run(args: DictConfig) -> None:
@@ -138,26 +138,38 @@ def run(args: DictConfig) -> None:
         with open_dict(args):
             args.num_subjects = train_dataset.num_subjects
             print('num subject is {}'.format(args.num_subjects))
-        train_loader = DataLoader(
-            train_dataset,
-            batch_size=args.batch_size,
-            drop_last=True,
-            shuffle=True,
-            num_workers=args.num_workers,
-            pin_memory=True,
-            worker_init_fn=seed_worker,
-            generator=g,
-        )
-        test_loader = DataLoader(
-            val_dataset,
-            batch_size=args.batch_size,
-            drop_last=True,
-            shuffle=False,
-            num_workers=args.num_workers,
-            pin_memory=True,
-            worker_init_fn=seed_worker,
-            generator=g,
-        )
+
+
+        if args.use_sampler:
+            test_size = val_dataset.Y.shape[0]
+            train_loader, test_loader = get_samplers(
+                train_dataset,
+                val_dataset,
+                args,
+                test_bsz=test_size,
+                collate_fn=GODCollator(args),)
+
+        else:
+            train_loader = DataLoader(
+                train_dataset,
+                batch_size=args.batch_size,
+                drop_last=True,
+                shuffle=True,
+                num_workers=args.num_workers,
+                pin_memory=True,
+                worker_init_fn=seed_worker,
+                generator=g,
+            )
+            test_loader = DataLoader(
+                val_dataset,
+                batch_size=args.batch_size,
+                drop_last=True,
+                shuffle=False,
+                num_workers=args.num_workers,
+                pin_memory=True,
+                worker_init_fn=seed_worker,
+                generator=g,
+            )
 
     else:
         raise ValueError("Unknown dataset")

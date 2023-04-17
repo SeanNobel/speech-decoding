@@ -5,7 +5,14 @@ import mne
 from tqdm import tqdm
 from meg_decoding.matlab_utils.load_meg import get_meg_data, roi, time_window, get_baseline
 import tqdm
-
+import torch
+from typing import List
+from meg_decoding.utils.preproc_utils import (
+    check_preprocs,
+    scaleAndClamp,
+    scaleAndClamp_single,
+    baseline_correction_single,
+)
 
 mne.set_log_level(verbose="WARNING")
 
@@ -85,3 +92,27 @@ class GODDatasetBase(Dataset):
         image_feature_epochs = np.concatenate(image_feature_epochs, axis=0)
         print('dataset is created. size is ', meg_epochs.shape)
         return meg_epochs, sub_epochs, label_epochs, image_feature_epochs
+
+
+class GODCollator(torch.nn.Module):
+    """
+    Runs baseline correction and robust scaling and clamping for batch
+    """
+
+    def __init__(self, args):
+        super(GODCollator, self).__init__()
+
+        self.brain_resample_rate = args.preprocs["brain_resample_rate"]
+        self.baseline_len_samp = int(self.brain_resample_rate * args.preprocs["baseline_len_sec"])
+        self.clamp = args.preprocs["clamp"]
+        self.clamp_lim = args.preprocs["clamp_lim"]
+
+    def forward(self, batch: List[tuple]):
+        X = torch.stack([item[0] for item in batch])  # ( 64, 208, 360 )
+        Y = torch.stack([item[1] for item in batch])
+        subject_idx = torch.IntTensor([item[2] for item in batch])
+
+        X = baseline_correction_single(X, self.baseline_len_samp)
+        X = scaleAndClamp(X, self.clamp_lim, self.clamp)
+
+        return X, Y, subject_idx
