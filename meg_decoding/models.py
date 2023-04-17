@@ -17,8 +17,7 @@ from meg_decoding.utils.layout import ch_locations_2d
 def get_model(args):
     if args.model == 'brain_encoder':
         return BrainEncoder(args)
-    elif 
-        args.model == 'brain_endcoder_seq2static':
+    elif args.model == 'brain_endcoder_seq2static':
         return  BrainEncoderSeq2Static(args)
     else:
         raise ValueError('no model named {} is prepared'.format(args.model))  
@@ -280,7 +279,7 @@ class Classifier(nn.Module):
 
 class BrainEncoderSeq2Static(nn.Module):
     def __init__(self, args):
-        super(BrainEncoder, self).__init__()
+        super( BrainEncoderSeq2Static, self).__init__()
 
         self.num_subjects = args.num_subjects
         self.D1 = args.D1
@@ -301,7 +300,7 @@ class BrainEncoderSeq2Static(nn.Module):
             if k < 4:
                 self.conv_blocks.add_module(f"avgpool{k}", torch.nn.AvgPool1d(3, stride=2))
             else:
-                self.conv_blocks.add_module(f"globalavgpool{k}", AdaptiveAvgPool1d(output_size=1)
+                self.conv_blocks.add_module(f"globalavgpool{k}", torch.nn.AdaptiveAvgPool1d(output_size=1))
         self.conv_final1 = nn.Conv1d(in_channels=self.D2, out_channels=2 * self.D2, kernel_size=1,)
         self.conv_final2 = nn.Conv1d(in_channels=2 * self.D2, out_channels=self.F, kernel_size=1,)
         if args.seq2seq:
