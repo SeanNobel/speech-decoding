@@ -13,6 +13,15 @@ from constants import device
 from meg_decoding.utils.layout import ch_locations_2d
 
 
+
+def get_model(args):
+    if args.model == 'brain_encoder':
+        return BrainEncoder(args)
+    elif args.model == 'brain_endcoder_seq2static':
+        return  BrainEncoderSeq2Static(args)
+    else:
+        raise ValueError('no model named {} is prepared'.format(args.model))  
+ 
 class SpatialAttention(nn.Module):
     """Same as SpatialAttentionVer2, but a little more concise"""
 
@@ -123,7 +132,7 @@ class SubjectBlock(nn.Module):
 
 
 class ConvBlock(nn.Module):
-    def __init__(self, k, D1, D2):
+    def __init__(self, k, D1, D2, ks=3):
         super(ConvBlock, self).__init__()
 
         self.k = k
@@ -133,7 +142,7 @@ class ConvBlock(nn.Module):
         self.conv0 = nn.Conv1d(
             in_channels=self.in_channels,
             out_channels=self.D2,
-            kernel_size=3,
+            kernel_size=ks,
             padding="same",
             dilation=2 ** ((2 * k) % 5),
         )
@@ -141,7 +150,7 @@ class ConvBlock(nn.Module):
         self.conv1 = nn.Conv1d(
             in_channels=self.D2,
             out_channels=self.D2,
-            kernel_size=3,
+            kernel_size=ks,
             padding="same",
             dilation=2 ** ((2 * k + 1) % 5),
         )
@@ -149,7 +158,7 @@ class ConvBlock(nn.Module):
         self.conv2 = nn.Conv1d(
             in_channels=self.D2,
             out_channels=2 * self.D2,
-            kernel_size=3,
+            kernel_size=ks,
             padding="same",
             dilation=2,  # FIXME: The text doesn't say this, but the picture shows dilation=2
         )
@@ -266,3 +275,53 @@ class Classifier(nn.Module):
             raise
 
         return top1accuracy, top10accuracy
+
+
+class BrainEncoderSeq2Static(nn.Module):
+    def __init__(self, args):
+        super( BrainEncoderSeq2Static, self).__init__()
+
+        self.num_subjects = args.num_subjects
+        self.D1 = args.D1
+        self.D2 = args.D2
+        self.F = args.F if not args.preprocs["last4layers"] else 1024
+        self.K = args.K
+        self.dataset_name = args.dataset
+
+        self.subject_block = SubjectBlock(args)
+        # self.subject_block = SubjectBlock_proto(args)
+        # cprint("USING THE OLD IMPLEMENTATION OF THE SUBJECT BLOCK", 'red', 'on_blue', attrs=['bold'])
+
+        self.conv_blocks = nn.Sequential()
+        ks_list = args.ConvBlocks.ks  # 200 ms = 200 samples  receptive field: ks * 3 * stride
+        for k in range(5):
+            ks = ks_list[k]
+            self.conv_blocks.add_module(f"conv{k}", ConvBlock(k, self.D1, self.D2, ks=ks))
+            if k < 4:
+                self.conv_blocks.add_module(f"avgpool{k}", torch.nn.AvgPool1d(3, stride=2))
+            else:
+                self.conv_blocks.add_module(f"globalavgpool{k}", torch.nn.AdaptiveAvgPool1d(output_size=1))
+        self.conv_final1 = nn.Conv1d(in_channels=self.D2, out_channels=2 * self.D2, kernel_size=1,)
+        self.conv_final2 = nn.Conv1d(in_channels=2 * self.D2, out_channels=self.F, kernel_size=1,)
+        if args.seq2seq:
+            self._forward = self._forward_seq_seq
+        else:
+            self._forward = self._forward_seq_static
+
+    def forward(self, X, subject_idxs):
+        return self._forward(X, subject_idxs)
+
+    def _forward_seq_seq(self, X, subject_idxs):
+        X = self.subject_block(X, subject_idxs)
+        X = self.conv_blocks(X)
+        X = F.gelu(self.conv_final1(X))
+        X = F.gelu(self.conv_final2(X))
+        return X
+
+    def _forward_seq_static(self, X, subject_idxs):
+        X = self.subject_block(X, subject_idxs)
+        X = self.conv_blocks(X)
+        X = F.gelu(self.conv_final1(X))
+        X = F.gelu(self.conv_final2(X))
+        X = torch.mean(X, axis=2)
+        return X

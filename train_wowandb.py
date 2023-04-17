@@ -21,11 +21,13 @@ from constants import device
 # )
 from torch.utils.data import DataLoader, RandomSampler, BatchSampler
 
-from meg_decoding.models import BrainEncoder, Classifier
+from meg_decoding.models import get_model, Classifier
 from meg_decoding.utils.get_dataloaders import get_dataloaders, get_samplers
 from meg_decoding.utils.loss import *
 from meg_decoding.dataclass.god import GODDatasetBase, GODCollator
 from meg_decoding.utils.loggers import Pickleogger
+from meg_decoding.utils.vis_grad import get_grad
+
 
 def run(args: DictConfig) -> None:
 
@@ -188,7 +190,7 @@ def run(args: DictConfig) -> None:
     # ---------------------
     #        Models
     # ---------------------
-    brain_encoder = BrainEncoder(args).to(device)
+    brain_encoder = get_model(args).to(device) #BrainEncoder(args).to(device)
 
     classifier = Classifier(args)
 
@@ -219,6 +221,7 @@ def run(args: DictConfig) -> None:
         scheduler = None
 
     # ======================================
+    best_acc = 0
     pbar = tqdm(range(args.epochs))
     for epoch in pbar:
         pbar.set_description("training {}/{} epoch".format(epoch, args.epochs))
@@ -259,6 +262,11 @@ def run(args: DictConfig) -> None:
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
+            if args.dataset == "GOD":
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                # get_grad(brain_encoder)
 
         # Accumulate gradients for Gwilliams for the whole epoch
         if args.dataset == "Brennan2018":
@@ -332,12 +340,18 @@ def run(args: DictConfig) -> None:
         last_weight_file = os.path.join(savedir, "model_last.pt")
         torch.save(brain_encoder.state_dict(), last_weight_file)
         print('model is saved as ', last_weight_file)
+        if best_acc < np.mean(testTop10accs):
+            best_weight_file = os.path.join(savedir, "model_best.pt")
+            torch.save(brain_encoder.state_dict(), best_weight_file)
+            print('best model is updated !!, ', best_weight_file)
+            best_acc =  np.mean(testTop10accs)
+
 
 
 if __name__ == "__main__":
     from hydra import initialize, compose
     with initialize(version_base=None, config_path="../configs/"):
-        args = compose(config_name='test')
+        args = compose(config_name='20230414_sbj01_seq2stat')
     if not os.path.exists(os.path.join(args.save_root, 'weights')):
         os.makedirs(os.path.join(args.save_root, 'weights'))
     run(args)
