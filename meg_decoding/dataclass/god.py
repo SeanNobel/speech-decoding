@@ -80,8 +80,14 @@ class GODDatasetBase(Dataset):
                     rest_mean, rest_std = get_baseline(processed_rest_meg_path, fs, args.rest_duration)
                 MEG_Data, image_features, labels, triggers = get_meg_data(processed_meg_path, label_path, trigger_path, rest_mean=rest_mean, rest_std=rest_std, split=split)
                 ROI_MEG_Data = MEG_Data[roi_channels, :] #  num_roi_channels x time_samples
-                if args.resample_fs:
+                if args.preprocess.brain_filter is not None:
+                    brain_filter_low = args.preprocess.brain_filter[0]
+                    brain_filter_high = args.preprocess.brain_filter[1]
+                    ROI_MEG_Data = mne.filter.filter_data(ROI_MEG_Data, sfreq=fs, l_freq=brain_filter_low, h_freq=brain_filter_high,)
+                    print(f'band path filter: {brain_filter_low}-{brain_filter_high}')
+                if args.resample_fs is not None:
                     ROI_MEG_Data = mne.filter.resample(ROI_MEG_Data, down=fs / args.resample_fs)
+                    print('resample {} to {} Hz'.format(fs,args.resample_fs))
                     window = time_window(args, triggers, args.resample_fs)
                 else:
                     window = time_window(args, triggers, fs)
