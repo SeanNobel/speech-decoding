@@ -80,7 +80,11 @@ class GODDatasetBase(Dataset):
                     rest_mean, rest_std = get_baseline(processed_rest_meg_path, fs, args.rest_duration)
                 MEG_Data, image_features, labels, triggers = get_meg_data(processed_meg_path, label_path, trigger_path, rest_mean=rest_mean, rest_std=rest_std, split=split)
                 ROI_MEG_Data = MEG_Data[roi_channels, :] #  num_roi_channels x time_samples
-                window = time_window(args, triggers, fs)
+                if args.resample_fs:
+                    ROI_MEG_Data = mne.filter.resample(ROI_MEG_Data, down=fs / args.resample_fs)
+                    window = time_window(args, triggers, args.resample_fs)
+                else:
+                    window = time_window(args, triggers, fs)
                 ROI_MEG_epochs = epoching(ROI_MEG_Data, window)
 
                 meg_epochs.append(ROI_MEG_epochs) # array [epoch x ch x time_stamp]
