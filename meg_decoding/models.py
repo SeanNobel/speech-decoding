@@ -20,8 +20,8 @@ def get_model(args):
     elif args.model == 'brain_endcoder_seq2static':
         return  BrainEncoderSeq2Static(args)
     else:
-        raise ValueError('no model named {} is prepared'.format(args.model))  
- 
+        raise ValueError('no model named {} is prepared'.format(args.model))
+
 class SpatialAttention(nn.Module):
     """Same as SpatialAttentionVer2, but a little more concise"""
 
@@ -235,7 +235,7 @@ class Classifier(nn.Module):
         self.factor = 1  # self.batch_size / 241
 
     @torch.no_grad()
-    def forward(self, Z: torch.Tensor, Y: torch.Tensor, test=False) -> torch.Tensor:
+    def forward(self, Z: torch.Tensor, Y: torch.Tensor, test=False, top_k=None) -> torch.Tensor:
 
         batch_size = Z.size(0)
         diags = torch.arange(batch_size).to(device)
@@ -273,8 +273,23 @@ class Classifier(nn.Module):
         except:
             print(similarity.size())
             raise
+        if top_k is None:
 
-        return top1accuracy, top10accuracy
+            return top1accuracy, top10accuracy
+        else:
+            try:
+                topkaccuracy = np.mean(
+                    [
+                        label in row
+                        for row, label in zip(torch.topk(similarity, top_k, dim=1, largest=True)[1], diags)
+                    ]
+                    )
+            except:
+                print(similarity.size())
+                raise
+            return top1accuracy, top10accuracy, topkaccuracy
+
+
 
 
 class BrainEncoderSeq2Static(nn.Module):
