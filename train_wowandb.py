@@ -143,7 +143,7 @@ def run(args: DictConfig) -> None:
 
 
         if args.use_sampler:
-            test_size = val_dataset.Y.shape[0]
+            test_size = 50# 重複サンプルが存在するのでval_dataset.Y.shape[0]
             train_loader, test_loader = get_samplers(
                 train_dataset,
                 val_dataset,
@@ -154,7 +154,7 @@ def run(args: DictConfig) -> None:
         else:
             train_loader = DataLoader(
                 train_dataset,
-                batch_size=args.batch_size,
+                batch_size= args.batch_size,
                 drop_last=True,
                 shuffle=True,
                 num_workers=args.num_workers,
@@ -164,7 +164,7 @@ def run(args: DictConfig) -> None:
             )
             test_loader = DataLoader(
                 val_dataset,
-                batch_size=args.batch_size,
+                batch_size=50 # args.batch_size,
                 drop_last=True,
                 shuffle=False,
                 num_workers=args.num_workers,
@@ -249,7 +249,7 @@ def run(args: DictConfig) -> None:
             X, Y = X.to(device), Y.to(device)
             Z = brain_encoder(X, subject_idxs)
             loss = loss_func(Y, Z)
-
+            # import pdb; pdb.set_trace()
             with torch.no_grad():
                 trainTop1acc, trainTop10acc = classifier(Z, Y)
 
@@ -343,8 +343,8 @@ def run(args: DictConfig) -> None:
         if best_acc < np.mean(testTop10accs):
             best_weight_file = os.path.join(savedir, "model_best.pt")
             torch.save(brain_encoder.state_dict(), best_weight_file)
-            print('best model is updated !!, ', best_weight_file)
             best_acc =  np.mean(testTop10accs)
+            print('best model is updated !!, {}'.format(best_acc), best_weight_file)
 
 
 

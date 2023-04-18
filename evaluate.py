@@ -31,27 +31,30 @@ from meg_decoding.utils.vis_grad import get_grad
 
 def zero_shot_classification(Z: torch.Tensor, Y: torch.Tensor, label: torch.Tensor, test=False, top_k=None)-> torch.Tensor:
     batch_size = Z.size(0)
+    sample_size = Y.size(0)
     label = label -1 # labelは1始まり
     x = Z # .view(batch_size, -1) # 300 x 512
     y = Y # .view(batch_size, -1) # 50 x 512
-
+    # import pdb; pdb.set_trace()
     # NOTE: avoid CUDA out of memory like this
-    similarity = torch.empty(batch_size, batch_size).to(device)
+    similarity = torch.empty(batch_size, sample_size).to(device)
 
     if test:
         pbar = tqdm(total=batch_size, desc="[Similarities]")
 
     for i in range(batch_size):
-        for j in range(batch_size):
+        for j in range(sample_size):
             similarity[i, j] = (x[i] @ y[j]) / max((x[i].norm() * y[j].norm()), 1e-8)
 
         if test:
             pbar.update(1)
 
-    similarity = similarity.T
+    # similarity = similarity.T # brain x image -> image x brain
 
     # NOTE: max similarity of speech and M/EEG representations is expected for corresponding windows
+    # import pdb; pdb.set_trace()
     top1accuracy = (similarity.argmax(axis=1) == label).to(torch.float).cpu().numpy()
+    
     try:
         top10accuracy = np.array(
             [
@@ -109,7 +112,7 @@ def run(args: DictConfig) -> None:
                 val_dataset,
                 args,
                 test_bsz=args.batch_size,
-                collate_fn=GODCollator(args),)
+                collate_fn=GODCollator(args,  return_label=True),)
 
         else:
             test_loader = DataLoader(
@@ -125,13 +128,18 @@ def run(args: DictConfig) -> None:
 
     else:
         raise ValueError("Unknown dataset")
-    assert len(test_loader) == 1
+    # assert len(test_loader) == 1
     brain_encoder = get_model(args).to(device) #BrainEncoder(args).to(device)
 
     weight_dir = os.path.join(args.save_root, 'weights')
     last_weight_file = os.path.join(weight_dir, "model_last.pt")
-    brain_encoder.load_state_dict(torch.load(last_weight_file))
-    print('weight is loaded from ', last_weight_file)
+    best_weight_file = os.path.join(weight_dir, "model_best.pt")
+    if os.path.exists(best_weight_file):    
+        brain_encoder.load_state_dict(torch.load(best_weight_file))
+        print('weight is loaded from ', best_weight_file)
+    else:
+        brain_encoder.load_state_dict(torch.load(last_weight_file))
+        print('weight is loaded from ', last_weight_file)
 
     testTop1accs = []
     testTop10accs = []
@@ -139,33 +147,30 @@ def run(args: DictConfig) -> None:
     classifier = Classifier(args)
     classifier.eval()
     brain_encoder.eval()
-    half_k = int(test_size/2)
 
     sorted_image_features = np.load('./data/GOD/image_features.npy')
-    Y = torch.Tensor(sorted_image_features)
+    Y = torch.Tensor(sorted_image_features).to(device)
+    half_k = int(len(sorted_image_features)/2)
     for batch in tqdm(test_loader):
 
         with torch.no_grad():
-
-            if len(batch) == 3:
-                X, _, subject_idxs = batch
-            elif len(batch) == 4:
+            if len(batch) == 4:
                 X, _, subject_idxs, label = batch
             else:
                 raise ValueError("Unexpected number of items from dataloader.")
 
-            X, Y = X.to(device), Y.to(device)
+            X, label = X.to(device), label.to(device)
 
             Z = brain_encoder(X, subject_idxs)  # 0.96 GB
 
-            testTop1acc, testTop10acc, testTopKacc = zero_shot_classification(Z, Y, test=True, topk=half_k)  # ( 250, 1024, 360 )
+            testTop1acc, testTop10acc, testTopKacc = zero_shot_classification(Z, Y, label,test=True, top_k=half_k)  # ( 250, 1024, 360 )
 
         testTop1accs.append(testTop1acc)
         testTop10accs.append(testTop10acc)
         testTopKaccs.append(testTopKacc)
 
     testTop1accs = np.concatenate(testTop1accs)
-    testTop10acc = np.concatenate(testTop10acc)
+    testTop10accs = np.concatenate(testTop10accs)
     testTopKaccs = np.concatenate(testTopKaccs)
     print(
             f"testTop1acc: {np.mean(testTop1accs):.3f} | "
@@ -178,7 +183,7 @@ def run(args: DictConfig) -> None:
 if __name__ == "__main__":
     from hydra import initialize, compose
     with initialize(version_base=None, config_path="../configs/"):
-        args = compose(config_name='20230414_sbj01_seq2stat')
+        args = compose(config_name='20230417_sbj01_seq2stat')
     if not os.path.exists(os.path.join(args.save_root, 'weights')):
         os.makedirs(os.path.join(args.save_root, 'weights'))
     run(args)
