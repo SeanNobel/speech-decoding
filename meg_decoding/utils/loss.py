@@ -4,7 +4,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 import numpy as np
-
 from constants import device
 
 
@@ -104,13 +103,14 @@ class MyCLIPLikeClassificationLoss(nn.Module):
 
     def prepare_image_features(self):
         sorted_image_features = np.load('./data/GOD/image_features_train.npy')
-        self.sorted_image_features = torch.Tensor(sorted_image_features, requires_grad=False).to(torch.float)
+        self.sorted_image_features = torch.tensor(sorted_image_features, requires_grad=False).to(torch.float).to(device)
         assert len(self.sorted_image_features) == 1200
+        self.gt_size = 1200 
 
     def calculate_smooth_labeling(self, labels:np.ndarray, smmoth_value=0.1):
 
         # labels: batchsize:64
-        targets = torch.zeros([64, 1200],requires_grad=False).to(torch.float)
+        targets = torch.zeros([64, 1200],requires_grad=False).to(torch.float).to(device)
         for i, l in enumerate(labels):
             l_mod = l % self.same_category_length
             targets[i, l_mod*self.same_category_length:(l_mod+1)*self.same_category_length] = smmoth_value
@@ -119,8 +119,9 @@ class MyCLIPLikeClassificationLoss(nn.Module):
 
 
     def forward(self, x, labels, fast=True, return_logits=False):
+        labels = labels-1 # labelsは1始まり
         batch_size = x.size(0)
-        y = self.prepare_image_features()
+        y = self.sorted_image_features
         assert batch_size > 1, "Batch size must be greater than 1."
         # if not self.registered_targets:
         #   self.register_buffer('targets', torch.arange(self.batch_size, requires_grad=False).to(self.device))
@@ -140,9 +141,10 @@ class MyCLIPLikeClassificationLoss(nn.Module):
             # logits = torch.cat([positives, negatives], dim=1)
 
         else:
+            # import pdb; pdb.set_trace()
             # fast way
             x = x.reshape(batch_size, -1)
-            y = y.reshape(batch_size, -1)
+            y = y.reshape(self.gt_size, -1)
 
             # NOTE: scale the embeddings to unit norm
             x = x / x.norm(dim=-1, keepdim=True)
