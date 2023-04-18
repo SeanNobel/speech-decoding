@@ -127,7 +127,24 @@ class GODCollator(torch.nn.Module):
         Y = torch.stack([item[1] for item in batch])
         subject_idx = torch.IntTensor([item[2] for item in batch])
 
-        X = baseline_correction_single(X, self.baseline_len_samp)
+        X = self.baseline_correction_single(X, self.baseline_len_samp)
         X = scaleAndClamp(X, self.clamp_lim, self.clamp)
 
         return X, Y, subject_idx
+
+
+    @torch.no_grad()
+    def baseline_correction_single(self, X: torch.Tensor, baseline_len_samp):
+        """args:
+            X: ( chunks, ch, time )
+        returns:
+            X ( chunks, ch, time ) baseline-corrected channel-wise
+        """
+        X = X.permute(1, 0, 2).clone()  # ( ch, chunks, time )
+
+        for chunk_id in range(X.shape[1]):
+            baseline = X[:, chunk_id, -baseline_len_samp:].mean(axis=1)
+
+            X[:, chunk_id, :] -= baseline.view(-1, 1)
+
+        return X.permute(1, 0, 2)
