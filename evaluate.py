@@ -112,7 +112,7 @@ def run(args: DictConfig) -> None:
                 val_dataset,
                 args,
                 test_bsz=args.batch_size,
-                collate_fn=GODCollator(args),)
+                collate_fn=GODCollator(args,  return_label=True),)
 
         else:
             test_loader = DataLoader(
@@ -133,8 +133,13 @@ def run(args: DictConfig) -> None:
 
     weight_dir = os.path.join(args.save_root, 'weights')
     last_weight_file = os.path.join(weight_dir, "model_last.pt")
-    brain_encoder.load_state_dict(torch.load(last_weight_file))
-    print('weight is loaded from ', last_weight_file)
+    best_weight_file = os.path.join(weight_dir, "model_best.pt")
+    if os.path.exists(best_weight_file):    
+        brain_encoder.load_state_dict(torch.load(best_weight_file))
+        print('weight is loaded from ', best_weight_file)
+    else:
+        brain_encoder.load_state_dict(torch.load(last_weight_file))
+        print('weight is loaded from ', last_weight_file)
 
     testTop1accs = []
     testTop10accs = []
@@ -144,20 +149,17 @@ def run(args: DictConfig) -> None:
     brain_encoder.eval()
 
     sorted_image_features = np.load('./data/GOD/image_features.npy')
-    Y = torch.Tensor(sorted_image_features) 
+    Y = torch.Tensor(sorted_image_features).to(device)
     half_k = int(len(sorted_image_features)/2)
     for batch in tqdm(test_loader):
 
         with torch.no_grad():
-
-            if len(batch) == 3:
-                X, _, subject_idxs = batch
-            elif len(batch) == 4:
+            if len(batch) == 4:
                 X, _, subject_idxs, label = batch
             else:
                 raise ValueError("Unexpected number of items from dataloader.")
 
-            X, Y = X.to(device), Y.to(device)
+            X, label = X.to(device), label.to(device)
 
             Z = brain_encoder(X, subject_idxs)  # 0.96 GB
 
@@ -168,7 +170,7 @@ def run(args: DictConfig) -> None:
         testTopKaccs.append(testTopKacc)
 
     testTop1accs = np.concatenate(testTop1accs)
-    testTop10acc = np.concatenate(testTop10acc)
+    testTop10accs = np.concatenate(testTop10accs)
     testTopKaccs = np.concatenate(testTopKaccs)
     print(
             f"testTop1acc: {np.mean(testTop1accs):.3f} | "
@@ -181,7 +183,7 @@ def run(args: DictConfig) -> None:
 if __name__ == "__main__":
     from hydra import initialize, compose
     with initialize(version_base=None, config_path="../configs/"):
-        args = compose(config_name='20230414_sbj01_seq2stat')
+        args = compose(config_name='20230417_sbj01_seq2stat')
     if not os.path.exists(os.path.join(args.save_root, 'weights')):
         os.makedirs(os.path.join(args.save_root, 'weights'))
     run(args)

@@ -114,20 +114,25 @@ class GODCollator(torch.nn.Module):
     Runs baseline correction and robust scaling and clamping for batch
     """
 
-    def __init__(self, args):
+    def __init__(self, args, return_label=False):
         super(GODCollator, self).__init__()
 
         self.brain_resample_rate = args.preprocs["brain_resample_rate"]
         self.baseline_len_samp = int(self.brain_resample_rate * args.preprocs["baseline_len_sec"])
         self.clamp = args.preprocs["clamp"]
         self.clamp_lim = args.preprocs["clamp_lim"]
+        self.return_label = return_label
 
     def forward(self, batch: List[tuple]):
-        X = torch.stack([item[0] for item in batch])  # ( 64, 208, 360 )
-        Y = torch.stack([item[1] for item in batch])
+        X = torch.stack([torch.Tensor(item[0]) for item in batch])  # ( 64, 208, 360 )
+        Y = torch.stack([torch.Tensor(item[1]) for item in batch])
+        # print('debug', [item[2] for item in batch])
         subject_idx = torch.IntTensor([item[2] for item in batch])
-
+        
         X = baseline_correction_single(X, self.baseline_len_samp)
         X = scaleAndClamp(X, self.clamp_lim, self.clamp)
-
-        return X, Y, subject_idx
+        if self.return_label:
+            label = torch.IntTensor([item[3] for item in batch])
+            return X, Y, subject_idx, label
+        else:
+            return X, Y, subject_idx
