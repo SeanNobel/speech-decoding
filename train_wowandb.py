@@ -164,7 +164,7 @@ def run(args: DictConfig) -> None:
             )
             test_loader = DataLoader(
                 val_dataset,
-                batch_size=50 # args.batch_size,
+                batch_size=50, # args.batch_size,
                 drop_last=True,
                 shuffle=False,
                 num_workers=args.num_workers,
