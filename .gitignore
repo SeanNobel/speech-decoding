@@ -38,3 +38,4 @@ train.sh
 *_debug*
 nohup.out
 logs/*
+data/GOD/*.npy
