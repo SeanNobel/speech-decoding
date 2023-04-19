@@ -91,6 +91,7 @@ class Brennan2018Dataset(Dataset):
             torch.save(self.X, X_path)
             torch.save(self.Y, Y_path)
 
+        # Load dataset
         else:
             self.X = torch.load(X_path)
             self.Y = torch.load(Y_path)
@@ -110,6 +111,17 @@ class Brennan2018Dataset(Dataset):
             self.Y = pad_y_time(self.Y, self.brain_num_samples)
         else:
             raise ValueError(f"Unknown upsampling strategy: {args.preprocs.y_upsample}")
+
+    def __len__(self):
+        return len(self.X)
+
+    def __getitem__(self, i, return_chunkids=True):
+        random_subject = np.random.choice(self.num_subjects)
+
+        if return_chunkids:
+            return self.X[i, random_subject], self.Y[i], random_subject, i
+        else:
+            return self.X[i, random_subject], self.Y[i], random_subject
 
     def rebuild_dataset(self, matfile_paths: List[str], audio_paths: List[str], onsets_path: str):
         """
@@ -235,17 +247,6 @@ class Brennan2018Dataset(Dataset):
 
         return X, audio
 
-    def __len__(self):
-        return len(self.X)
-
-    def __getitem__(self, i, return_chunkids=True):
-        random_subject = np.random.choice(self.num_subjects)
-
-        if return_chunkids:
-            return self.X[i, random_subject], self.Y[i], random_subject, i
-        else:
-            return self.X[i, random_subject], self.Y[i], random_subject
-
     def brain_preproc(self, eeg_raws: List[np.ndarray], fsample: int) -> torch.Tensor:
         """
         Returns: ( subject, channel, time@120Hz )
@@ -291,8 +292,8 @@ class Brennan2018Dataset(Dataset):
         return sample_rates[0]
 
     def get_eeg_rate(self, mat_raws: List) -> int:
-        fsamples = np.array([mat_raw["fsample"][0, 0] for mat_raw in mat_raws])
+        sample_rates = np.array([mat_raw["fsample"][0, 0] for mat_raw in mat_raws])
         # is all 500Hz
-        assert np.all(fsamples == fsamples[0]), "Wrong EEG sampling rate detected."
+        assert np.all(sample_rates == sample_rates[0]), "Wrong EEG sampling rate detected."
 
-        return fsamples[0]
+        return sample_rates[0]
