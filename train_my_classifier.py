@@ -247,7 +247,7 @@ def run(args: DictConfig) -> None:
 
             Z = brain_encoder(X, subject_idxs)  # 0.96 GB
 
-            loss = loss_func(Z, label)
+            loss = loss_func(Z, label, train=True)
             # import pdb; pdb.set_trace()
             with torch.no_grad():
                 trainTop1acc, trainTop10acc = classifier(Z, Y)
@@ -267,12 +267,6 @@ def run(args: DictConfig) -> None:
                 optimizer.step()
                 # get_grad(brain_encoder)
 
-        # Accumulate gradients for Gwilliams for the whole epoch
-        if args.dataset == "Brennan2018":
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
         brain_encoder.eval()
         for batch in test_loader:
 
@@ -289,7 +283,7 @@ def run(args: DictConfig) -> None:
 
                 Z = brain_encoder(X, subject_idxs)  # 0.96 GB
 
-                loss = loss_func(Z, label)
+                loss = loss_func(Z, label, train=False)
 
                 testTop1acc, testTop10acc = classifier(Z, Y, test=True)  # ( 250, 1024, 360 )
 

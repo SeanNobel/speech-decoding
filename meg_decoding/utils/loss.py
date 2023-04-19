@@ -105,7 +105,12 @@ class MyCLIPLikeClassificationLoss(nn.Module):
         sorted_image_features = np.load('./data/GOD/image_features_train.npy')
         self.sorted_image_features = torch.tensor(sorted_image_features, requires_grad=False).to(torch.float).to(device)
         assert len(self.sorted_image_features) == 1200
-        self.gt_size = 1200 
+        self.gt_size = 1200
+
+        sorted_image_features_test = np.load('./data/GOD/image_features.npy')
+        self.sorted_image_features_test = torch.tensor(sorted_image_features_test, requires_grad=False).to(torch.float).to(device)
+        assert len(self.sorted_image_features_test) == 50
+        self.gt_size_test = 50
 
     def calculate_smooth_labeling(self, labels:np.ndarray, smmoth_value=0.1):
 
@@ -118,33 +123,30 @@ class MyCLIPLikeClassificationLoss(nn.Module):
         return targets
 
 
-    def forward(self, x, labels, fast=True, return_logits=False):
+    def forward(self, x, labels, fast=True, return_logits=False, train=True):
         labels = labels-1 # labelsは1始まり
         batch_size = x.size(0)
-        y = self.sorted_image_features
+        
         assert batch_size > 1, "Batch size must be greater than 1."
-        # if not self.registered_targets:
-        #   self.register_buffer('targets', torch.arange(self.batch_size, requires_grad=False).to(self.device))
-        #   self.registered_targets = True
-        targets = self.calculate_smooth_labeling(labels, smmoth_value=0.1)# torch.arange(batch_size, requires_grad=False).long().to(self.device)
 
+        if train:
+            targets = self.calculate_smooth_labeling(labels, smmoth_value=0.1)# torch.arange(batch_size, requires_grad=False).long().to(self.device)
+            y = self.sorted_image_features
+            gt_size = self.gt_size
+        else:
+            targets = labels.to(torch.long) # torch.arange(batch_size, requires_grad=False).long().to(self.device)
+            y = self.sorted_image_features_test
+            gt_size = self.gt_size_test
         if not fast:
             # less efficient way
             x_ = rearrange(x, "b f t -> 1 b (f t)")
             y_ = rearrange(y, "b f t -> b 1 (f t)")
             logits = self.compute_similarity(x_, y_)  # s
 
-            # unnecessary steps for the less efficient way (this might be needed for fancy contrastive losses)
-            # positives = torch.diag(similarity_matrix, 0).view(-1,1)
-            # negative_mask = torch.logical_not(torch.eye(batch_size).type(torch.bool))
-            # negatives = similarity_matrix[negative_mask].view(batch_size, -1)
-            # logits = torch.cat([positives, negatives], dim=1)
-
         else:
-            # import pdb; pdb.set_trace()
             # fast way
             x = x.reshape(batch_size, -1)
-            y = y.reshape(self.gt_size, -1)
+            y = y.reshape(gt_size, -1)
 
             # NOTE: scale the embeddings to unit norm
             x = x / x.norm(dim=-1, keepdim=True)
@@ -156,10 +158,6 @@ class MyCLIPLikeClassificationLoss(nn.Module):
             # scale by temperature (learned)
             logits *= torch.exp(self.temp)
 
-            # # NOTE: the old way
-            # # I don't know why yet, but normalization seems to be necessary to get sensible similarities (0, 1)
-            # logits = logits / (x.norm(dim=-1) * y.norm(dim=-1))
-            # loss = self._criterion(logits, targets)
 
         # NOTE: as in https://arxiv.org/abs/2103.00020
         loss = self._criterion(logits, targets) # + self._criterion(logits.t(), targets.T)) / 2
