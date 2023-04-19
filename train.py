@@ -16,7 +16,6 @@ from omegaconf import DictConfig, open_dict
 import hydra
 from hydra.utils import get_original_cwd
 
-from speech_decoding.constants import DEVICE
 from speech_decoding.dataclass.brennan2018 import Brennan2018Dataset
 from speech_decoding.dataclass.gwilliams2022 import (
     Gwilliams2022SentenceSplit,
@@ -32,6 +31,7 @@ from speech_decoding.utils.reproducibility import seed_worker
 
 @hydra.main(version_base=None, config_path="configs", config_name="config")
 def run(args: DictConfig) -> None:
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
     # NOTE: We do need it (IMHO).
     if args.reproducible:
         os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
@@ -154,14 +154,14 @@ def run(args: DictConfig) -> None:
     # ---------------------
     #        Models
     # ---------------------
-    brain_encoder = BrainEncoder(args).to(DEVICE)
+    brain_encoder = BrainEncoder(args).to(device)
 
     classifier = Classifier(args)
 
     # ---------------
     #      Loss
     # ---------------
-    loss_func = CLIPLoss(args).to(DEVICE)
+    loss_func = CLIPLoss(args).to(device)
     loss_func.train()
 
     # --------------------
@@ -193,7 +193,7 @@ def run(args: DictConfig) -> None:
             else:
                 raise ValueError("Unexpected number of items from dataloader.")
 
-            X, Y = X.to(DEVICE), Y.to(DEVICE)
+            X, Y = X.to(device), Y.to(device)
             # print([(s.item(), chid.item()) for s, chid in zip(subject_idxs, chunkIDs)])
             Z = brain_encoder(X, subject_idxs)
 
@@ -206,16 +206,17 @@ def run(args: DictConfig) -> None:
             trainTop1accs.append(trainTop1acc)
             trainTop10accs.append(trainTop10acc)
 
-            if args.dataset == "Gwilliams2022":
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-
-        # Accumulate gradients for Gwilliams for the whole epoch
-        if args.dataset == "Brennan2018":
+            # if args.dataset == "Gwilliams2022":
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+
+        # NOTE: It says "One training epoch is defined as 1,200 updates..." in the paper
+        # Accumulate gradients for Gwilliams for the whole epoch
+        # if args.dataset == "Brennan2018":
+        #     optimizer.zero_grad()
+        #     loss.backward()
+        #     optimizer.step()
 
         brain_encoder.eval()
         for batch in test_loader:
@@ -227,7 +228,7 @@ def run(args: DictConfig) -> None:
                 else:
                     raise ValueError("Unexpected number of items from dataloader.")
 
-                X, Y = X.to(DEVICE), Y.to(DEVICE)
+                X, Y = X.to(device), Y.to(device)
 
                 Z = brain_encoder(X, subject_idxs)
 

@@ -23,7 +23,6 @@ from multiprocessing import Pool, Manager
 from itertools import repeat
 from omegaconf import open_dict
 
-from speech_decoding.constants import BAR_FORMAT
 from speech_decoding.utils.wav2vec_util import get_last4layers_avg
 from speech_decoding.utils.preproc_utils import (
     check_preprocs,
@@ -304,7 +303,7 @@ class Gwilliams2022DatasetBase(Dataset):
                 tqdm(
                     p.imap(self.brain_preproc, subj_list),
                     total=len(subj_list),
-                    bar_format=BAR_FORMAT,
+                    bar_format="{desc:<5.5}{percentage:3.0f}%|{bar:10}{r_bar}",
                 )
             )
 

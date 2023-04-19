@@ -2,9 +2,11 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-from speech_decoding.constants import device
 from speech_decoding.models import *
 from speech_decoding.utils.layout import ch_locations_2d
+
+# FIXME
+device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 
 class SubjectBlockTest1(nn.Module):
