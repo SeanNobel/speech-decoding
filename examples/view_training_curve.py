@@ -59,7 +59,7 @@ def parse_data(filepath):
 
 
 if __name__ == '__main__':
-    filepath = '/home/yainoue/meg2image/results/20230417_sbj01_seq2stat/runs/2023-04-17 18:22:35.316446'
+    filepath = '/home/yainoue/meg2image/results/20230417_sbj01_seq2stat/runs/2023-04-19 11:08:38.266128'
     # filepath = '/home/yainoue/meg2image/results/20230413_sbj01/runs/2023-04-13 21:52:17.333087'#'home/yainoue/meg2image/results/test/2023-04-11 18:06:44.273986'
     # filepath = '/home/yainoue/meg2image/results/20230413_sbj01_seq2stat/runs/2023-04-16 19:21:02.983480'
     # filepath = '/home/yainoue/meg2image/results/20230412_mini/runs/2023-04-13 15:17:53.310665'

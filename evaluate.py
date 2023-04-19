@@ -181,12 +181,14 @@ def run(args: DictConfig) -> None:
 
 def acc_category_identification(predicted_y, val_index):
     # predicted_y: num_trials x 512
-    # val_index: num_trials
+    # val_index: num_trialsi
+    val_index = val_index - 1 # ラベルは1始まり
     image_features = np.load('./data/GOD/image_features.npy') # 50 x 512
     num_images = len(image_features)
     num_trials = len(predicted_y)
     acc_tmp = np.zeros((num_trials, 1))
 
+    cat_wise_acc = {i:[] for i in range(len(image_features))}
     for i_pred in range(num_trials):
         space_corr = np.zeros((num_images, 1))
         # iterating over all images
@@ -201,8 +203,9 @@ def acc_category_identification(predicted_y, val_index):
         # and dividing by the total number of images minus one
 
         acc_tmp[i_pred] = np.sum(space_corr < space_corr[image_id]) / (num_images - 1)
-
-    return np.mean(acc_tmp)
+        cat_wise_acc[image_id].append(acc_tmp[i_pred])
+    cat_wise_acc = {i: np.mean(cat_wise_acc[i]) for i in range(len(image_features))}
+    return np.mean(acc_tmp), cat_wise_acc
 
 def run_acc_from_corr(args):
     from meg_decoding.utils.reproducibility import seed_worker
@@ -233,7 +236,7 @@ def run_acc_from_corr(args):
                 train_dataset,
                 val_dataset,
                 args,
-                test_bsz=args.batch_size,
+                test_bsz=test_size, #args.batch_size,
                 collate_fn=GODCollator(args,  return_label=True),)
 
         else:
@@ -277,14 +280,14 @@ def run_acc_from_corr(args):
 
             Z = brain_encoder(X, subject_idxs)  # 0.96 GB
 
-        pred_features.append(Z)
-        labels.append(label)
-
+        pred_features.append(Z.detach().cpu().numpy())
+        labels.append(label.detach().cpu().numpy())
     pred_features = np.concatenate(pred_features, axis=0)
     labels = np.concatenate(labels, axis=0)
     print('total predictions: {}'.format(len(labels)))
-    acc_from_corr = acc_category_identification(pred_features, labels)
+    acc_from_corr, cat_wise_acc = acc_category_identification(pred_features, labels)
     print('acc_from_corr: {}'.format(acc_from_corr))
+    print('category wise accuracy: ', cat_wise_acc)
 
 if __name__ == "__main__":
     from hydra import initialize, compose
