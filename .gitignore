@@ -11,6 +11,8 @@ tests.ipynb
 sandbox.ipynb
 cosine_similarity.ipynb
 gwilliams2022.ipynb
+notebooks/*
+!notebooks/test_brennan2018.ipynb
 
 # VS Code
 .vscode/

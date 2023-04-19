@@ -48,7 +48,7 @@ IMPORTANT NOTE:
 As I couldn't find the information of word onsets relative to the EEG recording,
 I'm implementing assuming that EEG recordings started at the exact same time as speech.
 Also, dispite that the speech is split into multiple wave files, I assume that there's no
-gap between them while presenting to the subjects.
+gap between them while being presented to the subjects.
 """
 
 
@@ -72,8 +72,11 @@ class Brennan2018Dataset(Dataset):
         # Audio
         self.lowpass_filter_width = args.preprocs.lowpass_filter_width
         self.wav2vec = Wav2Vec2Model.from_pretrained(args.wav2vec_model)
-        # Paths
-        onsets_path = f"{self.root_dir}/data/Brennan2018/AliceChapterOne-EEG.csv"
+        # Data Paths
+        self.matfile_paths = natsorted(glob.glob(f"{self.root_dir}/data/Brennan2018/raw/*.mat"))
+        self.audio_paths = natsorted(glob.glob(f"{self.root_dir}/data/Brennan2018/audio/*.wav"))
+        self.onsets_path = f"{self.root_dir}/data/Brennan2018/AliceChapterOne-EEG.csv"
+        # Save Paths
         X_path = f"{self.root_dir}/data/Brennan2018/X.pt"
         Y_path = f"{self.root_dir}/data/Brennan2018/Y.pt"
 
@@ -81,31 +84,9 @@ class Brennan2018Dataset(Dataset):
         if force_recompute or not (os.path.exists(X_path) and os.path.exists(Y_path)):
             cprint(f"> Preprocessing EEG and audio.", color="cyan")
 
-            matfile_paths = natsorted(glob.glob(f"{self.root_dir}/data/Brennan2018/raw/*.mat"))
-            audio_paths = natsorted(glob.glob(f"{self.root_dir}/data/Brennan2018/audio/*.wav"))
-
-            X = self.brain_preproc(matfile_paths)
-            audio = self.audio_preproc(audio_paths)
-
-            X, audio = shift_brain_signal(
-                X, audio, srate_x=BRAIN_RESAMPLE_RATE, srate_y=AUDIO_RESAMPLE_RATE
+            self.X, self.Y = self.rebuild_dataset(
+                self.matfile_paths, self.audio_paths, self.onsets_path
             )
-            cprint(f">> X (EEG): {X.shape}, Audio: {audio.shape}", color="cyan")
-
-            cprint("> Segmenting EEG and audio using onsets.", color="cyan")
-            X, audio = self.segment(X, audio, onsets_path)
-            cprint(f"X (EEG): {X.shape}, Audio: {audio.shape}", color="cyan")
-
-            # NOTE: baseline corection becomes naturally subject-specific
-            cprint("> Baseline correction EEG.", color="cyan")
-            X = baseline_correction(X, self.baseline_num_samples)
-
-            cprint("> Scaling and clamping EEG.", color="cyan")
-            self.X = scale_and_clamp(X, self.clamp_lim)
-
-            cprint("> Embedding audio with wave2vec2.0.", color="cyan")
-            self.Y = self.embed_audio(audio)
-            cprint(f"Y (audio): {self.Y.shape}", color="cyan")
 
             torch.save(self.X, X_path)
             torch.save(self.Y, Y_path)
@@ -115,19 +96,97 @@ class Brennan2018Dataset(Dataset):
             self.Y = torch.load(Y_path)
             cprint(
                 f"> Using pre-processed EEG {self.X.shape} | srate={BRAIN_RESAMPLE_RATE}",
-                "cyan",
+                color="cyan",
             )
             cprint(f"> Using pre-processed audio embeddings {self.Y.shape}", "cyan")
 
         self.num_subjects = self.X.shape[1]
         cprint(f"Number of subjects: {self.num_subjects}", color="cyan")
 
+        cprint(f"Upsampling audio embedding with: {args.preprocs.y_upsample}", color="cyan")
         if args.preprocs.y_upsample == "interpolate":
             self.Y = interpolate_y_time(self.Y, self.brain_num_samples)
         elif args.preprocs.y_upsample == "pad":
             self.Y = pad_y_time(self.Y, self.brain_num_samples)
         else:
             raise ValueError(f"Unknown upsampling strategy: {args.preprocs.y_upsample}")
+
+    def rebuild_dataset(self, matfile_paths: List[str], audio_paths: List[str], onsets_path: str):
+        """
+        Returns:
+            X: ( segment, subject, channel, time@120Hz//segment )
+            Y: ( segment, features@w2v, time@w2v-freq//segment )
+        """
+        # ----------------------
+        #     Audio Loading
+        # ----------------------
+        waveform = [torchaudio.load(path) for path in audio_paths]
+
+        audio_rate = self.get_audio_rate(waveform)
+
+        waveform = torch.cat([w[0] for w in waveform], dim=1)  # ( 1, time@44.1kHz )
+
+        audio = self.resample_audio(waveform, audio_rate)
+
+        cprint(
+            f">>> Resampled audio {audio_rate}Hz -> {AUDIO_RESAMPLE_RATE}Hz | shape: {waveform.shape} -> {audio.shape}",
+            color="cyan",
+        )
+
+        # ----------------------
+        #      EEG Loading
+        # ----------------------
+        # NOTE: exclude bad subjects (look at comprehension-scores.txt)
+        matfile_paths = [
+            path for path in matfile_paths if not path.split(".")[0][-3:] in EXCLUDED_SUBJECTS
+        ]
+        mat_raws = [scipy.io.loadmat(path)["raw"][0, 0] for path in matfile_paths]
+        eeg_raws = [mat_raw["trial"][0, 0] for mat_raw in mat_raws]
+
+        eeg_rate = self.get_eeg_rate(mat_raws)
+
+        # ----------------------
+        #     Preprocessing
+        # ----------------------
+        X = self.brain_preproc(eeg_raws, eeg_rate)
+        cprint(f">>> Preprocessed X (EEG): {X.shape}", color="cyan")
+
+        X, audio = shift_brain_signal(
+            X, audio, srate_x=BRAIN_RESAMPLE_RATE, srate_y=AUDIO_RESAMPLE_RATE
+        )
+        cprint(f">>> Shifted X (EEG): {X.shape} | Audio: {audio.shape}", color="cyan")
+
+        cprint(">> Segmenting EEG and audio using onsets.", color="cyan")
+        X, audio = self.segment(X, audio, onsets_path)
+        cprint(f">>> X (EEG): {X.shape} | Audio: {audio.shape}", color="cyan")
+
+        # NOTE: baseline corection becomes naturally subject-specific
+        cprint(">> Baseline correcting EEG.", color="cyan")
+        X = baseline_correction(X, self.baseline_num_samples)
+
+        cprint(">> Scaling and clamping EEG.", color="cyan")
+        X = scale_and_clamp(X, self.clamp_lim)
+
+        cprint(">> Embedding audio with wave2vec2.0.", color="cyan")
+        Y = self.embed_audio(audio)
+        cprint(f">>> Y (audio): {Y.shape}", color="cyan")
+
+        return X, Y
+
+    def resample_audio(self, waveform: torch.Tensor, sample_rate: int) -> torch.Tensor:
+        """Resamples audio to 16kHz. (16kHz is required by wav2vec2.0)"""
+
+        waveform = F.resample(
+            waveform,
+            sample_rate,
+            AUDIO_RESAMPLE_RATE,
+            lowpass_filter_width=self.lowpass_filter_width,
+        )
+
+        len_audio_s = waveform.shape[1] / AUDIO_RESAMPLE_RATE
+        cprint(f">>> Audio length: {len_audio_s} s.", color="cyan")
+
+        return waveform
 
     def embed_audio(self, audio: torch.Tensor) -> torch.Tensor:
         """
@@ -187,74 +246,20 @@ class Brennan2018Dataset(Dataset):
         else:
             return self.X[i, random_subject], self.Y[i], random_subject
 
-    def audio_preproc(self, audio_paths: List[str]) -> torch.Tensor:
-        """
-        Loads audio, resamples it to 16kHz, and extracts the last 4 layers
-        of the pretrained wave2vec2.0 model.
-        """
-        # ----------------------
-        #      Data Loading
-        # ----------------------
-        waveform = [torchaudio.load(path) for path in audio_paths]
-
-        sample_rates = np.array([w[1] for w in waveform])
-        # is all 44.1kHz
-        assert np.all(sample_rates == sample_rates[0])
-        sample_rate = sample_rates[0]
-
-        # waveform: ( 1, 31908132 )
-        waveform = torch.cat([w[0] for w in waveform], dim=1)
-
-        cprint(
-            f"Audio before resampling: {waveform.shape} | {sample_rate}Hz", color="cyan"
-        )  # shape of the original audio
-
-        # ----------------------
-        #       Resampling
-        # ----------------------
-        # NOTE: the base model was pre-trained on audio sampled @ 16kHz
-        waveform = F.resample(
-            waveform,
-            sample_rate,
-            AUDIO_RESAMPLE_RATE,
-            lowpass_filter_width=self.lowpass_filter_width,
-        )
-        cprint(
-            f"Audio after resampling: {waveform.shape} | {AUDIO_RESAMPLE_RATE}Hz",
-            color="cyan",
-        )  # shape of the resampled audio
-        len_audio_s = waveform.shape[1] / AUDIO_RESAMPLE_RATE
-        cprint(f"Audio length: {len_audio_s} s.", color="cyan")
-
-        return waveform
-
-    def brain_preproc(self, matfile_paths: List[str]) -> torch.Tensor:
+    def brain_preproc(self, eeg_raws: List[np.ndarray], fsample: int) -> torch.Tensor:
         """
         Returns: ( subject, channel, time@120Hz )
         """
-        # NOTE: exclude bad subjects (look at comprehension-scores.txt)
-        matfile_paths = [
-            path for path in matfile_paths if not path.split(".")[0][-3:] in EXCLUDED_SUBJECTS
-        ]
 
-        # NOTE: find the shortest EEG and trim all EEG datasets to that length
-        a = []
-        pbar = tqdm(matfile_paths)
-        for i, matfile_path in enumerate(pbar):
-            mat_raw = scipy.io.loadmat(matfile_path)["raw"][0, 0]
-            eeg_raw = mat_raw["trial"][0, 0][:60]  # drop non-EEG channels
-            a.append(eeg_raw.shape)
-        trim_eeg_to = np.stack(a)[:, 1].flatten().min()
+        trim_eeg_to = min([eeg_raw.shape[1] for eeg_raw in eeg_raws])
 
         X = []
-        pbar = tqdm(matfile_paths)
-        for i, matfile_path in enumerate(pbar):
-            pbar.set_description(f"Filtering subject {i} ")
-            mat_raw = scipy.io.loadmat(matfile_path)["raw"][0, 0]
-            eeg_raw = mat_raw["trial"][0, 0][:60, :trim_eeg_to]  # drop non-EEG channels
-            fsample = mat_raw["fsample"][0, 0]  # 500 Hz
-            assert fsample == 500, f"{matfile_path} has the wrong srate: {fsample}."
-            # label = [e[0] for e in mat_raw["label"].squeeze()]
+        pbar = tqdm(eeg_raws)
+        for i, eeg_raw in enumerate(pbar):
+            pbar.set_description(f"Preprocessing subject {i} EEG.")
+
+            # NOTE: # Drop non-EEG channels and trim to the shortest subject
+            eeg_raw = eeg_raw[:60, :trim_eeg_to]
 
             # NOTE: in the paper they don't mention anything about filtering
             eeg_filtered = mne.filter.filter_data(
@@ -266,13 +271,6 @@ class Brennan2018Dataset(Dataset):
 
             eeg_filtered = torch.from_numpy(eeg_filtered.astype(np.float32))
 
-            # NOTE: This resamples EEG from 500Hz down to around 135Hz
-            # NOTE: Two conditions must be met here: (1) that w2v and brain_encoder get the same length of data, AND (2) that the outputs of w2v and brain_encoder have the SAME dimension (this is required by CLIPLoss). Since the brain_encoder outputs the same number of time samples, we just need to resample EEG to so that the resampled EEG has the same number of time samples as the NUMBER of embeddings coming out of the FE.
-            # downsampling_factor = eeg_filtered.shape[-1] / audio_embd_len
-            # eeg_resampled = mne.filter.resample(
-            #     eeg_filtered,
-            #     down=downsampling_factor,
-            # )
             # NOTE: in the paper they say they downsampled to exactly 120Hz with Torchaudio, so I'll stick to that
             eeg_resampled = F.resample(
                 waveform=eeg_filtered,
@@ -284,3 +282,17 @@ class Brennan2018Dataset(Dataset):
             X.append(eeg_resampled)
 
         return torch.stack(X)
+
+    def get_audio_rate(self, waveform: List[Tuple[torch.Tensor, int]]) -> int:
+        sample_rates = np.array([w[1] for w in waveform])
+        # is all 44.1kHz
+        assert np.all(sample_rates == sample_rates[0])
+
+        return sample_rates[0]
+
+    def get_eeg_rate(self, mat_raws: List) -> int:
+        fsamples = np.array([mat_raw["fsample"][0, 0] for mat_raw in mat_raws])
+        # is all 500Hz
+        assert np.all(fsamples == fsamples[0]), "Wrong EEG sampling rate detected."
+
+        return fsamples[0]
