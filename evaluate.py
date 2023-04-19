@@ -54,7 +54,7 @@ def zero_shot_classification(Z: torch.Tensor, Y: torch.Tensor, label: torch.Tens
     # NOTE: max similarity of speech and M/EEG representations is expected for corresponding windows
     # import pdb; pdb.set_trace()
     top1accuracy = (similarity.argmax(axis=1) == label).to(torch.float).cpu().numpy()
-    
+
     try:
         top10accuracy = np.array(
             [
@@ -134,7 +134,7 @@ def run(args: DictConfig) -> None:
     weight_dir = os.path.join(args.save_root, 'weights')
     last_weight_file = os.path.join(weight_dir, "model_last.pt")
     best_weight_file = os.path.join(weight_dir, "model_best.pt")
-    if os.path.exists(best_weight_file):    
+    if os.path.exists(best_weight_file):
         brain_encoder.load_state_dict(torch.load(best_weight_file))
         print('weight is loaded from ', best_weight_file)
     else:
@@ -179,6 +179,112 @@ def run(args: DictConfig) -> None:
         )
 
 
+def acc_category_identification(predicted_y, val_index):
+    # predicted_y: num_trials x 512
+    # val_index: num_trials
+    image_features = np.load('./data/GOD/image_features.npy') # 50 x 512
+    num_images = len(image_features)
+    num_trials = len(predicted_y)
+    acc_tmp = np.zeros((num_trials, 1))
+
+    for i_pred in range(num_trials):
+        space_corr = np.zeros((num_images, 1))
+        # iterating over all images
+        # calculating the correlation between the predicted and the image features
+        for i_img in range(num_images):
+            R = np.corrcoef(predicted_y[i_pred], image_features[i_img])
+            space_corr[i_img] = R[0,1]
+
+        # assigning the index of the current predicred vector to image_id
+        image_id = val_index[i_pred]
+        # calculating the accuracy of the cirrent predicted vector by counting the number of images with correlation coefficiens less than that of corresponding image
+        # and dividing by the total number of images minus one
+
+        acc_tmp[i_pred] = np.sum(space_corr < space_corr[image_id]) / (num_images - 1)
+
+    return np.mean(acc_tmp)
+
+def run_acc_from_corr(args):
+    from meg_decoding.utils.reproducibility import seed_worker
+    if args.reproducible:
+        os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+        torch.use_deterministic_algorithms(True)
+        random.seed(0)
+        np.random.seed(0)
+        torch.manual_seed(0)
+        g = torch.Generator()
+        g.manual_seed(0)
+        seed_worker = seed_worker
+    else:
+        g = None
+        seed_worker = None
+
+    if args.dataset == "GOD":
+        train_dataset = GODDatasetBase(args, 'train', return_label=True)
+        val_dataset = GODDatasetBase(args, 'val', return_label=True)
+        with open_dict(args):
+            args.num_subjects = train_dataset.num_subjects
+            print('num subject is {}'.format(args.num_subjects))
+
+
+        test_size = val_dataset.Y.shape[0]
+        if args.use_sampler:
+            train_loader, test_loader = get_samplers(
+                train_dataset,
+                val_dataset,
+                args,
+                test_bsz=args.batch_size,
+                collate_fn=GODCollator(args,  return_label=True),)
+
+        else:
+            test_loader = DataLoader(
+                val_dataset,
+                batch_size=args.batch_size,
+                drop_last=True,
+                shuffle=False,
+                num_workers=args.num_workers,
+                pin_memory=True,
+                worker_init_fn=seed_worker,
+                generator=g,
+            )
+
+    else:
+        raise ValueError("Unknown dataset")
+    # assert len(test_loader) == 1
+    brain_encoder = get_model(args).to(device) #BrainEncoder(args).to(device)
+
+    weight_dir = os.path.join(args.save_root, 'weights')
+    last_weight_file = os.path.join(weight_dir, "model_last.pt")
+    best_weight_file = os.path.join(weight_dir, "model_best.pt")
+    if os.path.exists(best_weight_file):
+        brain_encoder.load_state_dict(torch.load(best_weight_file))
+        print('weight is loaded from ', best_weight_file)
+    else:
+        brain_encoder.load_state_dict(torch.load(last_weight_file))
+        print('weight is loaded from ', last_weight_file)
+
+    pred_features = []
+    labels = []
+    for batch in tqdm(test_loader):
+
+        with torch.no_grad():
+            if len(batch) == 4:
+                X, _, subject_idxs, label = batch
+            else:
+                raise ValueError("Unexpected number of items from dataloader.")
+
+            X, label = X.to(device), label.to(device)
+
+            Z = brain_encoder(X, subject_idxs)  # 0.96 GB
+
+        pred_features.append(Z)
+        labels.append(label)
+
+    pred_features = np.concatenate(pred_features, axis=0)
+    labels = np.concatenate(labels, axis=0)
+    print('total predictions: {}'.format(len(labels)))
+    acc_from_corr = acc_category_identification(pred_features, labels)
+    print('acc_from_corr: {}'.format(acc_from_corr))
 
 if __name__ == "__main__":
     from hydra import initialize, compose
@@ -186,4 +292,5 @@ if __name__ == "__main__":
         args = compose(config_name='20230417_sbj01_seq2stat')
     if not os.path.exists(os.path.join(args.save_root, 'weights')):
         os.makedirs(os.path.join(args.save_root, 'weights'))
-    run(args)
+    # run(args)
+    run_acc_from_corr(args)
