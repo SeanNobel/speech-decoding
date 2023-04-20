@@ -92,11 +92,25 @@ class MyCLIPLikeClassificationLoss(nn.Module):
         super().__init__()
         self.device = device
         self.compute_similarity = nn.CosineSimilarity(dim=-1)
-        self._criterion = nn.CrossEntropyLoss(reduction=args.reduction)
+        if args.criterion == 'crossentropy':
+            print('use crossentropy')
+            self._criterion = nn.CrossEntropyLoss(reduction=args.reduction)
+            self.criterion_mode = 'crossentropy'
+            self.smmoth_value=0.1
+        elif args.criterion == 'binary_crossentropy':
+            print('use binary_cross_entropy')
+            self._criterion = nn.BCELoss(reduction=args.reduction)
+            self.criterion_mode = 'binary_crossentropy'
+            self.smmoth_value=0.5
+        else:
+            raise ValueError()
         # self.targets = torch.zeros(size=(batch_size, )).long() # that's for the slow method
         # self.registered_targets = False
         # self.batch_size = args.batch_size
-        self.temp = nn.Parameter(torch.tensor([float(args.init_temperature)]))
+        if args.temp_trainable:
+            self.temp = nn.Parameter(torch.tensor([float(args.init_temperature)]))
+        else:
+            self.temp = torch.tensor(float(args.init_temperature), requires_grad=False)
 
         self.prepare_image_features()
         self.same_category_length = 8
@@ -123,20 +137,26 @@ class MyCLIPLikeClassificationLoss(nn.Module):
         return targets
 
 
-    def forward(self, x, labels, fast=True, return_logits=False, train=True):
+    def forward(self, x, labels, fast=True, return_logits=False, train=True, debug_Y=None):
         labels = labels-1 # labelsは1始まり
         batch_size = x.size(0)
         
         assert batch_size > 1, "Batch size must be greater than 1."
 
         if train:
-            targets = self.calculate_smooth_labeling(labels, smmoth_value=0.1)# torch.arange(batch_size, requires_grad=False).long().to(self.device)
+            # smooth_value 0.1 -> 0.5 (binaryentripy使用時)
+            targets = self.calculate_smooth_labeling(labels, smmoth_value=self.smmoth_value)# torch.arange(batch_size, requires_grad=False).long().to(self.device)
             y = self.sorted_image_features
             gt_size = self.gt_size
+            # print(debug_Y[0]==y[labels[0]])
+            # import pdb; pdb.set_trace()
         else:
             targets = labels.to(torch.long) # torch.arange(batch_size, requires_grad=False).long().to(self.device)
+            if self.criterion_mode == 'binary_crossentropy':
+                targets = F.one_hot(targets, num_classes=50).to(torch.float) # binary cross entropy only can manipulate onehot
             y = self.sorted_image_features_test
             gt_size = self.gt_size_test
+            # import pdb; pdb.set_trace()
         if not fast:
             # less efficient way
             x_ = rearrange(x, "b f t -> 1 b (f t)")
@@ -156,10 +176,13 @@ class MyCLIPLikeClassificationLoss(nn.Module):
             logits = torch.matmul(x, y.T)
 
             # scale by temperature (learned)
-            logits *= torch.exp(self.temp)
+            logits = logits * torch.exp(self.temp)
 
 
         # NOTE: as in https://arxiv.org/abs/2103.00020
+        if self.criterion_mode == 'binary_crossentropy':
+            # import pdb; pdb.set_trace()
+            logits = torch.sigmoid(logits)  # torch.exp(logits) / torch.exp(logits).sum(dim=-1, keepdim=True)
         loss = self._criterion(logits, targets) # + self._criterion(logits.t(), targets.T)) / 2
 
         if return_logits:

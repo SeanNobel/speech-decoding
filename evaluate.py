@@ -179,16 +179,29 @@ def run(args: DictConfig) -> None:
         )
 
 
-def acc_category_identification(predicted_y, val_index):
+def get_average_features(predicted_y, val_index):
+    test_labels_unique = np.unique(val_index)
+    test_pred_features_avg = []
+    for i in range(len(test_labels_unique)):
+        target_ids = val_index== i
+        test_pred_features_avg.append(predicted_y[target_ids].mean(axis=0, keepdims=True))
+    test_pred_features_avg = np.concatenate(test_pred_features_avg, axis=0)
+    return test_pred_features_avg, np.arange(len(test_labels_unique))
+
+def acc_category_identification(predicted_y, val_index, use_average=False):
     # predicted_y: num_trials x 512
-    # val_index: num_trialsi
+    # val_index: num_trials
     val_index = val_index - 1 # ラベルは1始まり
     image_features = np.load('./data/GOD/image_features.npy') # 50 x 512
+    if use_average:
+        print('use average')
+        predicted_y, val_index = get_average_features(predicted_y, val_index)
     num_images = len(image_features)
     num_trials = len(predicted_y)
     acc_tmp = np.zeros((num_trials, 1))
 
     cat_wise_acc = {i:[] for i in range(len(image_features))}
+    # import pdb; pdb.set_trace()
     for i_pred in range(num_trials):
         space_corr = np.zeros((num_images, 1))
         # iterating over all images
@@ -207,7 +220,7 @@ def acc_category_identification(predicted_y, val_index):
     cat_wise_acc = {i: np.mean(cat_wise_acc[i]) for i in range(len(image_features))}
     return np.mean(acc_tmp), cat_wise_acc
 
-def run_acc_from_corr(args):
+def run_acc_from_corr(args, use_average=False):
     from meg_decoding.utils.reproducibility import seed_worker
     if args.reproducible:
         os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
@@ -285,15 +298,15 @@ def run_acc_from_corr(args):
     pred_features = np.concatenate(pred_features, axis=0)
     labels = np.concatenate(labels, axis=0)
     print('total predictions: {}'.format(len(labels)))
-    acc_from_corr, cat_wise_acc = acc_category_identification(pred_features, labels)
+    acc_from_corr, cat_wise_acc = acc_category_identification(pred_features, labels, use_average=use_average)
     print('acc_from_corr: {}'.format(acc_from_corr))
     print('category wise accuracy: ', cat_wise_acc)
 
 if __name__ == "__main__":
     from hydra import initialize, compose
     with initialize(version_base=None, config_path="../configs/"):
-        args = compose(config_name='20230417_sbj01_seq2stat')
+        args = compose(config_name='20230419_sbj01_seq2stat')
     if not os.path.exists(os.path.join(args.save_root, 'weights')):
         os.makedirs(os.path.join(args.save_root, 'weights'))
     # run(args)
-    run_acc_from_corr(args)
+    run_acc_from_corr(args, use_average=True)
