@@ -128,8 +128,8 @@ class GODCollator(torch.nn.Module):
         Y = torch.stack([torch.Tensor(item[1]) for item in batch])
         # print('debug', [item[2] for item in batch])
         subject_idx = torch.IntTensor([item[2] for item in batch])
-
-        X = baseline_correction_single(X, self.baseline_len_samp)
+        if self.baseline_len_samp > 0:
+            X = baseline_correction_single(X, self.baseline_len_samp)
         X = scaleAndClamp(X, self.clamp_lim, self.clamp)
         if self.return_label:
             label = torch.IntTensor([item[3] for item in batch])

@@ -234,12 +234,12 @@ def acc_via_similarity(predicted_y, val_index, use_average=False):
 
     cat_wise_acc = {i:[] for i in range(len(image_features))}
     # NOTE: avoid CUDA out of memory like this
-    similarity = np.empty(num_trials, num_images)
+    similarity = np.empty([num_trials, num_images])
     x = predicted_y
     y = image_features
     for i in range(num_trials):
         for j in range(num_images):
-            similarity[i, j] = (x[i] @ y[j]) / max((x[i].norm() * y[j].norm()), 1e-8)
+            similarity[i, j] = (x[i] @ y[j]) / max(np.linalg.norm(x[i], ord=2) * np.linalg.norm(y[j], ord=2), 1e-8)
 
         image_id = val_index[i]
         acc_tmp[i] = np.sum(similarity[i] < similarity[i, image_id]) / (num_images - 1)
@@ -260,7 +260,7 @@ def pairwise_category_identification(predicted_y, val_index, use_average=False):
     print('similarity_acc: {}'.format(similarity_acc))
     print('similarity_cat_wise_acc: ', similarity_cat_wise_acc)
 
-def run_acc_from_corr(args, use_average=False):
+def run_pairwise_acc(args, use_average=False):
     from meg_decoding.utils.reproducibility import seed_worker
     if args.reproducible:
         os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
@@ -348,4 +348,4 @@ if __name__ == "__main__":
     if not os.path.exists(os.path.join(args.save_root, 'weights')):
         os.makedirs(os.path.join(args.save_root, 'weights'))
     # run(args)
-    run_acc_from_corr(args, use_average=True)
+    run_pairwise_acc(args, use_average=False)
