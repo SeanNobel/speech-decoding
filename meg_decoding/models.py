@@ -183,8 +183,9 @@ class ConvBlock(nn.Module):
 
 
 class LinearEncoder(nn.Module):
-    def __init__(self, args, input_size=20):
+    def __init__(self, args):
         super(LinearEncoder, self).__init__()
+        input_size = args.cahnnel_size
         self.linear = nn.Linear(in_features=input_size, out_features=512, bias=False)
         self.scp = args.scp
 
