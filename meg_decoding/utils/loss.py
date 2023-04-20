@@ -102,6 +102,10 @@ class MyCLIPLikeClassificationLoss(nn.Module):
             self._criterion = nn.BCELoss(reduction=args.reduction)
             self.criterion_mode = 'binary_crossentropy'
             self.smmoth_value=0.5
+        elif args.criterion == 'similarity_crossentropy':
+            print('use similarity_crossentropy')
+            self._criterion = nn.CrossEntropyLoss(reduction=args.reduction)
+            self.criterion_mode = 'similarity_crossentropy'
         else:
             raise ValueError()
         # self.targets = torch.zeros(size=(batch_size, )).long() # that's for the slow method
@@ -126,21 +130,29 @@ class MyCLIPLikeClassificationLoss(nn.Module):
         assert len(self.sorted_image_features_test) == 50
         self.gt_size_test = 50
 
-    def calculate_smooth_labeling(self, labels:np.ndarray, smmoth_value=0.1):
+        if self.criterion_mode == 'similarity_crossentropy':
+            self.similarity_matrix = self.compute_similarity(self.sorted_image_features, self.sorted_image_features)
+            self.similarity_matrix_test = self.compute_similarity(self.sorted_image_features_test, self.sorted_image_features_test)
 
+    def calculate_smooth_labeling(self, labels:np.ndarray, smmoth_value=0.1):
         # labels: batchsize:64
         targets = torch.zeros([64, 1200],requires_grad=False).to(torch.float).to(device)
-        for i, l in enumerate(labels):
-            l_mod = l % self.same_category_length
-            targets[i, l_mod*self.same_category_length:(l_mod+1)*self.same_category_length] = smmoth_value
-            targets[i, l] = 1
+
+        if self.criterion_mode == 'crossentropy' and self.criterion_mode=='binary_crossentropy':
+            for i, l in enumerate(labels):
+                l_mod = l % self.same_category_length
+                targets[i, l_mod*self.same_category_length:(l_mod+1)*self.same_category_length] = smmoth_value
+                targets[i, l] = 1
+        elif self.criterion_mode == 'similarity_crossentropy':
+            for i, l in enumerate(labels):
+                targets[i] = self.similarity_matrix[l]
         return targets
 
 
     def forward(self, x, labels, fast=True, return_logits=False, train=True, debug_Y=None):
         labels = labels-1 # labelsは1始まり
         batch_size = x.size(0)
-        
+
         assert batch_size > 1, "Batch size must be greater than 1."
 
         if train:

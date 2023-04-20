@@ -19,6 +19,8 @@ def get_model(args):
         return BrainEncoder(args)
     elif args.model == 'brain_endcoder_seq2static':
         return  BrainEncoderSeq2Static(args)
+    elif args.model == 'linear':
+        return LinearEncoder(args)
     else:
         raise ValueError('no model named {} is prepared'.format(args.model))
 
@@ -178,6 +180,20 @@ class ConvBlock(nn.Module):
         X = F.glu(X, dim=-2)
 
         return X  # ( B, 320, 256 )
+
+
+class LinearEncoder(nn.Module):
+    def __init__(self, args, input_size=20):
+        super(LinearEncoder, self).__init__()
+        self.linear = nn.Linear(in_features=input_size, out_features=512, bias=False)
+        self.scp = args.scp
+
+
+    def forward(self, X):
+        if self.scp:
+            X = X.mean(dim=-1) # X: batch x ch x time
+        return self.linear(X)
+
 
 
 class BrainEncoder(nn.Module):
