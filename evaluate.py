@@ -311,7 +311,7 @@ def run_pairwise_acc(args, use_average=False):
 
     weight_dir = os.path.join(args.save_root, 'weights')
     last_weight_file = os.path.join(weight_dir, "model_last.pt")
-    best_weight_file = os.path.join(weight_dir, "model_best.pt")
+    best_weight_file = os.path.join(weight_dir, "model_last.pt")
     if os.path.exists(best_weight_file):
         brain_encoder.load_state_dict(torch.load(best_weight_file))
         print('weight is loaded from ', best_weight_file)
