@@ -188,7 +188,7 @@ def get_average_features(predicted_y, val_index):
     test_pred_features_avg = np.concatenate(test_pred_features_avg, axis=0)
     return test_pred_features_avg, np.arange(len(test_labels_unique))
 
-def acc_category_identification(predicted_y, val_index, use_average=False):
+def acc_via_correlation(predicted_y, val_index, use_average=False):
     # predicted_y: num_trials x 512
     # val_index: num_trials
     val_index = val_index - 1 # ラベルは1始まり
@@ -219,6 +219,46 @@ def acc_category_identification(predicted_y, val_index, use_average=False):
         cat_wise_acc[image_id].append(acc_tmp[i_pred])
     cat_wise_acc = {i: np.mean(cat_wise_acc[i]) for i in range(len(image_features))}
     return np.mean(acc_tmp), cat_wise_acc
+
+def acc_via_similarity(predicted_y, val_index, use_average=False):
+     # predicted_y: num_trials x 512
+    # val_index: num_trials
+    val_index = val_index - 1 # ラベルは1始まり
+    image_features = np.load('./data/GOD/image_features.npy') # 50 x 512
+    if use_average:
+        print('use average')
+        predicted_y, val_index = get_average_features(predicted_y, val_index)
+    num_images = len(image_features)
+    num_trials = len(predicted_y)
+    acc_tmp = np.zeros((num_trials, 1))
+
+    cat_wise_acc = {i:[] for i in range(len(image_features))}
+    # NOTE: avoid CUDA out of memory like this
+    similarity = np.empty(num_trials, num_images)
+    x = predicted_y
+    y = image_features
+    for i in range(num_trials):
+        for j in range(num_images):
+            similarity[i, j] = (x[i] @ y[j]) / max((x[i].norm() * y[j].norm()), 1e-8)
+
+        image_id = val_index[i]
+        acc_tmp[i] = np.sum(similarity[i] < similarity[i, image_id]) / (num_images - 1)
+        cat_wise_acc[image_id].append(acc_tmp[i])
+
+    cat_wise_acc = {i: np.mean(cat_wise_acc[i]) for i in range(len(image_features))}
+    return np.mean(acc_tmp), cat_wise_acc
+
+
+
+
+
+def pairwise_category_identification(predicted_y, val_index, use_average=False):
+    corr_acc, corr_cat_wise_acc = acc_via_correlation(predicted_y, val_index, use_average=use_average)
+    print('corr_acc: {}'.format(corr_acc))
+    print('ccorr_cat_wise_acc: ', corr_cat_wise_acc)
+    similarity_acc, similarity_cat_wise_acc = acc_via_similarity(predicted_y, val_index, use_average=use_average)
+    print('similarity_acc: {}'.format(similarity_acc))
+    print('similarity_cat_wise_acc: ', similarity_cat_wise_acc)
 
 def run_acc_from_corr(args, use_average=False):
     from meg_decoding.utils.reproducibility import seed_worker
@@ -298,9 +338,8 @@ def run_acc_from_corr(args, use_average=False):
     pred_features = np.concatenate(pred_features, axis=0)
     labels = np.concatenate(labels, axis=0)
     print('total predictions: {}'.format(len(labels)))
-    acc_from_corr, cat_wise_acc = acc_category_identification(pred_features, labels, use_average=use_average)
-    print('acc_from_corr: {}'.format(acc_from_corr))
-    print('category wise accuracy: ', cat_wise_acc)
+    pairwise_category_identification(pred_features, labels, use_average=use_average)
+
 
 if __name__ == "__main__":
     from hydra import initialize, compose
