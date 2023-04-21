@@ -244,13 +244,13 @@ def run(args: DictConfig) -> None:
                 raise ValueError("Unexpected number of items from dataloader.")
 
             X, Y, label = X.to(device), Y.to(device), label.to(device)
+            with torch.cuda.amp.autocast(enabled=True):
+                Z = brain_encoder(X, subject_idxs)  # 0.96 GB
 
-            Z = brain_encoder(X, subject_idxs)  # 0.96 GB
-
-            loss = loss_func(Z, label, train=True, debug_Y=None)
-            # import pdb; pdb.set_trace()
-            with torch.no_grad():
-                trainTop1acc, trainTop10acc = classifier(Z, Y)
+                loss = loss_func(Z, label, train=True, debug_Y=None)
+                # import pdb; pdb.set_trace()
+                with torch.no_grad():
+                    trainTop1acc, trainTop10acc = classifier(Z, Y)
 
             train_losses.append(loss.item())
             trainTop1accs.append(trainTop1acc)
@@ -281,12 +281,12 @@ def run(args: DictConfig) -> None:
                     raise ValueError("Unexpected number of items from dataloader.")
 
                 X, Y, label = X.to(device), Y.to(device), label.to(device)
+                with torch.cuda.amp.autocast(enabled=True):
+                    Z = brain_encoder(X, subject_idxs)  # 0.96 GB
 
-                Z = brain_encoder(X, subject_idxs)  # 0.96 GB
+                    loss = loss_func(Z, label, train=False)
 
-                loss = loss_func(Z, label, train=False)
-
-                testTop1acc, testTop10acc = classifier(Z, Y, test=True)  # ( 250, 1024, 360 )
+                    testTop1acc, testTop10acc = classifier(Z, Y, test=True)  # ( 250, 1024, 360 )
 
             test_losses.append(loss.item())
             testTop1accs.append(testTop1acc)
@@ -345,7 +345,7 @@ def run(args: DictConfig) -> None:
 if __name__ == "__main__":
     from hydra import initialize, compose
     with initialize(version_base=None, config_path="../configs/"):
-        args = compose(config_name='20230419_sbj01_seq2stat')
+        args = compose(config_name='20230420_sbj01_seq2stat')
     if not os.path.exists(os.path.join(args.save_root, 'weights')):
         os.makedirs(os.path.join(args.save_root, 'weights'))
     run(args)

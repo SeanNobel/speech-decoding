@@ -106,6 +106,7 @@ class MyCLIPLikeClassificationLoss(nn.Module):
             print('use similarity_crossentropy')
             self._criterion = nn.CrossEntropyLoss(reduction=args.reduction)
             self.criterion_mode = 'similarity_crossentropy'
+            self.smmoth_value = None
         else:
             raise ValueError()
         # self.targets = torch.zeros(size=(batch_size, )).long() # that's for the slow method
@@ -115,9 +116,10 @@ class MyCLIPLikeClassificationLoss(nn.Module):
             self.temp = nn.Parameter(torch.tensor([float(args.init_temperature)]))
         else:
             self.temp = torch.tensor(float(args.init_temperature), requires_grad=False)
-
+        self.normalize_image_features = args.normalize_image_features
         self.prepare_image_features()
         self.same_category_length = 8
+
 
     def prepare_image_features(self):
         sorted_image_features = np.load('./data/GOD/image_features_train.npy')
@@ -130,9 +132,20 @@ class MyCLIPLikeClassificationLoss(nn.Module):
         assert len(self.sorted_image_features_test) == 50
         self.gt_size_test = 50
 
+        if self.normalize_image_features:
+            self.sorted_image_features = self.normalize_per_unit(self.sorted_image_features)
+            self.sorted_image_features_test = self.normalize_per_unit(self.sorted_image_features_test)
+
         if self.criterion_mode == 'similarity_crossentropy':
             self.similarity_matrix = self.compute_similarity(self.sorted_image_features, self.sorted_image_features)
             self.similarity_matrix_test = self.compute_similarity(self.sorted_image_features_test, self.sorted_image_features_test)
+
+    def normalize_per_unit(self, tensor):
+        print('normalize image_feature along unit dim')
+        # array: n_samples x n_units(512)
+        tensor = tensor - torch.mean(tensor, 0, keepdim=True)
+        tensor = tensor / torch.std(tensor, 0,  keepdim=True)
+        return tensor
 
     def calculate_smooth_labeling(self, labels:np.ndarray, smmoth_value=0.1):
         # labels: batchsize:64
@@ -195,7 +208,15 @@ class MyCLIPLikeClassificationLoss(nn.Module):
         if self.criterion_mode == 'binary_crossentropy':
             # import pdb; pdb.set_trace()
             logits = torch.sigmoid(logits)  # torch.exp(logits) / torch.exp(logits).sum(dim=-1, keepdim=True)
-        loss = self._criterion(logits, targets) # + self._criterion(logits.t(), targets.T)) / 2
+        if self.criterion_mode == 'similarity_crossentropy':
+            if train:
+                positive_targets = torch.nn.Softmax(1)(targets *torch.exp(self.temp))
+                # negative_targets =  torch.nn.Softmax(1)(-targets)
+                loss = self._criterion(logits, positive_targets)
+            else:
+                loss = self._criterion(logits, targets)
+        else:
+            loss = self._criterion(logits, targets) # + self._criterion(logits.t(), targets.T)) / 2
 
         if return_logits:
             return logits, loss

@@ -307,7 +307,11 @@ def run_pairwise_acc(args, use_average=False):
     else:
         raise ValueError("Unknown dataset")
     # assert len(test_loader) == 1
+    if hasattr(args, 'channel_size'):
+        args.channel_size = train_dataset.X.shape[1]
+
     brain_encoder = get_model(args).to(device) #BrainEncoder(args).to(device)
+    
 
     weight_dir = os.path.join(args.save_root, 'weights')
     last_weight_file = os.path.join(weight_dir, "model_last.pt")
@@ -344,7 +348,7 @@ def run_pairwise_acc(args, use_average=False):
 if __name__ == "__main__":
     from hydra import initialize, compose
     with initialize(version_base=None, config_path="../configs/"):
-        args = compose(config_name='20230419_sbj01_seq2stat')
+        args = compose(config_name='20230420_sbj01_linear')
     if not os.path.exists(os.path.join(args.save_root, 'weights')):
         os.makedirs(os.path.join(args.save_root, 'weights'))
     # run(args)

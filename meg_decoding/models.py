@@ -185,14 +185,15 @@ class ConvBlock(nn.Module):
 class LinearEncoder(nn.Module):
     def __init__(self, args):
         super(LinearEncoder, self).__init__()
-        input_size = args.cahnnel_size
-        self.linear = nn.Linear(in_features=input_size, out_features=512, bias=False)
+        input_size = args.channel_size
+        self.linear = nn.Linear(in_features=input_size, out_features=512, bias=True)
         self.scp = args.scp
 
 
-    def forward(self, X):
+    def forward(self, X, subject_idxs):
         if self.scp:
             X = X.mean(dim=-1) # X: batch x ch x time
+        # import pdb; pdb.set_trace()
         return self.linear(X)
 
 
@@ -250,6 +251,14 @@ class Classifier(nn.Module):
 
         # NOTE: Do we need to adjust the accuracies for the dataset size?
         self.factor = 1  # self.batch_size / 241
+        self.normalize_image_features = args.normalize_image_features
+
+    def normalize_per_unit(self, tensor):
+        print('normalize image_feature along unit dim')
+        # array: n_samples x n_units(512)
+        tensor = tensor - torch.mean(tensor, 0, keepdim=True)
+        tensor = tensor / torch.std(tensor, 0,  keepdim=True)
+        return tensor
 
     @torch.no_grad()
     def forward(self, Z: torch.Tensor, Y: torch.Tensor, test=False, top_k=None) -> torch.Tensor:
@@ -258,6 +267,10 @@ class Classifier(nn.Module):
         diags = torch.arange(batch_size).to(device)
         x = Z.view(batch_size, -1)
         y = Y.view(batch_size, -1)
+
+
+        if self.normalize_image_features:
+            y = self.normalize_per_unit(y)
 
         # x_ = rearrange(x, 'b f -> 1 b f')
         # y_ = rearrange(y, 'b f -> b 1 f')

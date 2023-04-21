@@ -113,8 +113,9 @@ def roi(args)->list:
         r = reg_subreg[0]
         s = reg_subreg[1]
         roi_channels += ch_region_info[r][s]
+    roi_channels = [r-1 for r in roi_channels]
     print('ROI: ', [reg for reg in region])
-    print('channel: ', roi_channels)
+    print('channel (-1 is done because matlab starts from 1): ', roi_channels)
     print('num channels: ', len(roi_channels))
     return roi_channels
 
