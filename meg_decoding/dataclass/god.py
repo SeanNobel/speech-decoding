@@ -17,6 +17,13 @@ from meg_decoding.utils.preproc_utils import (
 mne.set_log_level(verbose="WARNING")
 
 
+def normalize_per_unit(tensor):
+    print('normalize image_feature along unit dim')
+    # array: n_samples x n_units(512)
+    tensor = tensor - torch.mean(tensor, 0, keepdim=True)
+    tensor = tensor / torch.std(tensor, 0,  keepdim=True)
+    return tensor
+
 class GODDatasetBase(Dataset):
     def __init__(self, args, split, preprocess_pipleine:list=[], return_label:bool=False):
         self.args = args
@@ -28,6 +35,9 @@ class GODDatasetBase(Dataset):
 
         self.X = meg_epochs.astype(np.float32) # epochs x ch x time_samples
         self.Y = image_feature_epochs.astype(np.float32) # epochs x dims
+        if args.normalize_image_features:
+            self.Y = normalize_per_unit(self.Y)
+            
         self.subs = sub_epochs # epochs (x 1)
         self.labels = label_epochs # epochs (x 1)
 

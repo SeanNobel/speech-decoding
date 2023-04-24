@@ -109,7 +109,7 @@ def roi(args)->list:
     roi_channels = []
     for reg in region:
         reg_subreg = reg.split('/')
-        assert len(reg_subreg) == 2
+        assert len(reg_subreg) == 2, 'got {}'.format(reg_subreg)
         r = reg_subreg[0]
         s = reg_subreg[1]
         roi_channels += ch_region_info[r][s]
