@@ -3,25 +3,20 @@ from re import sub
 import torch
 import torchaudio
 import torchaudio.functional as F
-from torch.utils.data import Sampler, Dataset
+from torch.utils.data import Dataset
 import numpy as np
 import pandas as pd
 import glob
-import json
 from natsort import natsorted
 import scipy.io
-import mne, mne_bids
+import mne
 
 mne.set_log_level(verbose="WARNING")
 
 from tqdm import tqdm
 import ast
-from typing import Union
 from termcolor import cprint
-from pprint import pprint
-from einops import rearrange
-from sklearn.preprocessing import RobustScaler, StandardScaler
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 from transformers import Wav2Vec2Model
 
@@ -37,6 +32,7 @@ from speech_decoding.utils.preproc_utils import (
 from speech_decoding.constants import BRAIN_RESAMPLE_RATE, AUDIO_RESAMPLE_RATE
 
 # fmt: off
+# NOTE: exclude some subjects (look at comprehension-scores.txt)
 EXCLUDED_SUBJECTS = [
     "S02", "S07", "S09", "S23", "S24", "S27", "S28", "S29", "S30", "S31",
     "S32", "S33", "S43", "S46", "S47", "S49",
@@ -53,7 +49,7 @@ gap between them while being presented to the subjects.
 
 
 class Brennan2018Dataset(Dataset):
-    def __init__(self, args, train=True):
+    def __init__(self, args):
         super().__init__()
 
         # Both
@@ -102,9 +98,9 @@ class Brennan2018Dataset(Dataset):
             cprint(f"> Using pre-processed audio embeddings {self.Y.shape}", "cyan")
 
         self.num_subjects = self.X.shape[1]
-        cprint(f"Number of subjects: {self.num_subjects}", color="cyan")
+        cprint(f">>> Number of subjects: {self.num_subjects}", color="cyan")
 
-        cprint(f"Upsampling audio embedding with: {args.preprocs.y_upsample}", color="cyan")
+        cprint(f">> Upsampling audio embedding with: {args.preprocs.y_upsample}", color="cyan")
         if args.preprocs.y_upsample == "interpolate":
             self.Y = interpolate_y_time(self.Y, self.brain_num_samples)
         elif args.preprocs.y_upsample == "pad":
@@ -148,7 +144,6 @@ class Brennan2018Dataset(Dataset):
         # ----------------------
         #      EEG Loading
         # ----------------------
-        # NOTE: exclude bad subjects (look at comprehension-scores.txt)
         matfile_paths = [
             path for path in matfile_paths if not path.split(".")[0][-3:] in EXCLUDED_SUBJECTS
         ]

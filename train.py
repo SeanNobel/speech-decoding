@@ -114,20 +114,32 @@ def run(args: DictConfig) -> None:
     elif args.dataset == "Brennan2018":
         # NOTE: takes an optional debug param force_recompute to pre-process the EEG even if it exists
         dataset = Brennan2018Dataset(args)
+
         with open_dict(args):
             args.num_subjects = dataset.num_subjects
 
         train_size = int(len(dataset) * args.split_ratio)
         test_size = len(dataset) - train_size
-        train_set, test_set = torch.utils.data.random_split(
-            dataset,
-            lengths=[train_size, test_size],
-            generator=g,
-        )
+
+        if args.split_mode == "shallow":
+            train_set, test_set = torch.utils.data.random_split(
+                dataset,
+                lengths=[train_size, test_size],
+                generator=g,
+            )
+
+        elif args.split_mode == "deep":
+            train_set = torch.utils.data.Subset(dataset, range(train_size))
+            test_set = torch.utils.data.Subset(dataset, range(train_size, train_size + test_size))
+
+        else:
+            raise ValueError("Unknown split mode")
+
         cprint(
             f"Number of samples: {len(train_set)} (train), {len(test_set)} (test)",
             color="cyan",
         )
+
         if args.use_sampler:
             train_loader, test_loader = get_samplers(
                 train_set, test_set, args, g, test_bsz=test_size
@@ -172,7 +184,9 @@ def run(args: DictConfig) -> None:
         lr=float(args.lr),
     )
 
-    # ======================================
+    # --------------------
+    #      Training
+    # --------------------
     for epoch in range(args.epochs):
         train_losses = []
         test_losses = []
