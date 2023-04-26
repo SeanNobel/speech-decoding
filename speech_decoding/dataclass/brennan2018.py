@@ -16,7 +16,7 @@ mne.set_log_level(verbose="WARNING")
 from tqdm import tqdm
 import ast
 from termcolor import cprint
-from typing import List, Tuple, Union
+from typing import List, Tuple, Union, Optional
 
 from transformers import Wav2Vec2Model
 
@@ -54,6 +54,7 @@ class Brennan2018Dataset(Dataset):
 
         # Both
         force_recompute = args.rebuild_dataset
+        self.split_mode = args.split_mode
         self.root_dir = args.root_dir
         self.subject_wise = args.preprocs.subject_wise
         self.seq_len_sec = args.preprocs.seq_len_sec
@@ -75,22 +76,28 @@ class Brennan2018Dataset(Dataset):
         # Save Paths
         X_path = f"{self.root_dir}/data/Brennan2018/X.pt"
         Y_path = f"{self.root_dir}/data/Brennan2018/Y.pt"
+        sentence_idxs_path = f"{self.root_dir}/data/Brennan2018/sentence_idxs.npy"
 
         # Rebuild dataset
         if force_recompute or not (os.path.exists(X_path) and os.path.exists(Y_path)):
             cprint(f"> Preprocessing EEG and audio.", color="cyan")
 
-            self.X, self.Y = self.rebuild_dataset(
+            self.X, self.Y, self.sentence_idxs = self.rebuild_dataset(
                 self.matfile_paths, self.audio_paths, self.onsets_path
             )
 
             torch.save(self.X, X_path)
             torch.save(self.Y, Y_path)
+            if self.sentence_idxs is not None:
+                np.save(sentence_idxs_path, self.sentence_idxs)
 
         # Load dataset
         else:
             self.X = torch.load(X_path)
             self.Y = torch.load(Y_path)
+            # NOTE: only used in sentence split
+            self.sentence_idxs = np.load(sentence_idxs_path)
+
             cprint(
                 f"> Using pre-processed EEG {self.X.shape} | srate={BRAIN_RESAMPLE_RATE}",
                 color="cyan",
@@ -119,7 +126,9 @@ class Brennan2018Dataset(Dataset):
         else:
             return self.X[i, random_subject], self.Y[i], random_subject
 
-    def rebuild_dataset(self, matfile_paths: List[str], audio_paths: List[str], onsets_path: str):
+    def rebuild_dataset(
+        self, matfile_paths: List[str], audio_paths: List[str], onsets_path: str
+    ) -> Tuple[torch.Tensor, torch.Tensor, Optional[np.ndarray]]:
         """
         Returns:
             X: ( segment, subject, channel, time@120Hz//segment )
@@ -167,6 +176,13 @@ class Brennan2018Dataset(Dataset):
         X, audio = self.segment(X, audio, onsets_path)
         cprint(f">>> X (EEG): {X.shape} | Audio: {audio.shape}", color="cyan")
 
+        if self.split_mode == "sentence":
+            cprint(">> Dropping last segments of each sentence.", color="cyan")
+            X, audio, sentence_idxs = self.drop_last_segments(X, audio, onsets_path)
+            cprint(f">>> X (EEG): {X.shape} | Audio: {audio.shape}", color="cyan")
+        else:
+            sentence_idxs = None
+
         # NOTE: baseline corection becomes naturally subject-specific
         cprint(">> Baseline correcting EEG.", color="cyan")
         X = baseline_correction(X, self.baseline_num_samples)
@@ -178,7 +194,30 @@ class Brennan2018Dataset(Dataset):
         Y = self.embed_audio(audio)
         cprint(f">>> Y (audio): {Y.shape}", color="cyan")
 
-        return X, Y
+        return X, Y, sentence_idxs
+
+    def drop_last_segments(
+        self, X: torch.Tensor, audio: torch.Tensor, onsets_path: str
+    ) -> Tuple[torch.Tensor, torch.Tensor, np.ndarray]:
+        """Drops last segments of each sentence.
+        FIXME: currently drops last 5 words, but this number should be variable to cover 3 secs.
+        """
+        num_drops = 5
+
+        sentence_idxs = pd.read_csv(onsets_path).Sentence.to_numpy()
+        assert np.all(
+            np.diff(sentence_idxs) >= 0
+        ), "sentence_idxs is not a non-decreasing step sequence."
+
+        sentence_ends = np.where(np.diff(sentence_idxs) > 0)[0]
+
+        drop_idxs = np.concatenate([np.arange(i - num_drops, i) + 1 for i in sentence_ends])
+
+        # NOTE: to boolean array
+        drop_bools = np.ones(len(X), dtype=bool)
+        drop_bools[drop_idxs] = False
+
+        return X[drop_bools], audio[drop_bools], sentence_idxs[drop_bools]
 
     def resample_audio(self, waveform: torch.Tensor, sample_rate: int) -> torch.Tensor:
         """Resamples audio to 16kHz. (16kHz is required by wav2vec2.0)"""

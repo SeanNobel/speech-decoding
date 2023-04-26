@@ -132,6 +132,24 @@ def run(args: DictConfig) -> None:
             train_set = torch.utils.data.Subset(dataset, range(train_size))
             test_set = torch.utils.data.Subset(dataset, range(train_size, train_size + test_size))
 
+        elif args.split_mode == "sentence":
+            # NOTE: sentence_idxs starts from 1
+            num_sentences = dataset.sentence_idxs.max()
+            num_train_sentences = int(num_sentences * args.split_ratio)
+
+            train_sentences, test_sentences = torch.utils.data.random_split(
+                torch.arange(num_sentences),
+                lengths=[num_train_sentences, num_sentences - num_train_sentences],
+                generator=g,
+            )
+
+            train_set = torch.utils.data.Subset(
+                dataset, np.where(np.isin(dataset.sentence_idxs, train_sentences))[0]
+            )
+            test_set = torch.utils.data.Subset(
+                dataset, np.where(np.isin(dataset.sentence_idxs, test_sentences))[0]
+            )
+
         else:
             raise ValueError("Unknown split mode")
 

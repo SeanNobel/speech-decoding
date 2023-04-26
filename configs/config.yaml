@@ -11,7 +11,7 @@ wandb:
 use_sampler: True        # applicable to Gwilliams only
 reproducible: False      # NOTE: do we need it at all?
 split_ratio: 0.8 # train. FIXME for valid
-split_mode: deep # sentence, shallow, deep
+split_mode: sentence # sentence, shallow, deep
 num_workers: 6
 batch_size: 64
 updates: 1200
