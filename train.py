@@ -142,6 +142,8 @@ def run(args: DictConfig) -> None:
                 lengths=[num_train_sentences, num_sentences - num_train_sentences],
                 generator=g,
             )
+            train_sentences = np.array(train_sentences.indices) + 1
+            test_sentences = np.array(test_sentences.indices) + 1
 
             train_set = torch.utils.data.Subset(
                 dataset, np.where(np.isin(dataset.sentence_idxs, train_sentences))[0]
