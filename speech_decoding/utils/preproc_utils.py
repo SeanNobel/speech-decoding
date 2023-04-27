@@ -12,65 +12,6 @@ from typing import Union
 from tqdm import tqdm
 
 
-# NOTE currently only works for gwilliams2022.yml
-def check_preprocs(args, data_dir):
-    is_processed = False
-    preproc_dirs = glob.glob(data_dir + "*/")
-
-    for preproc_dir in preproc_dirs:
-        preproc_name = os.path.basename(os.path.dirname(preproc_dir))
-
-        try:
-            with open(preproc_dir + "settings.json") as f:
-                settings = json.load(f)
-
-            x_done = settings.pop("x_done") if "x_done" in settings else False
-            y_done = settings.pop("y_done") if "y_done" in settings else False
-        except:
-            cprint("No settings.json under preproc dir", color="yellow")
-            continue
-
-        try:
-            # NOTE: I didn't want to recompute the MEG dataset. Will get rid of this hack.
-            # NOTE: should be just:
-            # is_processed = np.all([v == args.preprocs[k] for k, v in settings.items() if not k in excluded_keys])
-            excluded_keys = ["preceding_chunk_for_baseline", "mode"]
-            is_processed = np.all(
-                [v == args.preprocs[k] for k, v in settings.items() if k not in excluded_keys]
-            )
-            if is_processed:
-                cprint(
-                    f"All preproc params matched to {preproc_name} -> using",
-                    color="cyan",
-                )
-                break
-        except:
-            cprint(f"Preproc param name mismatch for {preproc_name}", color="yellow")
-            continue
-
-    if not is_processed:
-        cprint("No matching preprocessing. Starting a new one.")
-
-        preproc_dir = data_dir + str(len(preproc_dirs)) + "/"
-        os.mkdir(preproc_dir)
-
-        # args.preprocs.update({"x_done": False, "y_done": False})
-        with open_dict(args):
-            args.preprocs.x_done = False
-            args.preprocs.y_done = False
-
-        with open(preproc_dir + "settings.json", "w") as f:
-            json.dump(dict(args.preprocs), f)
-
-    else:
-        # args.preprocs.update({"x_done": x_done, "y_done": y_done})
-        with open_dict(args):
-            args.preprocs.x_done = x_done
-            args.preprocs.y_done = y_done
-
-    return args, preproc_dir
-
-
 def continuous(onsets: np.ndarray) -> np.ndarray:
     """
     Increments speech onsets that start from zero in each separate audio file.
@@ -158,16 +99,16 @@ def scale_and_clamp(X: torch.Tensor, clamp_lim: Union[int, float]) -> torch.Tens
 
 
 @torch.no_grad()
-def scale_and_clamp(X: torch.Tensor, clamp_lim: Union[int, float], independent=False):
-    """subject-wise scaling and clamping of EEG
+def scale_and_clamp(X: torch.Tensor, clamp_lim: Union[int, float], channel_wise=True):
+    """subject-wise scaling and clamping of M/EEG
     args:
         X: ( chunks, channel, time@120Hz//segment ) or ( segment, subject, channel, time@120Hz//segment )
         clamp_lim: float, abs limit (will be applied for min and max)
-        independent: if True, will scale and clamp each sample independently
+        channel_wise: if True, also scales and clamp each channel independently
     returns:
         X: scaled and clampted | same shape as input
     """
-    if not independent:
+    if not channel_wise:
         orig_shape = X.shape
 
         X = X.flatten(end_dim=-2)  # ( segment * subject * channel, time//segment )
@@ -183,7 +124,7 @@ def scale_and_clamp(X: torch.Tensor, clamp_lim: Union[int, float], independent=F
 
         if orig_dim == 4:
             num_segments = X.shape[0]
-            X = X.clone().flatten(end_dim=1)  # ( chunks, channel, time//segment )
+            X = X.clone().flatten(end_dim=1)  # ( segment * subject, channel, time//segment )
 
         res = []
 
@@ -223,3 +164,62 @@ def interpolate_y_time(Y: torch.Tensor, num_samples: int) -> torch.Tensor:
         Y: ( segment, features@w2v, time@120Hz//segment )
     """
     return F.interpolate(Y, size=num_samples, mode="linear")
+
+
+# NOTE currently only works for gwilliams2022.yml
+def check_preprocs(args, data_dir):
+    is_processed = False
+    preproc_dirs = glob.glob(data_dir + "*/")
+
+    for preproc_dir in preproc_dirs:
+        preproc_name = os.path.basename(os.path.dirname(preproc_dir))
+
+        try:
+            with open(preproc_dir + "settings.json") as f:
+                settings = json.load(f)
+
+            x_done = settings.pop("x_done") if "x_done" in settings else False
+            y_done = settings.pop("y_done") if "y_done" in settings else False
+        except:
+            cprint("No settings.json under preproc dir", color="yellow")
+            continue
+
+        try:
+            # NOTE: I didn't want to recompute the MEG dataset. Will get rid of this hack.
+            # NOTE: should be just:
+            # is_processed = np.all([v == args.preprocs[k] for k, v in settings.items() if not k in excluded_keys])
+            excluded_keys = ["preceding_chunk_for_baseline", "mode"]
+            is_processed = np.all(
+                [v == args.preprocs[k] for k, v in settings.items() if k not in excluded_keys]
+            )
+            if is_processed:
+                cprint(
+                    f"All preproc params matched to {preproc_name} -> using",
+                    color="cyan",
+                )
+                break
+        except:
+            cprint(f"Preproc param name mismatch for {preproc_name}", color="yellow")
+            continue
+
+    if not is_processed:
+        cprint("No matching preprocessing. Starting a new one.")
+
+        preproc_dir = data_dir + str(len(preproc_dirs)) + "/"
+        os.mkdir(preproc_dir)
+
+        # args.preprocs.update({"x_done": False, "y_done": False})
+        with open_dict(args):
+            args.preprocs.x_done = False
+            args.preprocs.y_done = False
+
+        with open(preproc_dir + "settings.json", "w") as f:
+            json.dump(dict(args.preprocs), f)
+
+    else:
+        # args.preprocs.update({"x_done": x_done, "y_done": y_done})
+        with open_dict(args):
+            args.preprocs.x_done = x_done
+            args.preprocs.y_done = y_done
+
+    return args, preproc_dir

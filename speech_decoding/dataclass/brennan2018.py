@@ -56,7 +56,7 @@ class Brennan2018Dataset(Dataset):
         force_recompute = args.rebuild_dataset
         self.split_mode = args.split_mode
         self.root_dir = args.root_dir
-        self.subject_wise = args.preprocs.subject_wise
+        self.channel_wise = args.preprocs.channel_wise
         self.seq_len_sec = args.preprocs.seq_len_sec
         # EEG
         self.brain_filter_low = args.preprocs.brain_filter_low
@@ -188,7 +188,7 @@ class Brennan2018Dataset(Dataset):
         X = baseline_correction(X, self.baseline_num_samples)
 
         cprint(">> Scaling and clamping EEG.", color="cyan")
-        X = scale_and_clamp(X, self.clamp_lim)
+        X = scale_and_clamp(X, self.clamp_lim, self.channel_wise)
 
         cprint(">> Embedding audio with wave2vec2.0.", color="cyan")
         Y = self.embed_audio(audio)
