@@ -35,6 +35,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+import mne
 import pandas as pd
 
 
@@ -82,7 +83,18 @@ def prepare_dataset(args, split, manual_ch=None, onsets:dict=None):
             MEG_Data, image_features, labels, triggers = get_meg_data(processed_meg_path, label_path, trigger_path, rest_mean=rest_mean, rest_std=rest_std, split=split)
             if onsets is None:
                 ROI_MEG_Data = MEG_Data[roi_channels, :] #  num_roi_channels x time_samples
-                window = time_window(args, triggers, fs)
+                if args.preprocs.brain_filter is not None:
+                    brain_filter_low = args.preprocs.brain_filter[0]
+                    brain_filter_high = args.preprocs.brain_filter[1]
+                    ROI_MEG_Data = mne.filter.filter_data(ROI_MEG_Data, sfreq=fs, l_freq=brain_filter_low, h_freq=brain_filter_high,)
+                    print(f'band path filter: {brain_filter_low}-{brain_filter_high}')
+                if args.preprocs.brain_resample_rate is not None:
+                    ROI_MEG_Data = mne.filter.resample(ROI_MEG_Data, down=fs / args.preprocs.brain_resample_rate)
+                    print('resample {} to {} Hz'.format(fs,args.preprocs.brain_resample_rate))
+                    window = time_window(args, triggers, args.preprocs.brain_resample_rate)
+                else:
+                    window = time_window(args, triggers, fs)
+                # import pdb; pdb.set_trace()
                 ROI_MEG_epochs = epoching(ROI_MEG_Data, window)
             else:
                 ROI_MEG_epochs = []
@@ -110,65 +122,6 @@ def prepare_dataset(args, split, manual_ch=None, onsets:dict=None):
     return meg_epochs, sub_epochs, label_epochs, image_feature_epochs
 
 
-def get_average_features(predicted_y, val_index):
-    test_labels_unique = np.unique(val_index)
-    test_pred_features_avg = []
-    for i in range(len(test_labels_unique)):
-        target_ids = val_index== i
-        test_pred_features_avg.append(predicted_y[target_ids].mean(axis=0, keepdims=True))
-    test_pred_features_avg = np.concatenate(test_pred_features_avg, axis=0)
-    return test_pred_features_avg, np.arange(len(test_labels_unique))
-
-def metric_kamitani(results:dict, label:list):
-    pred_percept = [results['predicted_feature_averaged_percept']] # n_preds x n_units
-    cat_feature_percept = [results['category_feature_averaged_percept']] # n_sample x n_units
-
-    pwident_cr_pt = []  # Prop correct in pair-wise identification (perception)
-    # cnt = 0
-    for fpt, pred_pt in zip(cat_feature_percept, pred_percept):
-        # ind_cat_other = list(range(len(cat_feature_percept))).remove(cnt)
-        # feat_other = cat_feature_percept[ind_cat_other,:]
-
-        # n_unit = fpt.shape[1]
-        # feat_other = feat_other[:, :n_unit]
-
-        feat_candidate_pt = fpt # np.vstack([fpt, feat_other])
-
-        simmat_pt = corrmat(pred_pt, feat_candidate_pt)
-
-        cr_pt = get_pwident_correctrate(simmat_pt)
-
-        pwident_cr_pt.append(np.mean(cr_pt))
-        # cnt += 1
-    assert len(pwident_cr_pt) == 1
-    return np.mean(cr_pt), {k:v for k, v in zip(label, cr_pt)}
-
-
-# Functions ############################################################
-
-def get_pwident_correctrate(simmat):
-    '''
-    Returns correct rate in pairwise identification
-    Parameters
-    ----------
-    simmat : numpy array [num_prediction * num_category]
-        Similarity matrix
-    Returns
-    -------
-    correct_rate : correct rate of pair-wise identification
-    '''
-
-    num_pred = simmat.shape[0]
-    labels = range(num_pred)
-
-    correct_rate = []
-    for i in range(num_pred):
-        pred_feat = simmat[i, :]
-        correct_feat = pred_feat[labels[i]]
-        pred_num = len(pred_feat) - 1
-        correct_rate.append((pred_num - np.sum(pred_feat > correct_feat)) / float(pred_num))
-
-    return correct_rate
 
 def corr_of_corr(corrmat1, corrmat2):
     '''
@@ -184,7 +137,7 @@ def corr_of_corr(corrmat1, corrmat2):
     corr_of_corr : correlation of correlation matrices
     '''
 
-    corr_of_corr = np.corrcoef(corrmat1.flatten(), corrmat2.flatten())[0, 1]
+    corr_of_corr = np.corrcoef(corrmat1.flatten(), corrmat2.flatten())
 
     return corr_of_corr
 
@@ -200,10 +153,22 @@ def calc_corr_of_corr(meg_data:np.ndarray, image_data:np.ndarray, savedir:str)->
     """
     meg_corr = np.corrcoef(meg_data.reshape(meg_data.shape[0], -1))
     vis_corr(meg_corr, os.path.join(savedir, 'meg_corr.png'))
+    vis_corr(meg_corr[:100,:100], os.path.join(savedir, 'meg_corr_zoom.png'))
     image_corr = np.corrcoef(image_data)
-    vis_corr(image_corr, os.path.join(savedir, 'image_corr.png'))
-    corr_of_corr = corr_of_corr(meg_corr, image_corr)
-    vis_corr(corr_of_corr, os.path.join(savedir, 'corr_of_corr.png'))
+    # vis_corr(image_corr, os.path.join(savedir, 'image_corr.png'))
+    # vis_corr(image_corr[:100,:100], os.path.join(savedir, 'image_corr_zoom.png'))
+    meg_corr = meg_corr[np.triu(meg_corr, k=1)!=0]
+    image_corr = image_corr[np.triu(image_corr, k=1)!=0]
+    meg_image_corr_corr = corr_of_corr(meg_corr, image_corr)
+    # vis_corr(meg_image_corr_corr, os.path.join(savedir, 'corr_of_corr.png'))
+    print('correlation: ', meg_image_corr_corr[0,1])
+    
+    plt.scatter(meg_corr, image_corr, s=2)
+    plt.xlabel('meg_corr')
+    plt.ylabel('image_corr')
+    plt.savefig(os.path.join(savedir, 'meg_image_scatter.png'))
+    print('save to ', os.path.join(savedir, 'meg_image_scatter.png'))
+    plt.close()
 
 def vis_corr(corr, savefile=None):
     sns.heatmap(corr, square=True, annot=False)
@@ -211,7 +176,45 @@ def vis_corr(corr, savefile=None):
     plt.close()
     print('saved to ', savefile)
 
-def run_meg_fit_and_evaluate(args, ch_ratios=1, manual_ch:list=None, onsets:dict=None):
+def same_image2neighbor(X, Y, label):
+    same_image_indices = []
+    for i in range(1,1201):
+        same_image_indices += list(np.where(label==i)[0])
+        assert len(list(np.where(label==i)[0])) > 0
+    return X[same_image_indices], Y[same_image_indices]
+
+
+def run_original(X, Y, saveroot, subdir):
+    # そのまま、corrを計算
+    savedir = os.path.join(saveroot, subdir)
+    if not os.path.exists(savedir):
+        os.makedirs(savedir)
+    calc_corr_of_corr(X, Y, savedir)
+
+def run_normalize_trial(X, Y, saveroot, subdir):
+    # epoch方向にnormalizeしてcorrを計算
+    savedir = os.path.join(saveroot, subdir)
+    if not os.path.exists(savedir):
+        os.makedirs(savedir)
+    X = X - X.mean(axis=0, keepdims=True)
+    X = X / X.std(axis=0, keepdims=True)
+    Y = Y - Y.mean(axis=0, keepdims=True)
+    Y = Y / Y.std(axis=0, keepdims=True)
+    calc_corr_of_corr(X, Y, savedir)
+
+def run_SCP(X, Y, saveroot, subdir):
+    # SCPを計算してcorrを計算
+    savedir = os.path.join(saveroot, subdir)
+    if not os.path.exists(savedir):
+        os.makedirs(savedir)
+    X = X - X.mean(axis=0, keepdims=True)
+    X = X / X.std(axis=0, keepdims=True)
+    X = np.mean(X, axis=-1)
+    Y = Y - Y.mean(axis=0, keepdims=True)
+    Y = Y / Y.std(axis=0, keepdims=True)
+    calc_corr_of_corr(X, Y, savedir)
+
+def run(args, ch_ratios=1, manual_ch:list=None, onsets:dict=None, saveroot:str='/home/yainoue/meg2image/results/20230427_corr_corr_resample120'):
     prefix='sbj01'
     random.seed(0)
     ## prepare dataset
@@ -219,19 +222,35 @@ def run_meg_fit_and_evaluate(args, ch_ratios=1, manual_ch:list=None, onsets:dict
     test_X, test_subs, test_label, test_Y = prepare_dataset(args, split='val', manual_ch=manual_ch, onsets=onsets)
     # import pdb; pdb.set_trace()
 
+    same_image_indices = sum([[i, i+1200, i+2400] for i in range(1200)], [])
     s1_d1_train_X, s1_d1_train_label, s1_d1_train_Y = train_X[:3600], train_label[:3600], train_Y[:3600]
+    s1_d1_train_X, s1_d1_train_Y = same_image2neighbor(s1_d1_train_X, s1_d1_train_Y, s1_d1_train_label)
     s1_d2_train_X, s1_d2_train_label, s1_d2_train_Y = train_X[3600:7200], train_label[3600:7200], train_Y[3600:7200]
+    s1_d2_train_X, s1_d2_train_Y = same_image2neighbor(s1_d2_train_X, s1_d2_train_Y, s1_d2_train_label)
+    
 
+    # run_original(s1_d1_train_X, s1_d1_train_Y, saveroot, 's1d1') # # 0.00644 # 0.02039 #  0.00442 (8-13Hz) # 0.0193 (2-8Hz) # 0.0113 (20-40) # 0.011(30-40) # 0.116(40-60) # 0.012
+    # run_original(s1_d2_train_X, s1_d2_train_Y, saveroot, 's1d2') # # 0.00432 # 0.007867 # 0.00567 #  0.0067 # 0.0106 # 0.010 # 0.011 # 0.0118
+
+    run_normalize_trial(s1_d1_train_X, s1_d1_train_Y, saveroot, 's1d1_norm_unit') # 0.01078 # 0.01068 # 0.03266 (2-13 Hz) #  0.0160 # 0.032 # 0.021 # 0.21(30-40) # 0.023 # 0.024(30-60) # 0.0265(30-70) # 0.028(60-70) # 0.043(60-100) # 0.046
+    # run_normalize_trial(s1_d2_train_X, s1_d2_train_Y, saveroot, 's1d2_norm_unit') #  0.00818 # 0.00799 # 0.025034 #  0.0160 # 0.023 # 0.021 # 0.23 # 0.025 # 0.026 # 0.028 # 0.03 (60-70) # 0.0466 # 0.0490(60-120)
+ 
+    # run_SCP(s1_d1_train_X, s1_d1_train_Y, saveroot, 's1d1_scp') #  0.008361 # 0.008417 # 0.0226 # 0.00987 # 0.022 # 0.00779 # 0.008 # 0.009
+    # run_SCP(s1_d2_train_X, s1_d2_train_Y, saveroot, 's1d2_scp') # 0.006416 # 0.0064630 # 0.0160 # 0.00911 # 0.016 # 0.0089 # 0.0099 # 0.01
+ 
 
     ## preprocess
     train_X = np.mean(train_X, axis=-1) # get SCP
     test_X = np.mean(test_X, axis=-1)
 
 
+@hydra.main(version_base=None, config_path="../../configs", config_name="20230421_sbj01_kamitani_regression.yaml")
+def main(args):
+    run(args)
+
 
 
 if __name__ == '__main__':
     # To avoid any use of global variables,
     # do nothing except calling main() here
-    # main()
-    # main_meg_repetiton_roi()
+    main()

@@ -78,17 +78,17 @@ def prepare_dataset(args, split, manual_ch=None, onsets:dict=None):
             MEG_Data, image_features, labels, triggers = get_meg_data(processed_meg_path, label_path, trigger_path, rest_mean=rest_mean, rest_std=rest_std, split=split)
             if onsets is None:
                 ROI_MEG_Data = MEG_Data[roi_channels, :] #  num_roi_channels x time_samples
-                # if args.preprocs.brain_filter is not None:
-                #     brain_filter_low = args.preprocs.brain_filter[0]
-                #     brain_filter_high = args.preprocs.brain_filter[1]
-                #     ROI_MEG_Data = mne.filter.filter_data(ROI_MEG_Data, sfreq=fs, l_freq=brain_filter_low, h_freq=brain_filter_high,)
-                #     print(f'band path filter: {brain_filter_low}-{brain_filter_high}')
-                # if args.preprocs.brain_resample_rate is not None:
-                #     ROI_MEG_Data = mne.filter.resample(ROI_MEG_Data, down=fs / args.preprocs.brain_resample_rate)
-                #     print('resample {} to {} Hz'.format(fs,args.preprocs.brain_resample_rate))
-                #     window = time_window(args, triggers, args.preprocs.brain_resample_rate)
-                # else:
-                #     window = time_window(args, triggers, fs)
+                if args.preprocs.brain_filter is not None:
+                    brain_filter_low = args.preprocs.brain_filter[0]
+                    brain_filter_high = args.preprocs.brain_filter[1]
+                    ROI_MEG_Data = mne.filter.filter_data(ROI_MEG_Data, sfreq=fs, l_freq=brain_filter_low, h_freq=brain_filter_high,)
+                    print(f'band path filter: {brain_filter_low}-{brain_filter_high}')
+                if args.preprocs.brain_resample_rate is not None:
+                    ROI_MEG_Data = mne.filter.resample(ROI_MEG_Data, down=fs / args.preprocs.brain_resample_rate)
+                    print('resample {} to {} Hz'.format(fs,args.preprocs.brain_resample_rate))
+                    window = time_window(args, triggers, args.preprocs.brain_resample_rate)
+                else:
+                    window = time_window(args, triggers, fs)
                 window = time_window(args, triggers, fs)
                 # import pdb; pdb.set_trace()
                 ROI_MEG_epochs = epoching(ROI_MEG_Data, window)
@@ -212,13 +212,15 @@ def get_pwident_correctrate(simmat):
     return correct_rate
 
 
-def run_meg_fit_and_evaluate(args, ch_ratios=1, manual_ch:list=None, onsets:dict=None):
+def run_meg_fit_and_evaluate(args, ch_ratios=1, manual_ch:list=None, onsets:dict=None, normalize=False):
     prefix='sbj01'
     random.seed(0)
     ## prepare dataset
     train_X, train_subs, train_label, train_Y = prepare_dataset(args, split='train', manual_ch=manual_ch, onsets=onsets)
     test_X, test_subs, test_label, test_Y = prepare_dataset(args, split='val', manual_ch=manual_ch, onsets=onsets)
     # import pdb; pdb.set_trace()
+
+
 
     ## preprocess
     train_X = np.mean(train_X, axis=-1) # get SCP
@@ -251,7 +253,9 @@ def run_meg_fit_and_evaluate(args, ch_ratios=1, manual_ch:list=None, onsets:dict
     # import pdb; pdb.set_trace()
     return acc
 
-    
+@hydra.main(version_base=None, config_path="../../configs", config_name="20230421_sbj01_kamitani_regression.yaml")
+def main_meg_repetiton_roi(args):
+    run_meg_fit_and_evaluate(args, normalize=True)
 
 @hydra.main(version_base=None, config_path="../../configs", config_name="20230421_sbj01_kamitani_regression.yaml")
 def main_meg_repetiton_roi(args):
@@ -634,5 +638,5 @@ if __name__ == '__main__':
     # main_meg_repetiton_roi()
     # main_meg_run_manual_ch()
     # main_meg_repetiton_N()
-    main_meg_repetiton_onsets_per_ch()
+    # main_meg_repetiton_onsets_per_ch()
     # main_meg()
