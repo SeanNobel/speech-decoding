@@ -27,6 +27,7 @@ from meg_decoding.utils.loss import *
 from meg_decoding.dataclass.god import GODDatasetBase, GODCollator
 from meg_decoding.utils.loggers import Pickleogger
 from meg_decoding.utils.vis_grad import get_grad
+from torch.utils.data.dataset import Subset
 
 
 def run(args: DictConfig) -> None:
@@ -135,10 +136,19 @@ def run(args: DictConfig) -> None:
         )
 
     elif args.dataset == "GOD":
-        train_dataset = GODDatasetBase(args, 'train')
-        val_dataset = GODDatasetBase(args, 'val')
+        source_dataset = GODDatasetBase(args, 'train')
+        # val_dataset = GODDatasetBase(args, 'val')
+        # train_size = int(np.round(len(source_dataset)*0.8))
+        # val_size = len(source_dataset) - train_size
+
+        # train_dataset, val_dataset = torch.utils.data.random_split(source_dataset, [train_size, val_size])
+        ind_tr = list(range(0, 6000)) + list(range(7200, 21600)) # + list(range(7200, 13200)) + list(range(14400, 20400))
+        ind_te = list(range(6000,7200)) # + list(range(13200, 14400)) + list(range(20400, 21600))
+        train_dataset = Subset(source_dataset, ind_tr)
+        val_dataset   = Subset(source_dataset, ind_te)
+        
         with open_dict(args):
-            args.num_subjects = train_dataset.num_subjects
+            args.num_subjects = source_dataset.num_subjects
             print('num subject is {}'.format(args.num_subjects))
 
 
@@ -352,7 +362,7 @@ def run(args: DictConfig) -> None:
 if __name__ == "__main__":
     from hydra import initialize, compose
     with initialize(version_base=None, config_path="../configs/"):
-        args = compose(config_name='20230424_sbj01_seq2stat')
+        args = compose(config_name='20230426_all_seq2stat')
     if not os.path.exists(os.path.join(args.save_root, 'weights')):
         os.makedirs(os.path.join(args.save_root, 'weights'))
     run(args)

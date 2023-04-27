@@ -146,7 +146,7 @@ class ConvBlock(nn.Module):
             out_channels=self.D2,
             kernel_size=ks,
             padding="same",
-            dilation=2 ** ((2 * k) % 5),
+            # dilation= 2 ** ((2 * k) % 5),
         )
         self.batchnorm0 = nn.BatchNorm1d(num_features=self.D2)
         self.conv1 = nn.Conv1d(
@@ -154,7 +154,7 @@ class ConvBlock(nn.Module):
             out_channels=self.D2,
             kernel_size=ks,
             padding="same",
-            dilation=2 ** ((2 * k + 1) % 5),
+            # dilation=2 ** ((2 * k + 1) % 5),
         )
         self.batchnorm1 = nn.BatchNorm1d(num_features=self.D2)
         self.conv2 = nn.Conv1d(
@@ -162,7 +162,7 @@ class ConvBlock(nn.Module):
             out_channels=2 * self.D2,
             kernel_size=ks,
             padding="same",
-            dilation=2,  # FIXME: The text doesn't say this, but the picture shows dilation=2
+            # dilation=2,  # FIXME: The text doesn't say this, but the picture shows dilation=2
         )
 
     def forward(self, X):
@@ -270,8 +270,8 @@ class Classifier(nn.Module):
 
 
         if self.normalize_image_features:
-            y = self.normalize_per_unit(y)
-
+            # y = self.normalize_per_unit(y)
+            pass
         # x_ = rearrange(x, 'b f -> 1 b f')
         # y_ = rearrange(y, 'b f -> b 1 f')
         # similarity = torch.nn.functional.cosine_similarity(x_, y_, dim=-1)  # ( B, B )

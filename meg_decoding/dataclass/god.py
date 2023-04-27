@@ -20,8 +20,8 @@ mne.set_log_level(verbose="WARNING")
 def normalize_per_unit(tensor):
     print('normalize image_feature along unit dim')
     # array: n_samples x n_units(512)
-    tensor = tensor - torch.mean(tensor, 0, keepdim=True)
-    tensor = tensor / torch.std(tensor, 0,  keepdim=True)
+    tensor = tensor - np.mean(tensor, axis=0, keepdims=True)
+    tensor = tensor / np.std(tensor, axis=0,  keepdims=True)
     return tensor
 
 class GODDatasetBase(Dataset):
