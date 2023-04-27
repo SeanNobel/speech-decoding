@@ -21,8 +21,72 @@ def get_model(args):
         return  BrainEncoderSeq2Static(args)
     elif args.model == 'linear':
         return LinearEncoder(args)
+    elif args.model == 'eegnet':
+        return EEGNet(args)
     else:
         raise ValueError('no model named {} is prepared'.format(args.model))
+
+class EEGNet(nn.Module):
+    def __init__(self, args):
+        super(EEGNet, self).__init__()
+        T = int((args.window.end - args.window.start) * args.preprocs.brain_resample_rate)
+        # DownSampling
+        # self.down1 = nn.Sequential(nn.AvgPool2d((1, p0)))
+
+        # Conv2d(in,out,kernel,stride,padding,bias) #k1 30
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(1, args.F1, (1, args.k1), padding="same", bias=False), nn.BatchNorm2d(args.F1)
+        )
+
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(
+                args.F1, args.D * args.F1, (args.num_channels, 1), groups=args.F1, bias=False
+            ),
+            nn.BatchNorm2d(args.D * args.F1),
+            nn.ELU(),
+            nn.AvgPool2d((1, args.p1)), # 2
+            nn.Dropout(args.dr1),
+        )
+
+        self.conv3 = nn.Sequential(
+            nn.Conv2d(
+                args.D * args.F1,
+                args.D * args.F1,
+                (1, args.k2), # 4
+                padding="same",
+                groups=args.D * args.F1,
+                bias=False,
+            ),
+            nn.Conv2d(args.D * args.F1, args.F2, (1, 1), bias=False),
+            nn.BatchNorm2d(args.F2),
+            nn.ELU(),
+            nn.AvgPool2d((1, args.p2)), # 4
+            nn.Dropout(args.dr2),
+        )
+
+        self.n_dim = self.compute_dim(args.num_channels, T)
+        self.classifier = nn.Linear(self.n_dim, 512, bias=True)
+
+    def forward(self, x):
+        # 1, 1, 128, 300
+        # x = self.down1(x)
+        x = self.conv1(x) # 1, 16, 128, 300
+        x = self.conv2(x) # 1, 32, 1, 150
+        x = self.conv3(x) # 1, 32, 1, 37
+        x = x.view(-1, self.n_dim)
+        x = self.classifier(x)
+        return x
+
+    def compute_dim(self, num_channels, T):
+        x = torch.zeros((1, 1, num_channels, T))
+
+        # x = self.down1(x)
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
+
+        return x.size()[1] * x.size()[2] * x.size()[3]
+
 
 class SpatialAttention(nn.Module):
     """Same as SpatialAttentionVer2, but a little more concise"""

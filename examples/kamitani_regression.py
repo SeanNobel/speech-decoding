@@ -95,7 +95,7 @@ def prepare_dataset(args, split, manual_ch=None, onsets:dict=None):
             else:
                 ROI_MEG_epochs = []
                 for r, o in onsets.items():
-                    args.region = r if isinstance(r, list) else [r] 
+                    args.region = r if isinstance(r, list) else [r]
                     roi_channels = roi(args)
                     ROI_MEG_Data = MEG_Data[roi_channels, :]
                     duration = args.window.end - args.window.start
@@ -224,16 +224,16 @@ def run_meg_fit_and_evaluate(args, ch_ratios=1, manual_ch:list=None, onsets:dict
 
     ## preprocess
     train_X = np.mean(train_X, axis=-1) # get SCP
-    test_X = np.mean(test_X, axis=-1) 
+    test_X = np.mean(test_X, axis=-1)
 
-    ## feature prediction 
+    ## feature prediction
     n_voxel = int(ch_ratios*(train_X.shape[1]))
     print('n_voxel: ', n_voxel)
     pred_y, true_y = feature_prediction(train_X, train_Y,
                                             test_X, test_Y,
                                             n_voxel=n_voxel,
                                             n_iter=200)
-    
+
     ## evaluate
     pred_y_avg, true_y_avg, test_label_set = get_averaged_feature(pred_y, true_y, test_label)
     results = {}
@@ -261,7 +261,7 @@ def main_meg_repetiton_roi(args):
 def main_meg_repetiton_roi(args):
     onsets =  [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4]
     duration = 0.2
-    
+
     roi_names = ['occipital', 'parietal', 'frontal', 'temporal', 'central']
     for roi_name in roi_names:
         acc_list = []
@@ -269,7 +269,7 @@ def main_meg_repetiton_roi(args):
         for start_ in onsets:
             args.window.start = start_
             args.window.end = start_ + duration
-            acc = run_meg_fit_and_evaluate(args)  
+            acc = run_meg_fit_and_evaluate(args)
             acc_list.append(acc)
         plt.plot(onsets, acc_list, label=roi_name)
 
@@ -299,7 +299,7 @@ def main_meg_repetiton_N(args):
 
         args.region = region
         for ch_ratio in ch_ratios:
-            acc = run_meg_fit_and_evaluate(args, ch_ratio)  
+            acc = run_meg_fit_and_evaluate(args, ch_ratio)
             acc_list.append(acc)
         label = '-'.join(roi_name_pair)
         plt.plot(ch_ratios, acc_list, label=label)
@@ -345,9 +345,9 @@ def main_meg_repetiton_onsets_per_ch(args):
         results['acc'].append(acc)
         for k, v in zip(roi_names, onset_list):
             results[k].append(v)
-    
+
         df = pd.DataFrame(results)
-    
+
         df.to_csv(savefile)
     print('results is saved as ', savefile)
 
@@ -365,7 +365,7 @@ def main_meg_run_manual_ch(args):
     for manual_ch in manual_ch_list:
         if manual_ch is not None:
             manual_ch = [c - 1 for c in manual_ch] # matlab -> python
-        acc = run_meg_fit_and_evaluate(args, manual_ch=manual_ch)  
+        acc = run_meg_fit_and_evaluate(args, manual_ch=manual_ch)
         acc_list.append(acc)
     print(acc_list)
 
