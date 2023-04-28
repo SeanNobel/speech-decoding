@@ -202,34 +202,24 @@ def run(args: DictConfig) -> None:
     # ---------------------
     brain_encoder = get_model(args).to(device) #BrainEncoder(args).to(device)
 
+    weight_dir = os.path.join(args.save_root, 'weights')
+    last_weight_file = os.path.join(weight_dir, "model_last.pt")
+    best_weight_file = os.path.join(weight_dir, "model_last.pt")
+    if os.path.exists(best_weight_file):
+        brain_encoder.load_state_dict(torch.load(best_weight_file))
+        print('weight is loaded from ', best_weight_file)
+    else:
+        brain_encoder.load_state_dict(torch.load(last_weight_file))
+        print('weight is loaded from ', last_weight_file)
+
+
     classifier = Classifier(args)
 
     # ---------------
     #      Loss
     # ---------------
     loss_func = CLIPLoss(args).to(device)
-    loss_func.train()
-
-    # --------------------
-    #      Optimizer
-    # --------------------
-    optimizer = torch.optim.Adam(
-        list(brain_encoder.parameters()) + list(loss_func.parameters()), lr=float(args.lr),
-    )
-
-    if args.lr_scheduler == "cosine":
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=args.epochs, eta_min=args.lr * 0.1
-        )
-    elif args.lr_scheduler == "multistep":
-        scheduler = torch.optim.lr_scheduler.MultiStepLR(
-            optimizer,
-            milestones=[int(m * args.epochs) for m in args.lr_multistep_mlstns],
-            gamma=args.lr_step_gamma,
-        )
-    else:
-        scheduler = None
-
+    loss_func.eval()
     # ======================================
     train_losses = []
     test_losses = []
