@@ -37,6 +37,8 @@ class GODDatasetBase(Dataset):
         self.Y = image_feature_epochs.astype(np.float32) # epochs x dims
         if args.normalize_image_features:
             self.Y = normalize_per_unit(self.Y)
+        if args.normalize_meg:
+            self.X = normalize_per_unit(self.X)
             
         self.subs = sub_epochs # epochs (x 1)
         self.labels = label_epochs # epochs (x 1)

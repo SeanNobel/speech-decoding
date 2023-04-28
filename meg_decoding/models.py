@@ -8,6 +8,7 @@ import torch.nn.functional as F
 from termcolor import cprint
 from einops import rearrange
 from tqdm import tqdm
+from meg_decoding.matlab_utils.load_meg import roi
 
 from constants import device
 from meg_decoding.utils.layout import ch_locations_2d
@@ -37,10 +38,11 @@ class EEGNet(nn.Module):
         self.conv1 = nn.Sequential(
             nn.Conv2d(1, args.F1, (1, args.k1), padding="same", bias=False), nn.BatchNorm2d(args.F1)
         )
-
+        roi_channels = roi(args)
+        num_channels = len(roi_channels)
         self.conv2 = nn.Sequential(
             nn.Conv2d(
-                args.F1, args.D * args.F1, (args.num_channels, 1), groups=args.F1, bias=False
+                args.F1, args.D * args.F1, (num_channels, 1), groups=args.F1, bias=False
             ),
             nn.BatchNorm2d(args.D * args.F1),
             nn.ELU(),
@@ -64,10 +66,12 @@ class EEGNet(nn.Module):
             nn.Dropout(args.dr2),
         )
 
-        self.n_dim = self.compute_dim(args.num_channels, T)
+        self.n_dim = self.compute_dim(num_channels, T)
         self.classifier = nn.Linear(self.n_dim, 512, bias=True)
 
-    def forward(self, x):
+    def forward(self, x, sbj_idxs):
+        # import pdb; pdb.set_trace()
+        x = x.unsqueeze(1)
         # 1, 1, 128, 300
         # x = self.down1(x)
         x = self.conv1(x) # 1, 16, 128, 300

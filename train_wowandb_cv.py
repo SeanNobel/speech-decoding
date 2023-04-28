@@ -142,8 +142,8 @@ def run(args: DictConfig) -> None:
         # val_size = len(source_dataset) - train_size
 
         # train_dataset, val_dataset = torch.utils.data.random_split(source_dataset, [train_size, val_size])
-        ind_tr = list(range(0, 6000)) + list(range(7200, 21600)) # + list(range(7200, 13200)) + list(range(14400, 20400))
-        ind_te = list(range(6000,7200)) # + list(range(13200, 14400)) + list(range(20400, 21600))
+        ind_tr = list(range(0, 3000)) + list(range(3600, 6600)) #+ list(range(7200, 21600)) # + list(range(7200, 13200)) + list(range(14400, 20400))
+        ind_te = list(range(3000,3600)) + list(range(6600, 7200)) # + list(range(13200, 14400)) + list(range(20400, 21600))
         train_dataset = Subset(source_dataset, ind_tr)
         val_dataset   = Subset(source_dataset, ind_te)
         
@@ -257,9 +257,9 @@ def run(args: DictConfig) -> None:
                 raise ValueError("Unexpected number of items from dataloader.")
 
             X, Y = X.to(device), Y.to(device)
+            # import pdb; pdb.set_trace()
             Z = brain_encoder(X, subject_idxs)
             loss = loss_func(Y, Z)
-            # import pdb; pdb.set_trace()
             with torch.no_grad():
                 trainTop1acc, trainTop10acc = classifier(Z, Y)
 
@@ -362,7 +362,7 @@ def run(args: DictConfig) -> None:
 if __name__ == "__main__":
     from hydra import initialize, compose
     with initialize(version_base=None, config_path="../configs/"):
-        args = compose(config_name='20230426_all_seq2stat')
+        args = compose(config_name='20230427_sbj01_eegnet')
     if not os.path.exists(os.path.join(args.save_root, 'weights')):
         os.makedirs(os.path.join(args.save_root, 'weights'))
     run(args)
