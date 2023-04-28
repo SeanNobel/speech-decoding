@@ -231,21 +231,16 @@ def run(args: DictConfig) -> None:
         scheduler = None
 
     # ======================================
-    best_acc = 0
-    pbar = tqdm(range(args.epochs))
-    for epoch in pbar:
-        pbar.set_description("training {}/{} epoch".format(epoch, args.epochs))
-        train_losses = []
-        test_losses = []
-        trainTop1accs = []
-        trainTop10accs = []
-        testTop1accs = []
-        testTop10accs = []
-
-        brain_encoder.train()
-        pbar2 = tqdm(train_loader)
-        for i, batch in enumerate(pbar2):
-
+    train_losses = []
+    test_losses = []
+    trainTop1accs = []
+    trainTop10accs = []
+    testTop1accs = []
+    testTop10accs = []
+    brain_encoder.eval()
+    pbar2 = tqdm(train_loader)
+    for i, batch in enumerate(pbar2):
+        with torch.no_grad():
             if len(batch) == 3:
                 X, Y, subject_idxs = batch
             elif len(batch) == 4:
@@ -262,104 +257,69 @@ def run(args: DictConfig) -> None:
             loss = loss_func(Y, Z)
             with torch.no_grad():
                 trainTop1acc, trainTop10acc = classifier(Z, Y)
-
             train_losses.append(loss.item())
             trainTop1accs.append(trainTop1acc)
             trainTop10accs.append(trainTop10acc)
 
-            pbar.set_description("training {}/{} iters Train/Loss: {}, Train/Top1Acc: {}, Train/Top10Acc: {}".format(i, len(train_loader), loss.item(), trainTop1acc, trainTop10acc))
-            if args.dataset == "Gwilliams2022":
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-            if args.dataset == "GOD":
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-                # get_grad(brain_encoder)
-            # break
+    Zs = []
+    Ys = []
+    brain_encoder.eval()
+    for batch in test_loader:
+        with torch.no_grad():
 
-        # Accumulate gradients for Gwilliams for the whole epoch
-        if args.dataset == "Brennan2018":
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+            if len(batch) == 3:
+                X, Y, subject_idxs = batch
+            elif len(batch) == 4:
+                X, Y, subject_idxs, chunkIDs = batch
+            else:
+                raise ValueError("Unexpected number of items from dataloader.")
 
-        brain_encoder.eval()
-        for batch in test_loader:
+            X, Y = X.to(device), Y.to(device)
 
-            with torch.no_grad():
+            Z = brain_encoder(X, subject_idxs)  # 0.96 GB
+            Zs.append(Z)
+            Ys.append(Y)
 
-                if len(batch) == 3:
-                    X, Y, subject_idxs = batch
-                elif len(batch) == 4:
-                    X, Y, subject_idxs, chunkIDs = batch
-                else:
-                    raise ValueError("Unexpected number of items from dataloader.")
+            loss = loss_func(Y, Z)
 
-                X, Y = X.to(device), Y.to(device)
+            testTop1acc, testTop10acc = classifier(Z, Y, test=True)  # ( 250, 1024, 360 )
 
-                Z = brain_encoder(X, subject_idxs)  # 0.96 GB
+        test_losses.append(loss.item())
+        testTop1accs.append(testTop1acc)
+        testTop10accs.append(testTop10acc)
+    Zs = torch.cat(Zs, dim=0)
+    Ys = torch.cat(Ys, dim=0)
 
-                loss = loss_func(Y, Z)
+    print(
+        f"train l: {np.mean(train_losses):.3f} | ",
+        f"test l: {np.mean(test_losses):.3f} | ",
+        f"trainTop10acc: {np.mean(trainTop10accs):.3f} | ",
+        f"testTop10acc: {np.mean(testTop10accs):.3f} | ",
+        f"lr: {optimizer.param_groups[0]['lr']:.5f}",
+        f"temp: {loss_func.temp.item():.3f}",
+    )
+    evaluate(Zs, Ys)
 
-                testTop1acc, testTop10acc = classifier(Z, Y, test=True)  # ( 250, 1024, 360 )
+def calc_similarity(x, y):
+    batch_size = len(x)
+    gt_size = len(y)
 
-            test_losses.append(loss.item())
-            testTop1accs.append(testTop1acc)
-            testTop10accs.append(testTop10acc)
+    similarity = torch.empty(batch_size, gt_size).to('cuda')
+    for i in range(batch_size):
+        for j in range(gt_size):
+            similarity[i, j] = (x[i] @ y[j]) / max((x[i].norm() * y[j].norm()), 1e-8)
+    return similarity.cpu().numpy()
 
-        print(
-            f"Ep {epoch}/{args.epochs} | ",
-            f"train l: {np.mean(train_losses):.3f} | ",
-            f"test l: {np.mean(test_losses):.3f} | ",
-            f"trainTop10acc: {np.mean(trainTop10accs):.3f} | ",
-            f"testTop10acc: {np.mean(testTop10accs):.3f} | ",
-            f"lr: {optimizer.param_groups[0]['lr']:.5f}",
-            f"temp: {loss_func.temp.item():.3f}",
-        )
-        pkl_logger.log({
-                "epoch": epoch,
-                "train_loss": np.mean(train_losses),
-                "test_loss": np.mean(test_losses),
-                "trainTop1acc": np.mean(trainTop1accs),
-                "trainTop10acc": np.mean(trainTop10accs),
-                "testTop1acc": np.mean(testTop1accs),
-                "testTop10acc": np.mean(testTop10accs),
-                "lrate": optimizer.param_groups[0]["lr"],
-                "temp": loss_func.temp.item(),
-            }, 'logs')
-
-        if args.use_wandb:
-            performance_now = {
-                "epoch": epoch,
-                "train_loss": np.mean(train_losses),
-                "test_loss": np.mean(test_losses),
-                "trainTop1acc": np.mean(trainTop1accs),
-                "trainTop10acc": np.mean(trainTop10accs),
-                "testTop1acc": np.mean(testTop1accs),
-                "testTop10acc": np.mean(testTop10accs),
-                "lrate": optimizer.param_groups[0]["lr"],
-                "temp": loss_func.temp.item(),
-            }
-            wandb.log(performance_now)
-
-        if scheduler is not None:
-            scheduler.step()
-
-        savedir = os.path.join(args.save_root, 'weights')
-        last_weight_file = os.path.join(savedir, "model_last.pt")
-        torch.save(brain_encoder.state_dict(), last_weight_file)
-        print('model is saved as ', last_weight_file)
-        if best_acc < np.mean(testTop10accs):
-            best_weight_file = os.path.join(savedir, "model_best.pt")
-            torch.save(brain_encoder.state_dict(), best_weight_file)
-            best_acc =  np.mean(testTop10accs)
-            print('best model is updated !!, {}'.format(best_acc), best_weight_file)
-
-
-def evaluate()
-
+def evaluate(Z, Y):
+    # Z: (batch_size, 512)
+    # Y: (gt_size, 512)
+    similarity = calc_similarity(Z, Y)
+    acc_tmp = np.zeros(len(similarity))
+    for i in range(len(similarity)):
+        acc_tmp[i] = np.sum(similarity[i,:] < similarity[i,i]) / (len(similarity)-1)
+    similarity_acc = np.mean(acc_tmp)
+    print('Similarity Acc', similarity_acc)
+    return similarity_acc
 
 
 if __name__ == "__main__":
