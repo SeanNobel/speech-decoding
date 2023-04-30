@@ -14,6 +14,31 @@ def torch_exp(x: torch.Tensor):  # x: ( N, )
 def torch_log(x: torch.Tensor):
     return torch.log(x.clamp(min=1e-10))
 
+class SameLabelLoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.mse = nn.MSELoss(reduction="mean")
+
+    def forward(self, Z, labels):
+        """
+        Z: ( B, 512 ) torch.tensor
+        labels: ( B, ) np.ndarray
+        """
+        loss = []
+        for i,l in enumerate(labels):
+            indices = np.where(labels==l)[0]
+            anchor_Z = Z[l,:]
+            for ind in indices:
+                if ind == i:
+                    continue
+                else:
+                    ref_Z = Z[ind,:]
+                    loss.append(self.mse(anchor_Z, ref_Z))
+
+        return torch.mean(torch.stack(loss))
+
+
+
 
 class MSELoss(nn.Module):
     """Takes reduction mean only for batch direction"""
