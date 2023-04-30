@@ -17,15 +17,21 @@ from meg_decoding.utils.preproc_utils import (
 mne.set_log_level(verbose="WARNING")
 
 
-def normalize_per_unit(tensor):
+def normalize_per_unit(tensor, return_stats=False):
     print('normalize image_feature along unit dim')
     # array: n_samples x n_units(512)
-    tensor = tensor - np.mean(tensor, axis=0, keepdims=True)
-    tensor = tensor / np.std(tensor, axis=0,  keepdims=True)
-    return tensor
+    mean = np.mean(tensor, axis=0, keepdims=True)
+    std = np.std(tensor, axis=0,  keepdims=True)
+    tensor = tensor - mean
+    tensor = tensor / std
+    if return_stats:
+        return tensor, mean, std
+    else:
+        return tensor
 
 class GODDatasetBase(Dataset):
-    def __init__(self, args, split, preprocess_pipleine:list=[], return_label:bool=False):
+    def __init__(self, args, split, preprocess_pipleine:list=[], return_label:bool=False,
+                 mean_X=None, mean_Y=None, std_X=None, std_Y=None):
         self.args = args
         self.sub_id_map = {s:i for i, s in enumerate(list(self.args.subjects.keys()))}
         self.preprocess_pipeline = preprocess_pipleine
@@ -35,13 +41,35 @@ class GODDatasetBase(Dataset):
 
         self.X = meg_epochs.astype(np.float32) # epochs x ch x time_samples
         self.Y = image_feature_epochs.astype(np.float32) # epochs x dims
-        if args.normalize_image_features:
-            self.Y = normalize_per_unit(self.Y)
-        if args.normalize_meg:
-            self.X = normalize_per_unit(self.X)
-            
+        if mean_X is not None:
+            print('MEG is normalized by given stats')
+            self.mean_X, self.std_X= mean_X, std_X
+            self.X = self.X - self.mean_X
+            self.X = self.X / self.std_X
+        else:
+            if args.normalize_meg:
+                print('MEG is normalized by self stats')
+                self.X, self.mean_X, self.std_X = normalize_per_unit(self.X, return_stats=True)
+            else:
+                self.mean_X, self.std_X = None, None
+        if mean_Y is not None:
+            print('image features is normalized by self stats')
+            self.mean_Y, self.std_Y = mean_Y, std_Y
+            self.Y = self.Y - self.mean_Y
+            self.Y = self.Y / self.std_Y
+        else:
+            if args.normalize_image_features:
+                print('Image features is normalized by self stats')
+                self.Y, self.mean_Y, self.std_Y = normalize_per_unit(self.Y, return_stats=True)
+            else:
+                self.mean_Y, self.std_Y = None, None
+        
         self.subs = sub_epochs # epochs (x 1)
         self.labels = label_epochs # epochs (x 1)
+
+        if split == 'val':
+            self.X, self.Y, self.subs, self.labels = self.avg_same_image_sub_epochs(self.X, self.Y, self.subs, self.labels)
+        
 
         self.num_subjects = len(np.unique(self.subs))
         self.return_label = return_label
@@ -118,7 +146,33 @@ class GODDatasetBase(Dataset):
         label_epochs = np.concatenate(label_epochs, axis=0)
         image_feature_epochs = np.concatenate(image_feature_epochs, axis=0)
         print('dataset is created. size is ', meg_epochs.shape)
+        # if split == 'val':
+        #     meg_epochs, image_feature_epochs, sub_epochs, label_epochs = self.avg_same_image_sub_epochs(meg_epochs, image_feature_epochs, sub_epochs, label_epochs)
+        
         return meg_epochs, sub_epochs, label_epochs, image_feature_epochs
+
+    def avg_same_image_sub_epochs(self, Xs, Ys, subs, labels):
+        subs = np.array(subs)
+        avg_Xs = []
+        avg_Ys = []
+        new_subs = []
+        new_labels = []
+        for i in np.unique(labels):
+            for s in np.unique(subs):
+                sub_and_label_equivalent_flag = (labels==i) * (subs==s)
+                avg_Xs.append(np.mean(Xs[sub_and_label_equivalent_flag], axis=0, keepdims=True))
+                avg_Ys.append(np.mean(Ys[sub_and_label_equivalent_flag], axis=0, keepdims=True))
+                new_subs.append(s)
+                new_labels.append(i)
+        return np.concatenate(avg_Xs), np.concatenate(avg_Ys), new_subs, np.asarray(new_labels)
+    
+def same_image2neighbor(X, Y, label):
+    same_image_indices = []
+    for i in range(1,1201):
+        same_image_indices += list(np.where(label==i)[0])
+        assert len(list(np.where(label==i)[0])) > 0
+    return X[same_image_indices], Y[same_image_indices]
+
 
 
 class GODCollator(torch.nn.Module):

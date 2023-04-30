@@ -74,4 +74,6 @@ if __name__ == '__main__':
     # filepath = '/home/yainoue/meg2image/results/20230413_sbj01_seq2stat/runs/2023-04-16 19:21:02.983480'
     # filepath = '/home/yainoue/meg2image/results/20230412_mini/runs/2023-04-13 15:17:53.310665'
     filepath = '/home/yainoue/meg2image/results/20230427_sbj01_eegnet_cv_norm/runs/2023-04-28 03:53:04.866741' 
+    filepath = '/home/yainoue/meg2image/results/20230428_sbj01_eegnet_cv_norm/runs/2023-04-28 21:05:42.739003'
+    filepath = '/home/yainoue/meg2image/results/20230429_sbj01_eegnet_cv_norm_regression/runs/2023-04-30 04:16:13.736655'
     parse_data(filepath)

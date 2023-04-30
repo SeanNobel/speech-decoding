@@ -28,8 +28,6 @@ from meg_decoding.dataclass.god import GODDatasetBase, GODCollator
 from meg_decoding.utils.loggers import Pickleogger
 from meg_decoding.utils.vis_grad import get_grad
 from torch.utils.data.dataset import Subset
-import matplotlib.pyplot as plt
-import seaborn as sns
 
 
 def run(args: DictConfig) -> None:
@@ -139,12 +137,7 @@ def run(args: DictConfig) -> None:
 
     elif args.dataset == "GOD":
         source_dataset = GODDatasetBase(args, 'train')
-        outlier_dataset = GODDatasetBase(args, 'val', 
-                                         mean_X= source_dataset.mean_X,
-                                         mean_Y=source_dataset.mean_Y,
-                                         std_X=source_dataset.std_X,
-                                         std_Y=source_dataset.std_Y
-                                        )
+        # val_dataset = GODDatasetBase(args, 'val')
         # train_size = int(np.round(len(source_dataset)*0.8))
         # val_size = len(source_dataset) - train_size
 
@@ -173,15 +166,14 @@ def run(args: DictConfig) -> None:
                 train_dataset,
                 batch_size= args.batch_size,
                 drop_last=True,
-                shuffle=False,
+                shuffle=True,
                 num_workers=args.num_workers,
                 pin_memory=True,
                 worker_init_fn=seed_worker,
                 generator=g,
             )
             test_loader = DataLoader(
-                # val_dataset, # 
-                outlier_dataset,  # val_dataset
+                val_dataset,
                 batch_size=50, # args.batch_size,
                 drop_last=True,
                 shuffle=False,
@@ -210,35 +202,50 @@ def run(args: DictConfig) -> None:
     # ---------------------
     brain_encoder = get_model(args).to(device) #BrainEncoder(args).to(device)
 
-    weight_dir = os.path.join(args.save_root, 'weights')
-    last_weight_file = os.path.join(weight_dir, "model_last.pt")
-    best_weight_file = os.path.join(weight_dir, "model_last.pt")
-    if os.path.exists(best_weight_file):
-        brain_encoder.load_state_dict(torch.load(best_weight_file))
-        print('weight is loaded from ', best_weight_file)
-    else:
-        brain_encoder.load_state_dict(torch.load(last_weight_file))
-        print('weight is loaded from ', last_weight_file)
-
-
     classifier = Classifier(args)
 
     # ---------------
     #      Loss
     # ---------------
-    loss_func = CLIPLoss(args).to(device)
-    loss_func.eval()
+    loss_func = torch.nn.MSELoss(reduction="mean") #CLIPLoss(args).to(device)
+    loss_func.train()
+
+    # --------------------
+    #      Optimizer
+    # --------------------
+    optimizer = torch.optim.Adam(
+        list(brain_encoder.parameters()) + list(loss_func.parameters()), lr=float(args.lr),
+    )
+
+    if args.lr_scheduler == "cosine":
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=args.epochs, eta_min=args.lr * 0.1
+        )
+    elif args.lr_scheduler == "multistep":
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(
+            optimizer,
+            milestones=[int(m * args.epochs) for m in args.lr_multistep_mlstns],
+            gamma=args.lr_step_gamma,
+        )
+    else:
+        scheduler = None
+
     # ======================================
-    train_losses = []
-    test_losses = []
-    trainTop1accs = []
-    trainTop10accs = []
-    testTop1accs = []
-    testTop10accs = []
-    brain_encoder.eval()
-    pbar2 = tqdm(train_loader)
-    for i, batch in enumerate(pbar2):
-        with torch.no_grad():
+    best_acc = 0
+    pbar = tqdm(range(args.epochs))
+    for epoch in pbar:
+        pbar.set_description("training {}/{} epoch".format(epoch, args.epochs))
+        train_losses = []
+        test_losses = []
+        trainTop1accs = []
+        trainTop10accs = []
+        testTop1accs = []
+        testTop10accs = []
+
+        brain_encoder.train()
+        pbar2 = tqdm(train_loader)
+        for i, batch in enumerate(pbar2):
+
             if len(batch) == 3:
                 X, Y, subject_idxs = batch
             elif len(batch) == 4:
@@ -255,131 +262,105 @@ def run(args: DictConfig) -> None:
             loss = loss_func(Y, Z)
             with torch.no_grad():
                 trainTop1acc, trainTop10acc = classifier(Z, Y)
+
             train_losses.append(loss.item())
             trainTop1accs.append(trainTop1acc)
             trainTop10accs.append(trainTop10acc)
 
-    Zs = []
-    Ys = []
-    brain_encoder.eval()
-    for batch in test_loader:
-        with torch.no_grad():
+            pbar.set_description("training {}/{} iters Train/Loss: {}, Train/Top1Acc: {}, Train/Top10Acc: {}".format(i, len(train_loader), loss.item(), trainTop1acc, trainTop10acc))
+            if args.dataset == "Gwilliams2022":
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+            if args.dataset == "GOD":
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                # get_grad(brain_encoder)
+            # break
 
-            if len(batch) == 3:
-                X, Y, subject_idxs = batch
-            elif len(batch) == 4:
-                X, Y, subject_idxs, chunkIDs = batch
-            else:
-                raise ValueError("Unexpected number of items from dataloader.")
+        # Accumulate gradients for Gwilliams for the whole epoch
+        if args.dataset == "Brennan2018":
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
 
-            X, Y = X.to(device), Y.to(device)
+        brain_encoder.eval()
+        for batch in test_loader:
 
-            Z = brain_encoder(X, subject_idxs)  # 0.96 GB
-            Zs.append(Z)
-            Ys.append(Y)
+            with torch.no_grad():
 
-            loss = loss_func(Y, Z)
+                if len(batch) == 3:
+                    X, Y, subject_idxs = batch
+                elif len(batch) == 4:
+                    X, Y, subject_idxs, chunkIDs = batch
+                else:
+                    raise ValueError("Unexpected number of items from dataloader.")
 
-            testTop1acc, testTop10acc = classifier(Z, Y, test=True)  # ( 250, 1024, 360 )
+                X, Y = X.to(device), Y.to(device)
 
-        test_losses.append(loss.item())
-        testTop1accs.append(testTop1acc)
-        testTop10accs.append(testTop10acc)
-    Zs = torch.cat(Zs, dim=0)
-    Ys = torch.cat(Ys, dim=0)
+                Z = brain_encoder(X, subject_idxs)  # 0.96 GB
 
-    print(
-        f"train l: {np.mean(train_losses):.3f} | ",
-        f"test l: {np.mean(test_losses):.3f} | ",
-        f"trainTop10acc: {np.mean(trainTop10accs):.3f} | ",
-        f"testTop10acc: {np.mean(testTop10accs):.3f} | ",
-        f"temp: {loss_func.temp.item():.3f}",
-    )
-    acc, mat = evaluate(Zs, Ys)
-    vis_confusion_mat(mat, acc, os.path.join(args.save_root, 'confusion_mat.png'))
-    n_database_hits = mat.sum(axis=0)
-    print('Num of hits of dataset \n', n_database_hits)
+                loss = loss_func(Y, Z)
 
-    miss_detection = np.sum(mat>0, axis=-1)/(len(mat)-1)
-    print('Num miss detection: \n', miss_detection)
+                testTop1acc, testTop10acc = classifier(Z, Y, test=True)  # ( 250, 1024, 360 )
 
-    true_detection = np.sum(mat > 0, axis=1) / (len(mat)-1)
-    print('Num query detection: \n', true_detection)
+            test_losses.append(loss.item())
+            testTop1accs.append(testTop1acc)
+            testTop10accs.append(testTop10acc)
 
+        print(
+            f"Ep {epoch}/{args.epochs} | ",
+            f"train l: {np.mean(train_losses):.3f} | ",
+            f"test l: {np.mean(test_losses):.3f} | ",
+            f"trainTop10acc: {np.mean(trainTop10accs):.3f} | ",
+            f"testTop10acc: {np.mean(testTop10accs):.3f} | ",
+            f"lr: {optimizer.param_groups[0]['lr']:.5f}",
+            f"temp: {0.00:.3f}",
+        )
+        pkl_logger.log({
+                "epoch": epoch,
+                "train_loss": np.mean(train_losses),
+                "test_loss": np.mean(test_losses),
+                "trainTop1acc": np.mean(trainTop1accs),
+                "trainTop10acc": np.mean(trainTop10accs),
+                "testTop1acc": np.mean(testTop1accs),
+                "testTop10acc": np.mean(testTop10accs),
+                "lrate": optimizer.param_groups[0]["lr"],
+                "temp": 0,
+            }, 'logs')
 
-    N=1
-    plot_array_label =  np.argsort(miss_detection)[::-1][:N]
-    plot_array_value = np.sort(miss_detection)[::-1][:N]
-    print(plot_array_label)
-    print(plot_array_value)
-    fig, axes = plt.subplots(nrows=2, figsize=(32,8))
-    boxplot_and_plot(Zs.detach().cpu().numpy(), plot_array_label, axes[0])
-    boxplot_and_plot(Ys.detach().cpu().numpy(), plot_array_label, axes[1])
-    plt.savefig(os.path.join(args.save_root, 'boxplot_and_plot.png'),bbox_inches='tight')
-    plt.close()
-    import pdb; pdb.set_trace()
+        if args.use_wandb:
+            performance_now = {
+                "epoch": epoch,
+                "train_loss": np.mean(train_losses),
+                "test_loss": np.mean(test_losses),
+                "trainTop1acc": np.mean(trainTop1accs),
+                "trainTop10acc": np.mean(trainTop10accs),
+                "testTop1acc": np.mean(testTop1accs),
+                "testTop10acc": np.mean(testTop10accs),
+                "lrate": optimizer.param_groups[0]["lr"],
+                "temp": 0,
+            }
+            wandb.log(performance_now)
 
-    mask = np.tril(mat, k=1) > 0
-    bias_detection = np.abs(mat - mat.T)
-    biased_judge = np.sum(bias_detection==2 * mask)
-    fair_judge = np.sum(bias_detection==0 * mask)
-    print('num biased {} vs num fair judged {}'.format(biased_judge, fair_judge))
+        if scheduler is not None:
+            scheduler.step()
 
-def boxplot_and_plot(bp_array, plot_array_label, ax):
-    # array: n_image x dims(512)
-    plot_array = bp_array[plot_array_label]
-    ax.boxplot(bp_array)
-    for l, ar in zip(plot_array_label, plot_array):
-        ax.plot(np.arange(len(ar)), ar, label=str(l))
-    ax.legend(bbox_to_anchor=(1.05, 1.0), loc='upper left')
-    ax.set_xlabel('unit id')
-    ax.set_ylabel('logits')
-    
-def calc_similarity(x, y):
-    batch_size = len(x)
-    gt_size = len(y)
-
-    similarity = torch.empty(batch_size, gt_size).to('cuda')
-    for i in range(batch_size):
-        for j in range(gt_size):
-            similarity[i, j] = (x[i] @ y[j]) / max((x[i].norm() * y[j].norm()), 1e-8)
-    return similarity.cpu().numpy()
-
-def evaluate(Z, Y):
-    # Z: (batch_size, 512)
-    # Y: (gt_size, 512)
-    # 仮説1:判定に偏りがある。-> あるサンプルのimageの特徴量がMEGの潜在空間ににているかどうかを判定するだけの基準になっているのではないか？
-    Z = Z - Z.mean(dim=0, keepdims=True)
-    Z = Z / Z.std(dim=0, keepdims=True)
-    binary_confusion_matrix = np.zeros([len(Z), len(Y)])
-    similarity = calc_similarity(Z, Y)
-    acc_tmp = np.zeros(len(similarity))
-    for i in range(len(similarity)):
-        acc_tmp[i] = np.sum(similarity[i,:] < similarity[i,i]) / (len(similarity)-1)
-        binary_confusion_matrix[i,similarity[i,:] < similarity[i,i]] = -1 
-        binary_confusion_matrix[i,similarity[i,:] > similarity[i,i]] = 1 
-    similarity_acc = np.mean(acc_tmp)
-    
-
-    print('Similarity Acc', similarity_acc)
-    
-    return similarity_acc, binary_confusion_matrix
-
-def vis_confusion_mat(mat, acc, savefile=None):
-    sns.heatmap(mat, square=True, annot=False)
-    plt.xlabel('database data')
-    plt.ylabel('query data')
-    plt.title('similaruty acc: {}'.format(acc))
-    plt.savefig(savefile)
-    plt.close()
-    print('saved to ', savefile)
-
+        savedir = os.path.join(args.save_root, 'weights')
+        last_weight_file = os.path.join(savedir, "model_last.pt")
+        torch.save(brain_encoder.state_dict(), last_weight_file)
+        print('model is saved as ', last_weight_file)
+        if best_acc < np.mean(testTop10accs):
+            best_weight_file = os.path.join(savedir, "model_best.pt")
+            torch.save(brain_encoder.state_dict(), best_weight_file)
+            best_acc =  np.mean(testTop10accs)
+            print('best model is updated !!, {}'.format(best_acc), best_weight_file)
 
 if __name__ == "__main__":
     from hydra import initialize, compose
     with initialize(version_base=None, config_path="../configs/"):
-        args = compose(config_name='20230427_sbj01_eegnet')
-        # args = compose(config_name='20230425_sbj01_seq2stat')
+        args = compose(config_name='20230429_sbj01_eegnet regression')
     if not os.path.exists(os.path.join(args.save_root, 'weights')):
         os.makedirs(os.path.join(args.save_root, 'weights'))
     run(args)

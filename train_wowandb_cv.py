@@ -357,15 +357,10 @@ def run(args: DictConfig) -> None:
             best_acc =  np.mean(testTop10accs)
             print('best model is updated !!, {}'.format(best_acc), best_weight_file)
 
-
-def evaluate()
-
-
-
 if __name__ == "__main__":
     from hydra import initialize, compose
     with initialize(version_base=None, config_path="../configs/"):
-        args = compose(config_name='20230427_sbj01_eegnet')
+        args = compose(config_name='20230428_sbj01_eegnet')
     if not os.path.exists(os.path.join(args.save_root, 'weights')):
         os.makedirs(os.path.join(args.save_root, 'weights'))
     run(args)
