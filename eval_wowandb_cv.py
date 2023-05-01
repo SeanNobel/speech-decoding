@@ -212,7 +212,7 @@ def run(args: DictConfig) -> None:
 
     weight_dir = os.path.join(args.save_root, 'weights')
     last_weight_file = os.path.join(weight_dir, "model_last.pt")
-    best_weight_file = os.path.join(weight_dir, "model_last.pt")
+    best_weight_file = os.path.join(weight_dir, "model_best.pt")
     if os.path.exists(best_weight_file):
         brain_encoder.load_state_dict(torch.load(best_weight_file))
         print('weight is loaded from ', best_weight_file)
@@ -295,35 +295,62 @@ def run(args: DictConfig) -> None:
         f"testTop10acc: {np.mean(testTop10accs):.3f} | ",
         f"temp: {loss_func.temp.item():.3f}",
     )
+
+
+    # 仮説1:判定に偏りがある。-> あるサンプルのimageの特徴量がMEGの潜在空間ににているかどうかを判定するだけの基準になっているのではないか？
+    Zs = Zs - Zs.mean(dim=0, keepdims=True)
+    Zs = Zs / Zs.std(dim=0, keepdims=True)
+    Zs = Zs - Zs.mean(dim=1, keepdims=True)
+    Zs = Zs / Zs.std(dim=1, keepdims=True)
+
     acc, mat = evaluate(Zs, Ys)
     vis_confusion_mat(mat, acc, os.path.join(args.save_root, 'confusion_mat.png'))
     n_database_hits = mat.sum(axis=0)
     print('Num of hits of dataset \n', n_database_hits)
 
-    miss_detection = np.sum(mat>0, axis=-1)/(len(mat)-1)
+    miss_detection = np.sum(mat < 0, axis=0)/(len(mat)-1)  # FP
     print('Num miss detection: \n', miss_detection)
 
-    true_detection = np.sum(mat > 0, axis=1) / (len(mat)-1)
+    true_detection = np.sum(mat > 0, axis=1) / (len(mat)-1) # TP
     print('Num query detection: \n', true_detection)
 
 
     N=1
     plot_array_label =  np.argsort(miss_detection)[::-1][:N]
     plot_array_value = np.sort(miss_detection)[::-1][:N]
-    print(plot_array_label)
-    print(plot_array_value)
+    print('miss detaction id', plot_array_label)
+    print('miss detection value', plot_array_value)
     fig, axes = plt.subplots(nrows=2, figsize=(32,8))
     boxplot_and_plot(Zs.detach().cpu().numpy(), plot_array_label, axes[0])
     boxplot_and_plot(Ys.detach().cpu().numpy(), plot_array_label, axes[1])
     plt.savefig(os.path.join(args.save_root, 'boxplot_and_plot.png'),bbox_inches='tight')
     plt.close()
-    import pdb; pdb.set_trace()
 
-    mask = np.tril(mat, k=1) > 0
+    N=1
+    plot_array_label =  np.argsort(true_detection)[:N]
+    plot_array_value = np.sort(true_detection)[:N]
+    print(plot_array_label)
+    print(plot_array_value)
+    fig, axes = plt.subplots(nrows=2, figsize=(32,8))
+    boxplot_and_plot(Zs.detach().cpu().numpy(), plot_array_label, axes[0])
+    boxplot_and_plot(Ys.detach().cpu().numpy(), plot_array_label, axes[1])
+    plt.savefig(os.path.join(args.save_root, 'boxplot_and_plot_weak.png'),bbox_inches='tight')
+    plt.close()
+    
+    mask = np.tril(np.ones_like(mat), k=-1) > 0
     bias_detection = np.abs(mat - mat.T)
-    biased_judge = np.sum(bias_detection==2 * mask)
-    fair_judge = np.sum(bias_detection==0 * mask)
+    biased_judge = np.sum((bias_detection==2) * mask)
+    fair_judge = np.sum((bias_detection==0) * mask)
     print('num biased {} vs num fair judged {}'.format(biased_judge, fair_judge))
+    
+    Zs_std = Zs.std(dim=1)
+    plt.scatter(Zs_std.detach().cpu().numpy(), true_detection)
+    plt.xlabel('std of Z')
+    plt.ylabel('TP ratio')
+    plt.savefig(os.path.join(args.save_root, 'std_vs_tp.png'),bbox_inches='tight')
+
+    similarity = calc_similarity(Zs, Ys)
+    import pdb; pdb.set_trace()
 
 def boxplot_and_plot(bp_array, plot_array_label, ax):
     # array: n_image x dims(512)
@@ -348,16 +375,13 @@ def calc_similarity(x, y):
 def evaluate(Z, Y):
     # Z: (batch_size, 512)
     # Y: (gt_size, 512)
-    # 仮説1:判定に偏りがある。-> あるサンプルのimageの特徴量がMEGの潜在空間ににているかどうかを判定するだけの基準になっているのではないか？
-    Z = Z - Z.mean(dim=0, keepdims=True)
-    Z = Z / Z.std(dim=0, keepdims=True)
     binary_confusion_matrix = np.zeros([len(Z), len(Y)])
     similarity = calc_similarity(Z, Y)
     acc_tmp = np.zeros(len(similarity))
     for i in range(len(similarity)):
         acc_tmp[i] = np.sum(similarity[i,:] < similarity[i,i]) / (len(similarity)-1)
-        binary_confusion_matrix[i,similarity[i,:] < similarity[i,i]] = -1 
-        binary_confusion_matrix[i,similarity[i,:] > similarity[i,i]] = 1 
+        binary_confusion_matrix[i,similarity[i,:] < similarity[i,i]] = 1 
+        binary_confusion_matrix[i,similarity[i,:] > similarity[i,i]] = -1 
     similarity_acc = np.mean(acc_tmp)
     
 
@@ -378,7 +402,7 @@ def vis_confusion_mat(mat, acc, savefile=None):
 if __name__ == "__main__":
     from hydra import initialize, compose
     with initialize(version_base=None, config_path="../configs/"):
-        args = compose(config_name='20230427_sbj01_eegnet')
+        args = compose(config_name='20230429_sbj01_eegnet_regression')
         # args = compose(config_name='20230425_sbj01_seq2stat')
     if not os.path.exists(os.path.join(args.save_root, 'weights')):
         os.makedirs(os.path.join(args.save_root, 'weights'))
