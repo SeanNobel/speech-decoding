@@ -30,7 +30,8 @@ from meg_decoding.utils.vis_grad import get_grad
 from torch.utils.data.dataset import Subset
 import matplotlib.pyplot as plt
 import seaborn as sns
-
+import pickle
+from PIL import Image
 
 def run(args: DictConfig) -> None:
 
@@ -145,6 +146,19 @@ def run(args: DictConfig) -> None:
                                          std_X=source_dataset.std_X,
                                          std_Y=source_dataset.std_Y
                                         )
+        with open("/home/yainoue/meg2image/codes/MEG-decoding/data/ImageNet/val_features.pkl", "rb") as f:
+            imagenet_data = pickle.load(f)
+            imagenet_Y = np.zeros((len(imagenet_data), 512))
+            imagenet_name = [None] * len(imagenet_data)
+            cnt = 0
+            for k, v in imagenet_data.items():
+                imagenet_Y[cnt] = v # v: 512
+                imagenet_name[cnt] = k
+                cnt += 1
+            imagenet_Y -= source_dataset.mean_Y
+            imagenet_Y /= source_dataset.std_Y
+            imagenet_Y = torch.Tensor(imagenet_Y).to(device)
+
         # train_size = int(np.round(len(source_dataset)*0.8))
         # val_size = len(source_dataset) - train_size
 
@@ -229,32 +243,32 @@ def run(args: DictConfig) -> None:
     loss_func = CLIPLoss(args).to(device)
     loss_func.eval()
     # ======================================
-    train_losses = []
+    # train_losses = []
     test_losses = []
-    trainTop1accs = []
-    trainTop10accs = []
+    # trainTop1accs = []
+    # trainTop10accs = []
     testTop1accs = []
     testTop10accs = []
-    brain_encoder.eval()
-    pbar2 = tqdm(train_loader)
-    for i, batch in enumerate(pbar2):
-        with torch.no_grad():
-            if len(batch) == 3:
-                X, Y, subject_idxs = batch
-            elif len(batch) == 4:
-                X, Y, subject_idxs, chunkIDs = batch
-            else:
-                raise ValueError("Unexpected number of items from dataloader.")
+    # brain_encoder.eval()
+    # pbar2 = tqdm(train_loader)
+    # for i, batch in enumerate(pbar2):
+    #     with torch.no_grad():
+    #         if len(batch) == 3:
+    #             X, Y, subject_idxs = batch
+    #         elif len(batch) == 4:
+    #             X, Y, subject_idxs, chunkIDs = batch
+    #         else:
+    #             raise ValueError("Unexpected number of items from dataloader.")
 
-            X, Y = X.to(device), Y.to(device)
-            # import pdb; pdb.set_trace()
-            Z = brain_encoder(X, subject_idxs)
-            loss = loss_func(Y, Z)
-            with torch.no_grad():
-                trainTop1acc, trainTop10acc = classifier(Z, Y)
-            train_losses.append(loss.item())
-            trainTop1accs.append(trainTop1acc)
-            trainTop10accs.append(trainTop10acc)
+    #         X, Y = X.to(device), Y.to(device)
+    #         # import pdb; pdb.set_trace()
+    #         Z = brain_encoder(X, subject_idxs)
+    #         loss = loss_func(Y, Z)
+    #         with torch.no_grad():
+    #             trainTop1acc, trainTop10acc = classifier(Z, Y)
+    #         train_losses.append(loss.item())
+    #         trainTop1accs.append(trainTop1acc)
+    #         trainTop10accs.append(trainTop10acc)
 
     Zs = []
     Ys = []
@@ -289,11 +303,11 @@ def run(args: DictConfig) -> None:
     Ls = torch.cat(Ls, dim=0).detach().cpu().numpy()
 
     print(
-        f"train l: {np.mean(train_losses):.3f} | ",
+        # f"train l: {np.mean(train_losses):.3f} | ",
         f"test l: {np.mean(test_losses):.3f} | ",
-        f"trainTop10acc: {np.mean(trainTop10accs):.3f} | ",
+        # f"trainTop10acc: {np.mean(trainTop10accs):.3f} | ",
         f"testTop10acc: {np.mean(testTop10accs):.3f} | ",
-        f"temp: {loss_func.temp.item():.3f}",
+        # f"temp: {loss_func.temp.item():.3f}",
     )
 
 
@@ -349,11 +363,18 @@ def run(args: DictConfig) -> None:
     plt.ylabel('TP ratio')
     plt.savefig(os.path.join(args.save_root, 'std_vs_tp.png'),bbox_inches='tight')
 
-    similarity = calc_similarity(Zs, Ys)
+    Ys_with_imagenet = torch.cat([Ys, imagenet_Y], dim=0)
+    similarity = calc_similarity(Zs, Ys_with_imagenet)
     # output top5 similarity
     top5_similarity = {'query_image_id':[], 'acc(scene_id)':[], 
                        'top1_image_id':[], 'top2_image_id':[], 'top3_image_id':[], 'top4_image_id':[], 'top5_image_id':[]}
-    acc_per_sample = np.round((mat>0).sum(axis=1)/49, decimals=3)
+    
+    acc_per_sample = np.zeros(len(similarity))
+    for i in range(len(similarity)):
+        acc_per_sample[i] = np.sum(similarity[i,:] < similarity[i,i]) / (similarity.shape[1]-1)
+
+    print('scene identification acc with imagenet_val: ', acc_per_sample.mean())
+    # import pdb; pdb.set_trace()
     for i, l in enumerate(Ls):
         sim_vec = similarity[i,:]
         top5_similarity['query_image_id'].append(l)
@@ -361,10 +382,44 @@ def run(args: DictConfig) -> None:
         ranking = np.argsort(sim_vec)[::-1][:5] + 1 # 1始まりにする
         for k in range(1,6):
             key = f'top{k}_image_id'
-            top5_similarity[key].append(ranking[k-1])
+            if ranking[k-1] <= 50:
+                image_name = str(ranking[k-1])
+            else:
+                image_name = imagenet_name[ranking[k-1]-50-1]
+            top5_similarity[key].append(image_name)
     top5_similarity = pd.DataFrame(top5_similarity)
-    top5_similarity.to_csv(os.path.join(args.save_root, 'top5.csv'))
-    import pdb; pdb.set_trace()
+    top5_similarity.to_csv(os.path.join(args.save_root, 'top5_with_imagenet_val.csv'))
+    # import pdb; pdb.set_trace()
+    
+                        
+
+def save_top5_prediction():
+    top5_similarity = pd.read_csv(os.path.join(args.save_root, 'top5_with_imagenet_val.csv'))
+    split = 5
+    unit = int(len(top5_similarity) / split)
+    imagenet_val_root = '/storage/dataset/image/ImageNet/ILSVRC2012_val/'
+    for i in range(split):
+        image_tiles = []
+        for j in range(i*unit, (i+1)*unit):
+            row = top5_similarity.iloc[j]
+            row_image_list = []
+            for key in ['top1_image_id', 'top2_image_id', 'top3_image_id', 'top4_image_id', 'top5_image_id']:
+                image_file_name = os.path.join(imagenet_val_root, str(row[key]))
+                if os.path.exists(image_file_name):
+                    image = Image.open(image_file_name)
+                    image = image.resize((112,112))
+                    image = np.array(image)
+                    assert image.shape[0] == 112, 'image has shape {}'.format(image.shape)
+                else:
+                    image = np.ones([112,112,3]).astype(np.uint8)
+                row_image_list.append(image)
+            row_image = np.concatenate(row_image_list, axis=0)
+            image_tiles.append(row_image)
+            # import pdb; pdb.set_trace()
+        image_tiles = np.concatenate(image_tiles, axis=1)
+        pil_img = Image.fromarray(image_tiles)
+        pil_img.save(os.path.join(args.save_root, f'top5_with_imagenet_val-{i}.png'))
+        # cv2.write_image(os.path.join(args.save_root, f'top5_with_imagenet_val-{i}.png'), image_tiles)
 
 
 
@@ -395,7 +450,7 @@ def evaluate(Z, Y):
     similarity = calc_similarity(Z, Y)
     acc_tmp = np.zeros(len(similarity))
     for i in range(len(similarity)):
-        acc_tmp[i] = np.sum(similarity[i,:] < similarity[i,i]) / (len(similarity)-1)
+        acc_tmp[i] = np.sum(similarity[i,:] < similarity[i,i]) / (similarity.shape[1]-1)
         binary_confusion_matrix[i,similarity[i,:] < similarity[i,i]] = 1 
         binary_confusion_matrix[i,similarity[i,:] > similarity[i,i]] = -1 
     similarity_acc = np.mean(acc_tmp)
@@ -423,4 +478,6 @@ if __name__ == "__main__":
         # args = compose(config_name='20230425_sbj01_seq2stat')
     if not os.path.exists(os.path.join(args.save_root, 'weights')):
         os.makedirs(os.path.join(args.save_root, 'weights'))
-    run(args)
+    # run(args)
+
+    save_top5_prediction()
