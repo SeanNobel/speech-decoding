@@ -6,7 +6,7 @@ from time import time
 from tqdm import tqdm, trange
 from termcolor import cprint
 # import wandb
-
+import pandas as pd
 from omegaconf import DictConfig, open_dict
 import hydra
 from hydra.utils import get_original_cwd
@@ -138,8 +138,8 @@ def run(args: DictConfig) -> None:
         )
 
     elif args.dataset == "GOD":
-        source_dataset = GODDatasetBase(args, 'train')
-        outlier_dataset = GODDatasetBase(args, 'val', 
+        source_dataset = GODDatasetBase(args, 'train', return_label=True)
+        outlier_dataset = GODDatasetBase(args, 'val', return_label=True,
                                          mean_X= source_dataset.mean_X,
                                          mean_Y=source_dataset.mean_Y,
                                          std_X=source_dataset.std_X,
@@ -243,9 +243,6 @@ def run(args: DictConfig) -> None:
                 X, Y, subject_idxs = batch
             elif len(batch) == 4:
                 X, Y, subject_idxs, chunkIDs = batch
-                assert (
-                    len(chunkIDs.unique()) == X.shape[0]
-                ), "Duplicate segments in batch are not allowed. Aborting."
             else:
                 raise ValueError("Unexpected number of items from dataloader.")
 
@@ -261,6 +258,7 @@ def run(args: DictConfig) -> None:
 
     Zs = []
     Ys = []
+    Ls = []
     brain_encoder.eval()
     for batch in test_loader:
         with torch.no_grad():
@@ -268,7 +266,7 @@ def run(args: DictConfig) -> None:
             if len(batch) == 3:
                 X, Y, subject_idxs = batch
             elif len(batch) == 4:
-                X, Y, subject_idxs, chunkIDs = batch
+                X, Y, subject_idxs, Labels = batch
             else:
                 raise ValueError("Unexpected number of items from dataloader.")
 
@@ -277,6 +275,7 @@ def run(args: DictConfig) -> None:
             Z = brain_encoder(X, subject_idxs)  # 0.96 GB
             Zs.append(Z)
             Ys.append(Y)
+            Ls.append(Labels)
 
             loss = loss_func(Y, Z)
 
@@ -287,6 +286,7 @@ def run(args: DictConfig) -> None:
         testTop10accs.append(testTop10acc)
     Zs = torch.cat(Zs, dim=0)
     Ys = torch.cat(Ys, dim=0)
+    Ls = torch.cat(Ls, dim=0).detach().cpu().numpy()
 
     print(
         f"train l: {np.mean(train_losses):.3f} | ",
@@ -350,7 +350,23 @@ def run(args: DictConfig) -> None:
     plt.savefig(os.path.join(args.save_root, 'std_vs_tp.png'),bbox_inches='tight')
 
     similarity = calc_similarity(Zs, Ys)
+    # output top5 similarity
+    top5_similarity = {'query_image_id':[], 'acc(scene_id)':[], 
+                       'top1_image_id':[], 'top2_image_id':[], 'top3_image_id':[], 'top4_image_id':[], 'top5_image_id':[]}
+    acc_per_sample = np.round((mat>0).sum(axis=1)/49, decimals=3)
+    for i, l in enumerate(Ls):
+        sim_vec = similarity[i,:]
+        top5_similarity['query_image_id'].append(l)
+        top5_similarity['acc(scene_id)'].append(acc_per_sample[i])
+        ranking = np.argsort(sim_vec)[::-1][:5] + 1 # 1始まりにする
+        for k in range(1,6):
+            key = f'top{k}_image_id'
+            top5_similarity[key].append(ranking[k-1])
+    top5_similarity = pd.DataFrame(top5_similarity)
+    top5_similarity.to_csv(os.path.join(args.save_root, 'top5.csv'))
     import pdb; pdb.set_trace()
+
+
 
 def boxplot_and_plot(bp_array, plot_array_label, ax):
     # array: n_image x dims(512)
@@ -393,7 +409,7 @@ def vis_confusion_mat(mat, acc, savefile=None):
     sns.heatmap(mat, square=True, annot=False)
     plt.xlabel('database data')
     plt.ylabel('query data')
-    plt.title('similaruty acc: {}'.format(acc))
+    plt.title('similarity acc: {}'.format(acc))
     plt.savefig(savefile)
     plt.close()
     print('saved to ', savefile)
@@ -403,6 +419,7 @@ if __name__ == "__main__":
     from hydra import initialize, compose
     with initialize(version_base=None, config_path="../configs/"):
         args = compose(config_name='20230429_sbj01_eegnet_regression')
+        # args = compose(config_name='20230501_all_eegnet_regression')
         # args = compose(config_name='20230425_sbj01_seq2stat')
     if not os.path.exists(os.path.join(args.save_root, 'weights')):
         os.makedirs(os.path.join(args.save_root, 'weights'))

@@ -1,0 +1,26 @@
+# === experiment metadata === #
+subject: sbj01
+fs: 1000
+train:
+  labels:
+    - ses_1.mat
+  mat:
+    - data_block001.mat
+  trigger:
+    - ses01.mat
+  rest:
+    - data_rest001.mat
+val:
+  labels:
+    - val_1.mat
+    - val_2.mat
+  mat:
+    - data_val001.mat
+    - data_val002.mat
+
+  trigger:
+    - val01.mat
+    - val02.mat
+  rest:
+    - data_rest001.mat
+    - data_rest001.mat

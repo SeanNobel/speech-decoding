@@ -1,0 +1,86 @@
+# === experiment metadata === #
+subject: sbj01
+fs: 1000
+train:
+  labels:
+    - ses_1.mat
+    - ses_2.mat
+    - ses_3.mat
+    - ses_4.mat
+    - ses_5.mat
+    - ses_6.mat
+    - ses_7.mat
+    - ses_8.mat
+    - ses_9.mat
+    - ses_10.mat
+    - ses_11.mat
+    - ses_12.mat
+  mat:
+    - data_block001.mat
+    - data_block002.mat
+    - data_block003.mat
+    - data_block004.mat
+    - data_block005.mat
+    - data_block006.mat
+    - data_block007.mat
+    - data_block008.mat
+    - data_block009.mat
+    - data_block010.mat
+    - data_block011.mat
+    - data_block012.mat
+  trigger:
+    - ses01.mat
+    - ses02.mat
+    - ses03.mat
+    - ses04.mat
+    - ses05.mat
+    - ses06.mat
+    - ses07.mat
+    - ses08.mat
+    - ses09.mat
+    - ses10.mat
+    - ses11.mat
+    - ses12.mat
+  rest:
+    - data_rest001.mat
+    - data_rest001.mat
+    - data_rest001.mat
+    - data_rest001.mat
+    - data_rest001.mat
+    - data_rest001.mat
+    - data_rest002.mat
+    - data_rest002.mat
+    - data_rest002.mat
+    - data_rest002.mat
+    - data_rest002.mat
+    - data_rest002.mat
+val:
+  labels:
+    - val_1.mat
+    - val_2.mat
+    - val_3.mat
+    - val_4.mat
+    - val_5.mat
+    - val_6.mat
+  mat:
+    - data_val001.mat
+    - data_val002.mat
+    - data_val003.mat
+    - data_val004.mat
+    - data_val005.mat
+    - data_val006.mat
+
+  trigger:
+    - val01.mat
+    - val02.mat
+    - val03.mat
+    - val04.mat
+    - val05.mat
+    - val06.mat
+  rest:
+    - data_rest001.mat
+    - data_rest001.mat
+    - data_rest001.mat
+    - data_rest002.mat
+    - data_rest002.mat
+    - data_rest002.mat

@@ -1,0 +1,66 @@
+defaults:
+  - subjects: pattern_sbj01
+
+
+# ====== Path settings =======
+data_root: '/work/project/MEG_GOD/GOD_dataset/'
+save_root: '/home/yainoue/meg2image/results/20230419_sbj01_seq2stat2'
+montage_path: './data/GOD/montage.csv'
+ch_region_path: './data/GOD/ch_region.json'
+root_dir: # dummy
+# ====== Spatial Region settings =======
+region:
+  - occipital/left
+  - occipital/right
+
+# ====== Time Region settings ======
+window:
+  start: 0.05 # [s]
+  end: 0.5 # [s]
+baseline: rest
+
+# == Data pre-processing parameters === #
+preprocs:
+  brain_resample_rate: 120 # 1000 # Hz
+  baseline_len_sec: 0.2
+  brain_filter: [1.0, 60] # null is allowed
+  last4layers: False       # if True, the brain_encoder's emsize will be 1024, not 512
+  # subject_wise: True       # whether to scale each subject's EEG dataset individually (only for Brennan2018)
+  clamp: True
+  clamp_lim: 20
+
+# ===== Training settings ====
+use_wandb: false
+reproducible: true
+dataset: GOD
+use_sampler: true
+z_scoring: false
+rest_duration: 60
+num_workers: 6
+batch_size: 64 # original: 64, paper: 128
+updates: 200 # 1200
+lr: 3e-4 # 3e-2
+lr_scheduler: none # cosine or multistep or none
+lr_multistep_mlstns: [0.4, 0.6, 0.8, 0.9]
+lr_step_gamma: 0.5
+epochs: 300
+reduction: mean
+
+# ==== Architecture ==== #
+model: brain_endcoder_seq2static
+ConvBlocks:
+  ks: [11, 11, 5, 3, 3]
+avgpools: 
+  ks: [2,2,2,2]
+D1: 270
+D2: 320
+F: 512 # NOTE: because if you set last4layers=False, then it's set to 1024 in the dataset class
+K: 32
+d_drop: 0.2 # for spatial attention, drop channels within d_drop of a randomly selected channel
+seq2seq: false # これは、MEGが時系列をもち、ペアデータが静止画の時に必要な操作 or 時系列モデルなら他の方法も可能
+temp_trainable: false
+init_temperature: 4.5 # 0
+criterion: binary_crossentropy # crossentropy
+
+memory_efficient: True
+

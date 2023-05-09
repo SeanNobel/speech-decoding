@@ -30,7 +30,7 @@ def normalize_per_unit(tensor, return_stats=False):
         return tensor
 
 class GODDatasetBase(Dataset):
-    def __init__(self, args, split, preprocess_pipleine:list=[], return_label:bool=False,
+    def __init__(self, args, split, preprocess_pipleine:list=[], return_label:bool=False, 
                  mean_X=None, mean_Y=None, std_X=None, std_Y=None):
         self.args = args
         self.sub_id_map = {s:i for i, s in enumerate(list(self.args.subjects.keys()))}
@@ -70,7 +70,7 @@ class GODDatasetBase(Dataset):
         if split == 'val':
             self.X, self.Y, self.subs, self.labels = self.avg_same_image_sub_epochs(self.X, self.Y, self.subs, self.labels)
         
-
+        self.labels = self.labels.astype(np.int16)
         self.num_subjects = len(np.unique(self.subs))
         self.return_label = return_label
 

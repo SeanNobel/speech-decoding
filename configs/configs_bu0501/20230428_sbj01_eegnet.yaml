@@ -1,0 +1,84 @@
+defaults:
+  - subjects:  pattern_sbj01
+
+
+# ====== Path settings =======
+data_root: '/work/project/MEG_GOD/GOD_dataset/'
+save_root: '/home/yainoue/meg2image/results/20230428_sbj01_eegnet_cv_norm'
+montage_path: './data/GOD/montage.csv'
+ch_region_path: './data/GOD/ch_region.json'
+root_dir: # dummy
+# ====== Spatial Region settings =======
+region:
+  - occipital/left
+  - occipital/right
+  # - frontal/left
+  # - frontal/right
+  # - temporal/left
+  # - temporal/right
+  # - parietal/left
+  # - parietal/right
+  # - central/left
+  # - central/right  
+
+# ====== Time Region settings ======
+window:
+  start: 0.2 # [s]
+  end: 0.4 # [s]
+baseline: rest
+
+# == Data pre-processing parameters === #
+preprocs:
+  brain_resample_rate: 120 # 1000 # Hz
+  baseline_len_sec: 0
+  brain_filter: [2,5] #[1.0, 60] # null is allowed
+  last4layers: False       # if True, the brain_encoder's emsize will be 1024, not 512
+  # subject_wise: True       # whether to scale each subject's EEG dataset individually (only for Brennan2018)
+  clamp: True
+  clamp_lim: 20
+
+# ===== Training settings ====
+use_wandb: false
+reproducible: true
+dataset: GOD
+use_sampler: false
+z_scoring: true
+rest_duration: 60
+num_workers: 6
+batch_size: 256 # original: 64, paper: 128
+updates: 200
+lr: 3e-4
+lr_scheduler: none # cosine or multistep or none
+lr_multistep_mlstns: [0.4, 0.6, 0.8, 0.9]
+lr_step_gamma: 0.5
+epochs: 300
+reduction: mean
+
+# ==== Architecture ==== #
+model: eegnet
+k1: 10 # 960
+k2: 4 # 96
+F1: 16
+F2: 32
+D: 2
+# p0: 10
+p1: 2 # 40
+p2: 4 # 80
+dr1: 0.25
+dr2: 0.38
+# for EEGNet_Multi
+n_head: 8
+dim_per_head: 64
+fc1: 256
+fc2: 128
+# num_channels: 22
+
+init_temperature: 5.1
+temp_trainable: true
+criterion: crossentropy
+
+normalize_image_features: True
+normalize_meg : True
+memory_efficient: True
+channel_size: null # dummy not use
+
