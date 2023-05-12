@@ -5,16 +5,15 @@ import torch.nn as nn
 from time import time
 import torch.nn.functional as F
 from termcolor import cprint
-from einops import rearrange
 from tqdm import tqdm
 
-from speech_decoding.utils.layout import ch_locations_2d
+from speech_decoding.speech_decoding.utils.layout import ch_locations_2d
 
 
 class SpatialAttention(nn.Module):
     """Same as SpatialAttentionVer2, but a little more concise"""
 
-    def __init__(self, args):
+    def __init__(self, args, layout_fn):
         super(SpatialAttention, self).__init__()
 
         # vectorize of k's and l's
@@ -26,7 +25,7 @@ class SpatialAttention(nn.Module):
         k, l = a[:, 0], a[:, 1]
 
         # vectorize x- and y-positions of the sensors
-        loc = ch_locations_2d(args)
+        loc = layout_fn(args)
         x, y = loc[:, 0], loc[:, 1]
 
         # make a complex-valued parameter, reshape k,l into one dimension
@@ -89,18 +88,24 @@ class SpatialDropout(nn.Module):
 
 
 class SubjectBlock(nn.Module):
-    def __init__(self, args):
+    def __init__(self, args, num_subjects, layout_fn):
         super(SubjectBlock, self).__init__()
 
-        self.num_subjects = args.num_subjects
+        self.num_subjects = num_subjects
         self.D1 = args.D1
         self.K = args.K
-        self.spatial_attention = SpatialAttention(args)
-        self.conv = nn.Conv1d(in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1)
+        self.spatial_attention = SpatialAttention(args, layout_fn)
+        self.conv = nn.Conv1d(
+            in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1
+        )
         self.subject_layer = nn.ModuleList(
             [
                 nn.Conv1d(
-                    in_channels=self.D1, out_channels=self.D1, kernel_size=1, bias=False, stride=1
+                    in_channels=self.D1,
+                    out_channels=self.D1,
+                    kernel_size=1,
+                    bias=False,
+                    stride=1,
                 )
                 for _ in range(self.num_subjects)
             ]
@@ -165,17 +170,20 @@ class ConvBlock(nn.Module):
 
 
 class BrainEncoder(nn.Module):
-    def __init__(self, args):
+    def __init__(self, args, num_subjects=None, layout_fn=None):
         super(BrainEncoder, self).__init__()
 
-        self.num_subjects = args.num_subjects
+        self.num_subjects = args.num_subjects if num_subjects is None else num_subjects
         self.D1 = args.D1
         self.D2 = args.D2
-        self.F = args.F if not args.preprocs["last4layers"] else 1024
+        self.F = args.F
         self.K = args.K
         self.dataset_name = args.dataset
 
-        self.subject_block = SubjectBlock(args)
+        if layout_fn is None:
+            layout_fn = ch_locations_2d
+
+        self.subject_block = SubjectBlock(args, self.num_subjects, layout_fn)
         # self.subject_block = SubjectBlock_proto(args)
         # cprint("USING THE OLD IMPLEMENTATION OF THE SUBJECT BLOCK", 'red', 'on_blue', attrs=['bold'])
 
@@ -243,7 +251,9 @@ class Classifier(nn.Module):
             top10accuracy = np.mean(
                 [
                     label in row
-                    for row, label in zip(torch.topk(similarity, 10, dim=1, largest=True)[1], diags)
+                    for row, label in zip(
+                        torch.topk(similarity, 10, dim=1, largest=True)[1], diags
+                    )
                 ]
             )
         except:
