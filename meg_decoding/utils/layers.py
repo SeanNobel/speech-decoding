@@ -44,21 +44,26 @@ class SubBatchNorm2D(nn.Module):
         self.bns = nn.ModuleList([nn.BatchNorm2d(n_dims) for _ in range(n_subs)])
 
     def forward(self, x:torch.Tensor, sub:torch.Tensor)->torch.Tensor:
-        indices = []
-        hs = []
+        # indices = []
+        # hs = []
+        ret_tensor = torch.zeros_like(x)
         for s in range(self.n_subs):
             s_inds = torch.where(sub==s)[0]
             if len(s_inds) == 0:
                 continue
-            indices.append(s_inds)
+            # indices.append(s_inds)
             h =  self.bns[s](torch.index_select(x, 0, s_inds))
-            hs.append(h)
+            # hs.append(h)
+            # ret_tensor[s_inds[i]]に　h[i]の値を入れる(hのiは本来s_inds[i]に存在するべき値)
+            # ret_tensor.scatter_(0, h, s_inds)
+            ret_tensor[s_inds] = h
 
-        hs = torch.cat(hs, dim=0)
-        indices = torch.cat(indices, dim=0)
-        import pdb; pdb.set_trace()
-        x = torch.gather(hs, 0, indices)
-        return x
+        # hs = torch.cat(hs, dim=0)
+        # indices = torch.cat(indices, dim=0)
+        # # hs（n_sub_trials x ch x h x w） をindicesに従って
+        # x = torch.gather(hs, 0, indices)
+        return ret_tensor
+
 
 class DeepSetConv2D(nn.Module):
     def __init__(self, input_ch:int, middle_ch:int, output_ch:int,
@@ -108,12 +113,18 @@ class CogitatDeepSetNorm(nn.Module):
         stats = self.fc1(stats) # 1 x middle_dims
         stats = self.act(stats)
 
+        # aligned_stats = torch.zeros_like(stats)
+        # aligned_stats.index_put_((sub,) , stats)
+        # n_subs個の統計量をsubに従って分配
         stats = torch.gather(stats, 0, sub) # batch x middle_dims
+
+
 
         x = torch.cat([x, stats], dim=-1) # batch x (input_dims + middle_dims)
         x = self.fc2(x) # batch x output_dims
         x = self.act(x)
         return x
+
 
 
 
