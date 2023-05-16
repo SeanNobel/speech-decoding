@@ -94,8 +94,12 @@ class CogitatDeepSetNorm(nn.Module):
                  n_subs:int):
         super(CogitatDeepSetNorm, self).__init__()
         self.n_subs = n_subs
-        self.fc1 = nn.Linear(input_dims, middle_dims, bias=False)
-        self.fc2 = nn.Linear(input_dims+middle_dims, output_dims, bias=False)
+        # self.fc1 = nn.Linear(input_dims, middle_dims, bias=False)
+        # self.fc2 = nn.Linear(input_dims+middle_dims, output_dims, bias=False)
+        Gamma = Parameter(torch.ones(1))
+        Lambda = Parameter(torch.ones(1))
+        self.weight1 = Gamma.repeat(input_dims, middle_dims)
+        self.weight2 = Lambda.repeat(input_dims+middle_dims, output_dims)
         self.act = nn.ReLU()
 
 
@@ -111,7 +115,8 @@ class CogitatDeepSetNorm(nn.Module):
             m = torch.index_select(x, 0, indices)
             mean_list.append(m.mean(dim=0, keepdims=True))
         stats = torch.cat(mean_list, dim=0) # 1 x input_dims
-        stats = self.fc1(stats) # 1 x middle_dims
+        # stats = self.fc1(stats) # 1 x middle_dims
+        stats = F.linear(stats, self.weight1, None)
         stats = self.act(stats)
 
         # aligned_stats = torch.zeros_like(stats)
@@ -122,7 +127,8 @@ class CogitatDeepSetNorm(nn.Module):
 
 
         x = torch.cat([x, batch_stats], dim=1) # batch x (input_dims + middle_dims)
-        x = self.fc2(x) # batch x output_dims
+        # x = self.fc2(x) # batch x output_dims
+        x = F.linear(x, self.weight2, None)
         x = self.act(x)
         return x
 
