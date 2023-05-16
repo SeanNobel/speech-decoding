@@ -12,6 +12,7 @@ from meg_decoding.matlab_utils.load_meg import roi
 
 from constants import device
 from meg_decoding.utils.layout import ch_locations_2d
+from meg_decoding.utils.layers import CogitatDeepSetNorm, ReadoutNorm2D, SubBatchNorm2D
 
 
 
@@ -26,8 +27,96 @@ def get_model(args):
         return EEGNet(args)
     elif args.model == 'eegnet_sub':
         return EEGNet(args)
+    elif args.model == 'eegnet_cogitat':
+        return EEGNetCogitat(args)
     else:
         raise ValueError('no model named {} is prepared'.format(args.model))
+
+class EEGNetCogitat(nn.Module):
+    def __init__(self, args):
+        super(EEGNet, self).__init__()
+        sub_list = list(args.subjects.keys())
+        n_subs = len(sub_list)
+        T = int((args.window.end - args.window.start) * args.preprocs.brain_resample_rate)
+        # DownSampling
+        # self.down1 = nn.Sequential(nn.AvgPool2d((1, p0)))
+
+        # Conv2d(in,out,kernel,stride,padding,bias) #k1 30
+        self.conv1.conv = nn.Conv2d(1, args.F1, (1, args.k1), padding="same", bias=False)
+        self.conv1_bn = SubBatchNorm2D(args.F1, n_subs)
+
+        roi_channels = roi(args)
+        num_channels = len(roi_channels)
+
+        self.conv2_conv = nn.Conv2d(
+                args.F1, args.D * args.F1, (num_channels, 1), groups=args.F1, bias=False
+            )
+        self.conv2_bn = SubBatchNorm2D(args.D * args.F1, n_subs)
+        self.conv2_act = nn.ELU()
+        self.conv2_avgpool = nn.AvgPool2d((1, args.p1)) # 2
+        self.conv2_dropout = nn.Dropout(args.dr1)
+
+        self.conv3_conv1 =  nn.Conv2d(
+                args.D * args.F1,
+                args.D * args.F1,
+                (1, args.k2), # 4
+                padding="same",
+                groups=args.D * args.F1,
+                bias=False,
+            )
+        self.conv3_conv2 = nn.Conv2d(args.D * args.F1, args.F2, (1, 1), bias=False)
+        self.conv3_bn = SubBatchNorm2D(args.F2, n_subs)
+        self.conv3_act = nn.ELU()
+        self.conv3_avg_pool = nn.AvgPool2d((1, args.p2)) # 4
+        self.conv3_dropout = nn.Dropout(args.dr2)
+
+        self.align1 = CogitatDeepSetNorm(args.F2, 2, args.F2, n_subs)
+        self.n_dim = self.compute_dim(num_channels, T)
+        self.classifier = nn.Linear(self.n_dim, 512, bias=True)
+
+    def forward(self, x, sbj_idxs):
+        # import pdb; pdb.set_trace()
+        x = x.unsqueeze(1)
+        # 1, 1, 128, 300
+        # x = self.down1(x)
+        x = self.conv1.conv(x) # 1, 16, 128, 300
+        x = self.conv1_bn(x, sbj_idxs)
+        x = self.conv2_conv(x)
+        x = self.conv2_bn(x, sbj_idxs)
+        x = self.conv2_act(x)
+        x = self.conv2_avgpool(x)
+        x = self.conv2_dropout(x)
+        x = self.conv3_conv1(x)
+        x = self.conv3_conv2(x)
+        x = self.conv3_bn(x, sbj_idxs)
+        x = self.conv3_act(x)
+        x = self.conv3_avg_pool(x)
+        x = self.conv3_dropout(x)
+
+        x = x.view(-1, self.n_dim)
+        x = self.align1(x, sbj_idxs)
+        x = self.classifier(x)
+        return x
+
+    def compute_dim(self, num_channels, T):
+        sbj_idxs = 1
+        x = torch.zeros((1, 1, num_channels, T))
+
+        x = self.conv1.conv(x) # 1, 16, 128, 300
+        x = self.conv1_bn(x, sbj_idxs)
+        x = self.conv2_conv(x)
+        x = self.conv2_bn(x, sbj_idxs)
+        x = self.conv2_act(x)
+        x = self.conv2_avgpool(x)
+        x = self.conv2_dropout(x)
+        x = self.conv3_conv1(x)
+        x = self.conv3_conv2(x)
+        x = self.conv3_bn(x, sbj_idxs)
+        x = self.conv3_act(x)
+        x = self.conv3_avg_pool(x)
+        x = self.conv3_dropout(x)
+
+        return x.size()[1] * x.size()[2] * x.size()[3]
 
 class EEGNet(nn.Module):
     def __init__(self, args):
