@@ -46,7 +46,7 @@ class SubBatchNorm2D(nn.Module):
     def forward(self, x:torch.Tensor, sub:torch.Tensor)->torch.Tensor:
         # indices = []
         # hs = []
-        ret_tensor = torch.zeros_like(x)
+        ret_tensor = torch.zeros_like(x).to(x.device)
         for s in range(self.n_subs):
             s_inds = torch.where(sub==s)[0]
             if len(s_inds) == 0:
