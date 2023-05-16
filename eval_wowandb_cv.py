@@ -364,7 +364,7 @@ def run(args: DictConfig) -> None:
             top5_similarity[key].append(ranking[k-1])
     top5_similarity = pd.DataFrame(top5_similarity)
     top5_similarity.to_csv(os.path.join(args.save_root, 'top5.csv'))
-    import pdb; pdb.set_trace()
+    # import pdb; pdb.set_trace()
 
 
 
