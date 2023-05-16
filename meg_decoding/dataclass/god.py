@@ -17,20 +17,29 @@ from meg_decoding.utils.preproc_utils import (
 mne.set_log_level(verbose="WARNING")
 
 
-def normalize_per_unit(tensor, return_stats=False):
+def normalize_per_unit(tensor, subs, return_stats=False):
     print('normalize image_feature along unit dim')
     # array: n_samples x n_units(512)
-    mean = np.mean(tensor, axis=0, keepdims=True)
-    std = np.std(tensor, axis=0,  keepdims=True)
-    tensor = tensor - mean
-    tensor = tensor / std
+    subject_list = np.unique(subs)
+    means = []
+    stds = []
+    for sub in subject_list:
+        mean = np.mean(tensor[subs==sub,:], axis=0, keepdims=True)
+        std = np.std(tensor[subs==sub,:], axis=0,  keepdims=True)
+        tensor[subs==sub,:] = tensor[subs==sub,:] - mean
+        tensor[subs==sub,:] = tensor[subs==sub,:] / std
+        means.append(mean)
+        stds.append(std)
     if return_stats:
-        return tensor, mean, std
+        if len(subject_list)==1:
+            return tensor, mean, std
+        else:
+            return tensor, means, stds
     else:
         return tensor
 
 class GODDatasetBase(Dataset):
-    def __init__(self, args, split, preprocess_pipleine:list=[], return_label:bool=False, 
+    def __init__(self, args, split, preprocess_pipleine:list=[], return_label:bool=False,
                  mean_X=None, mean_Y=None, std_X=None, std_Y=None):
         self.args = args
         self.sub_id_map = {s:i for i, s in enumerate(list(self.args.subjects.keys()))}
@@ -49,7 +58,7 @@ class GODDatasetBase(Dataset):
         else:
             if args.normalize_meg:
                 print('MEG is normalized by self stats')
-                self.X, self.mean_X, self.std_X = normalize_per_unit(self.X, return_stats=True)
+                self.X, self.mean_X, self.std_X = normalize_per_unit(self.X, sub_epochs, return_stats=True)
             else:
                 self.mean_X, self.std_X = None, None
         if mean_Y is not None:
@@ -63,13 +72,13 @@ class GODDatasetBase(Dataset):
                 self.Y, self.mean_Y, self.std_Y = normalize_per_unit(self.Y, return_stats=True)
             else:
                 self.mean_Y, self.std_Y = None, None
-        
+
         self.subs = sub_epochs # epochs (x 1)
         self.labels = label_epochs # epochs (x 1)
 
         if split == 'val':
             self.X, self.Y, self.subs, self.labels = self.avg_same_image_sub_epochs(self.X, self.Y, self.subs, self.labels)
-        
+
         self.labels = self.labels.astype(np.int16)
         self.num_subjects = len(np.unique(self.subs))
         self.return_label = return_label
@@ -148,7 +157,7 @@ class GODDatasetBase(Dataset):
         print('dataset is created. size is ', meg_epochs.shape)
         # if split == 'val':
         #     meg_epochs, image_feature_epochs, sub_epochs, label_epochs = self.avg_same_image_sub_epochs(meg_epochs, image_feature_epochs, sub_epochs, label_epochs)
-        
+
         return meg_epochs, sub_epochs, label_epochs, image_feature_epochs
 
     def avg_same_image_sub_epochs(self, Xs, Ys, subs, labels):
@@ -165,7 +174,7 @@ class GODDatasetBase(Dataset):
                 new_subs.append(s)
                 new_labels.append(i)
         return np.concatenate(avg_Xs), np.concatenate(avg_Ys), new_subs, np.asarray(new_labels)
-    
+
 def same_image2neighbor(X, Y, label):
     same_image_indices = []
     for i in range(1,1201):
