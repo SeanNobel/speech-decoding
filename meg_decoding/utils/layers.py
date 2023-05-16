@@ -48,7 +48,7 @@ class SubBatchNorm2D(nn.Module):
         # hs = []
         ret_tensor = torch.zeros_like(x).to(x.device)
         for s in range(self.n_subs):
-            s_inds = torch.where(sub==s)[0]
+            s_inds = torch.where(sub==s)[0].to(x.device)
             if len(s_inds) == 0:
                 continue
             # indices.append(s_inds)
@@ -95,7 +95,7 @@ class CogitatDeepSetNorm(nn.Module):
         super(CogitatDeepSetNorm, self).__init__()
         self.n_subs = n_subs
         self.fc1 = nn.Linear(input_dims, middle_dims, bias=False)
-        self.fc2 = nn.Linear(middle_dims, output_dims, bias=False)
+        self.fc2 = nn.Linear(input_dims+middle_dims, output_dims, bias=False)
         self.act = nn.ReLU()
 
 
@@ -103,9 +103,10 @@ class CogitatDeepSetNorm(nn.Module):
         # x: batch_size x input_dims
         mean_list = []
         for s in range(self.n_subs):
-            indices =torch.where(sub == s)[0]
-            if indices.sum() == 0:
-                continue
+            indices =torch.where(sub == s)[0].to(x.device)
+            if len(indices) == 0:
+                # dummy indices
+                indices = torch.tensor([0]).to(torch.long).to(x.device)
             # mean across subject-trials
             m = torch.index_select(x, 0, indices)
             mean_list.append(m.mean(dim=0, keepdims=True))
@@ -115,12 +116,12 @@ class CogitatDeepSetNorm(nn.Module):
 
         # aligned_stats = torch.zeros_like(stats)
         # aligned_stats.index_put_((sub,) , stats)
-        # n_subs個の統計量をsubに従って分配
-        stats = torch.gather(stats, 0, sub) # batch x middle_dims
+        # n_subs個の統計量をsubに従って分配 これだと3sub必ずbatch内に含まれることを仮定している
+        batch_stats = stats[sub,:] # torch.gather(stats, 0, sub) # batch x middle_dims
 
 
 
-        x = torch.cat([x, stats], dim=-1) # batch x (input_dims + middle_dims)
+        x = torch.cat([x, batch_stats], dim=1) # batch x (input_dims + middle_dims)
         x = self.fc2(x) # batch x output_dims
         x = self.act(x)
         return x

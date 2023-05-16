@@ -70,8 +70,8 @@ class EEGNetCogitat(nn.Module):
         self.conv3_avg_pool = nn.AvgPool2d((1, args.p2)) # 4
         self.conv3_dropout = nn.Dropout(args.dr2)
 
-        self.align1 = CogitatDeepSetNorm(args.F2, 2, args.F2, n_subs)
         self.n_dim = self.compute_dim(num_channels, T)
+        self.align1 = CogitatDeepSetNorm(self.n_dim, 8, self.n_dim, n_subs)
         self.classifier = nn.Linear(self.n_dim, 512, bias=True)
 
     def forward(self, x, sbj_idxs):
@@ -92,8 +92,8 @@ class EEGNetCogitat(nn.Module):
         x = self.conv3_act(x)
         x = self.conv3_avg_pool(x)
         x = self.conv3_dropout(x)
-
         x = x.view(-1, self.n_dim)
+
         x = self.align1(x, sbj_idxs)
         x = self.classifier(x)
         return x
@@ -519,7 +519,7 @@ class Classifier(nn.Module):
                 pbar.update(1)
 
         similarity = similarity.T
-
+        print('similarity', similarity.shape)
         # NOTE: max similarity of speech and M/EEG representations is expected for corresponding windows
         top1accuracy = (similarity.argmax(axis=1) == diags).to(torch.float).mean().item()
         try:

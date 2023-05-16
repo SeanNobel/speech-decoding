@@ -201,7 +201,8 @@ def run(args: DictConfig) -> None:
     #        Models
     # ---------------------
     brain_encoder = get_model(args).to(device) #BrainEncoder(args).to(device)
-
+    # import pdb; pdb.set_trace()
+    print(next(brain_encoder.conv1_bn.bns[0].parameters()).device)
     classifier = Classifier(args)
 
     # ---------------
@@ -257,7 +258,8 @@ def run(args: DictConfig) -> None:
                 raise ValueError("Unexpected number of items from dataloader.")
 
             X, Y = X.to(device), Y.to(device)
-            # import pdb; pdb.set_trace()
+            subject_idxs = subject_idxs.to(device)
+
             Z = brain_encoder(X, subject_idxs)
             loss = loss_func(Y, Z)
             with torch.no_grad():
@@ -276,8 +278,8 @@ def run(args: DictConfig) -> None:
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-                # get_grad(brain_encoder)
-            # break
+                get_grad(brain_encoder)
+            break
 
         # Accumulate gradients for Gwilliams for the whole epoch
         if args.dataset == "Brennan2018":
@@ -286,6 +288,7 @@ def run(args: DictConfig) -> None:
             optimizer.step()
 
         brain_encoder.eval()
+        # debug_cnt = 0
         for batch in test_loader:
 
             with torch.no_grad():
@@ -298,17 +301,19 @@ def run(args: DictConfig) -> None:
                     raise ValueError("Unexpected number of items from dataloader.")
 
                 X, Y = X.to(device), Y.to(device)
+                subject_idxs = subject_idxs.to(device)
 
+                # print(subject_idxs)
                 Z = brain_encoder(X, subject_idxs)  # 0.96 GB
-
+                # print(debug_cnt)
                 loss = loss_func(Y, Z)
-
+                # debug_cnt +=1
                 testTop1acc, testTop10acc = classifier(Z, Y, test=True)  # ( 250, 1024, 360 )
 
             test_losses.append(loss.item())
             testTop1accs.append(testTop1acc)
             testTop10accs.append(testTop10acc)
-
+        
         print(
             f"Ep {epoch}/{args.epochs} | ",
             f"train l: {np.mean(train_losses):.3f} | ",
