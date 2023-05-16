@@ -4,9 +4,9 @@ from torch.nn.parameter import Parameter
 from torch.nn import functional as F
 
 # BatchNorm2Dをsubject specificにするだけでいい気もする
-class ReadoutNorm2D(nn.module):
+class ReadoutNorm2D(nn.Module):
     def __init__(self, n_subs):
-        super(self, ReadoutNorm2D).__init__()
+        super(ReadoutNorm2D, self).__init__()
         self.n_subs = n_subs
 
     def forward(self, x:torch.Tensor, sub:torch.Tensor)->torch.Tensor:
@@ -36,9 +36,9 @@ class ReadoutNorm2D(nn.module):
         return x
 
 
-class SubBatchNorm2D(nn.module):
+class SubBatchNorm2D(nn.Module):
     def __init__(self, n_dims, n_subs):
-        super(self, SubBatchNorm2D).__init__()
+        super(SubBatchNorm2D, self).__init__()
         self.n_dims = n_dims
         self.n_subs = n_subs
         self.bns = nn.ModuleList([nn.BatchNorm2d(n_dims) for _ in range(n_subs)])
@@ -56,13 +56,14 @@ class SubBatchNorm2D(nn.module):
 
         hs = torch.cat(hs, dim=0)
         indices = torch.cat(indices, dim=0)
+        import pdb; pdb.set_trace()
         x = torch.gather(hs, 0, indices)
         return x
 
 class DeepSetConv2D(nn.Module):
     def __init__(self, input_ch:int, middle_ch:int, output_ch:int,
                  ks1:int, ks2:int, n_subs:int):
-        super(self, DeepSetConv2D).__init__()
+        super(DeepSetConv2D, self).__init__()
         self.n_subs = n_subs
         Gamma = Parameter(torch.empty(
                 (input_ch, middle_ch, 1, 1)))
@@ -86,7 +87,7 @@ class DeepSetConv2D(nn.Module):
 class CogitatDeepSetNorm(nn.Module):
     def __init__(self, input_dims:int, middle_dims:int, output_dims:int,
                  n_subs:int):
-        super(self, DeepSetConv2D).__init__()
+        super(CogitatDeepSetNorm, self).__init__()
         self.n_subs = n_subs
         self.fc1 = nn.Linear(input_dims, middle_dims, bias=False)
         self.fc2 = nn.Linear(middle_dims, output_dims, bias=False)

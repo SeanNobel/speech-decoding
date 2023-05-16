@@ -26,7 +26,7 @@ def get_model(args):
     elif args.model == 'eegnet':
         return EEGNet(args)
     elif args.model == 'eegnet_sub':
-        return EEGNet(args)
+        return EEGNetSub(args)
     elif args.model == 'eegnet_cogitat':
         return EEGNetCogitat(args)
     else:
@@ -34,7 +34,7 @@ def get_model(args):
 
 class EEGNetCogitat(nn.Module):
     def __init__(self, args):
-        super(EEGNet, self).__init__()
+        super(EEGNetCogitat, self).__init__()
         sub_list = list(args.subjects.keys())
         n_subs = len(sub_list)
         T = int((args.window.end - args.window.start) * args.preprocs.brain_resample_rate)
@@ -42,7 +42,7 @@ class EEGNetCogitat(nn.Module):
         # self.down1 = nn.Sequential(nn.AvgPool2d((1, p0)))
 
         # Conv2d(in,out,kernel,stride,padding,bias) #k1 30
-        self.conv1.conv = nn.Conv2d(1, args.F1, (1, args.k1), padding="same", bias=False)
+        self.conv1_conv = nn.Conv2d(1, args.F1, (1, args.k1), padding="same", bias=False)
         self.conv1_bn = SubBatchNorm2D(args.F1, n_subs)
 
         roi_channels = roi(args)
@@ -79,7 +79,7 @@ class EEGNetCogitat(nn.Module):
         x = x.unsqueeze(1)
         # 1, 1, 128, 300
         # x = self.down1(x)
-        x = self.conv1.conv(x) # 1, 16, 128, 300
+        x = self.conv1_conv(x) # 1, 16, 128, 300
         x = self.conv1_bn(x, sbj_idxs)
         x = self.conv2_conv(x)
         x = self.conv2_bn(x, sbj_idxs)
@@ -99,10 +99,10 @@ class EEGNetCogitat(nn.Module):
         return x
 
     def compute_dim(self, num_channels, T):
-        sbj_idxs = 1
+        sbj_idxs = torch.zeros([1])
         x = torch.zeros((1, 1, num_channels, T))
 
-        x = self.conv1.conv(x) # 1, 16, 128, 300
+        x = self.conv1_conv(x) # 1, 16, 128, 300
         x = self.conv1_bn(x, sbj_idxs)
         x = self.conv2_conv(x)
         x = self.conv2_bn(x, sbj_idxs)

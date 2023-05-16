@@ -69,7 +69,7 @@ class GODDatasetBase(Dataset):
         else:
             if args.normalize_image_features:
                 print('Image features is normalized by self stats')
-                self.Y, self.mean_Y, self.std_Y = normalize_per_unit(self.Y, return_stats=True)
+                self.Y, self.mean_Y, self.std_Y = normalize_per_unit(self.Y, np.zeros_like(sub_epochs), return_stats=True)
             else:
                 self.mean_Y, self.std_Y = None, None
 
