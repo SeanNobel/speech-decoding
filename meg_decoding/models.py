@@ -46,7 +46,11 @@ class EEGNetCogitat(nn.Module):
         self.conv1_bn = SubBatchNorm2D(args.F1, n_subs)
 
         roi_channels = roi(args)
-        num_channels = len(roi_channels)
+        if "src_reconstruction" in args.keys() and args.src_reconstruction:
+            num_channels = args.src_ch #449 # hard coding
+        else:
+            num_channels = len(roi_channels)
+
 
         self.conv2_conv = nn.Conv2d(
                 args.F1, args.D * args.F1, (num_channels, 1), groups=args.F1, bias=False
@@ -191,13 +195,13 @@ class EEGNetSub(nn.Module):
         # Conv2d(in,out,kernel,stride,padding,bias) #k1 30
         self.num_subjects = args.num_subjects
 
-        
+
         roi_channels = roi(args)
         num_channels = len(roi_channels)
 
         self.conv1_sub =  nn.ModuleList(
             nn.Sequential(
-                nn.Conv2d(1, args.F1, (1, args.k1), padding="same", bias=False), 
+                nn.Conv2d(1, args.F1, (1, args.k1), padding="same", bias=False),
                 nn.Conv2d(args.F1, args.F1, (num_channels, 1), groups=args.F1, padding="same", bias=False),
                 nn.BatchNorm2d(args.F1),
             ) for _ in range(self.num_subjects)
