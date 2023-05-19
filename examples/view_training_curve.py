@@ -56,6 +56,8 @@ def parse_data(filepath):
         visualize(logs, savefile)
         print('==================={}==============='.format(name))
         print(logs)
+        for i, row in logs.iterrows():
+            print(row.to_list())
 
 
 if __name__ == '__main__':
@@ -73,9 +75,11 @@ if __name__ == '__main__':
     # filepath = '/home/yainoue/meg2image/results/20230413_sbj01/runs/2023-04-13 21:52:17.333087'#'home/yainoue/meg2image/results/test/2023-04-11 18:06:44.273986'
     # filepath = '/home/yainoue/meg2image/results/20230413_sbj01_seq2stat/runs/2023-04-16 19:21:02.983480'
     # filepath = '/home/yainoue/meg2image/results/20230412_mini/runs/2023-04-13 15:17:53.310665'
-    filepath = '/home/yainoue/meg2image/results/20230427_sbj01_eegnet_cv_norm/runs/2023-04-28 03:53:04.866741' 
-    filepath = '/home/yainoue/meg2image/results/20230428_sbj01_eegnet_cv_norm/runs/2023-04-28 21:05:42.739003'
-    filepath = '/home/yainoue/meg2image/results/20230429_sbj01_eegnet_cv_norm_regression/runs/2023-04-30 04:16:13.736655'
+    # filepath = '/home/yainoue/meg2image/results/20230427_sbj01_eegnet_cv_norm/runs/2023-04-28 03:53:04.866741' 
+    # filepath = '/home/yainoue/meg2image/results/20230428_sbj01_eegnet_cv_norm/runs/2023-04-28 21:05:42.739003'
+    # filepath = '/home/yainoue/meg2image/results/20230429_sbj01_eegnet_cv_norm_regression/runs/2023-04-30 04:16:13.736655'
     filepath = '/home/yainoue/meg2image/results/20230501_all_eegnet_cv_norm_regression/runs/2023-05-01 17:01:17.163323'
-    filepath = '/home/yainoue/meg2image/results/20230515_sbj02_eegnet_cv_norm_regression/runs/2023-05-15 01:08:45.283225'
+    # filepath = '/home/yainoue/meg2image/results/20230515_sbj02_eegnet_cv_norm_regression/runs/2023-05-15 01:08:45.283225'
+    # filepath = '/home/yainoue/meg2image/results/20230517_all_eegnet_cv_norm_regression_cogitat/runs/2023-05-17 05:57:53.604625'
+    filepath = '/home/yainoue/meg2image/results/20230518_all_eegnet_cv_norm_regression/runs/2023-05-17 18:50:02.743497'
     parse_data(filepath)

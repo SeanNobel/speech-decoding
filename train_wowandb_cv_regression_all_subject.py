@@ -201,8 +201,7 @@ def run(args: DictConfig) -> None:
     #        Models
     # ---------------------
     brain_encoder = get_model(args).to(device) #BrainEncoder(args).to(device)
-    # import pdb; pdb.set_trace()
-    print(next(brain_encoder.conv1_bn.bns[0].parameters()).device)
+    # print(next(brain_encoder.conv1_bn.bns[0].parameters()).device)
     classifier = Classifier(args)
 
     # ---------------
@@ -278,8 +277,9 @@ def run(args: DictConfig) -> None:
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-                get_grad(brain_encoder)
-            break
+                # get_grad(brain_encoder)
+            # print(brain_encoder.align1.Gamma.grad)
+            # break
 
         # Accumulate gradients for Gwilliams for the whole epoch
         if args.dataset == "Brennan2018":
@@ -365,7 +365,7 @@ def run(args: DictConfig) -> None:
 if __name__ == "__main__":
     from hydra import initialize, compose
     with initialize(version_base=None, config_path="../configs/"):
-        args = compose(config_name='20230517_all_eegnet_regression_cogitat')
+        args = compose(config_name='20230518_all_eegnet_regression')
     if not os.path.exists(os.path.join(args.save_root, 'weights')):
         os.makedirs(os.path.join(args.save_root, 'weights'))
     run(args)

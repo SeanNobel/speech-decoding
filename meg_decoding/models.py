@@ -74,8 +74,8 @@ class EEGNetCogitat(nn.Module):
         self.align1 = CogitatDeepSetNorm(self.n_dim, 8, self.n_dim, n_subs)
         self.classifier = nn.Linear(self.n_dim, 512, bias=True)
 
+
     def forward(self, x, sbj_idxs):
-        # import pdb; pdb.set_trace()
         x = x.unsqueeze(1)
         # 1, 1, 128, 300
         # x = self.down1(x)
@@ -161,7 +161,6 @@ class EEGNet(nn.Module):
         self.classifier = nn.Linear(self.n_dim, 512, bias=True)
 
     def forward(self, x, sbj_idxs):
-        # import pdb; pdb.set_trace()
         x = x.unsqueeze(1)
         # 1, 1, 128, 300
         # x = self.down1(x)
@@ -184,7 +183,7 @@ class EEGNet(nn.Module):
 
 class EEGNetSub(nn.Module):
     def __init__(self, args):
-        super(EEGNet, self).__init__()
+        super(EEGNetSub, self).__init__()
         T = int((args.window.end - args.window.start) * args.preprocs.brain_resample_rate)
         # DownSampling
         # self.down1 = nn.Sequential(nn.AvgPool2d((1, p0)))
@@ -192,13 +191,17 @@ class EEGNetSub(nn.Module):
         # Conv2d(in,out,kernel,stride,padding,bias) #k1 30
         self.num_subjects = args.num_subjects
 
-        self.conv1_sub =  nn.ModuleList(
-            nn.Sequential(
-                nn.Conv2d(1, args.F1, (1, args.k1), padding="same", bias=False), nn.BatchNorm2d(args.F1)
-            ) for _ in range(self.num_subjects)
-        )
+        
         roi_channels = roi(args)
         num_channels = len(roi_channels)
+
+        self.conv1_sub =  nn.ModuleList(
+            nn.Sequential(
+                nn.Conv2d(1, args.F1, (1, args.k1), padding="same", bias=False), 
+                nn.Conv2d(args.F1, args.F1, (num_channels, 1), groups=args.F1, padding="same", bias=False),
+                nn.BatchNorm2d(args.F1),
+            ) for _ in range(self.num_subjects)
+        )
         self.conv2 = nn.Sequential(
             nn.Conv2d(
                 args.F1, args.D * args.F1, (num_channels, 1), groups=args.F1, bias=False
@@ -229,7 +232,6 @@ class EEGNetSub(nn.Module):
         self.classifier = nn.Linear(self.n_dim, 512, bias=True)
 
     def forward(self, x, sbj_idxs):
-        # import pdb; pdb.set_trace()
         x = x.unsqueeze(1)
         # 1, 1, 128, 300
         # x = self.down1(x)
@@ -247,7 +249,7 @@ class EEGNetSub(nn.Module):
         x = torch.zeros((1, 1, num_channels, T))
 
         # x = self.down1(x)
-        x = self.conv1(x)
+        x = self.conv1_sub[0](x)
         x = self.conv2(x)
         x = self.conv3(x)
 
@@ -422,7 +424,6 @@ class LinearEncoder(nn.Module):
     def forward(self, X, subject_idxs):
         if self.scp:
             X = X.mean(dim=-1) # X: batch x ch x time
-        # import pdb; pdb.set_trace()
         return self.linear(X)
 
 

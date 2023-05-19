@@ -20,16 +20,19 @@ mne.set_log_level(verbose="WARNING")
 def normalize_per_unit(tensor, subs, return_stats=False):
     print('normalize image_feature along unit dim')
     # array: n_samples x n_units(512)
+    subs = np.array(subs)
     subject_list = np.unique(subs)
     means = []
     stds = []
     for sub in subject_list:
-        mean = np.mean(tensor[subs==sub,:], axis=0, keepdims=True)
-        std = np.std(tensor[subs==sub,:], axis=0,  keepdims=True)
-        tensor[subs==sub,:] = tensor[subs==sub,:] - mean
-        tensor[subs==sub,:] = tensor[subs==sub,:] / std
+        indices = np.where(subs==sub)[0]
+        mean = np.mean(tensor[indices,:], axis=0, keepdims=True)
+        std = np.std(tensor[indices,:], axis=0,  keepdims=True)
+        tensor[indices,:] = tensor[indices,:] - mean
+        tensor[indices,:] = tensor[indices,:] / std
         means.append(mean)
         stds.append(std)
+        # import pdb; pdb.set_trace()
     if return_stats:
         if len(subject_list)==1:
             return tensor, mean, std
@@ -53,8 +56,14 @@ class GODDatasetBase(Dataset):
         if mean_X is not None:
             print('MEG is normalized by given stats')
             self.mean_X, self.std_X= mean_X, std_X
-            self.X = self.X - self.mean_X
-            self.X = self.X / self.std_X
+            if isinstance(mean_X, list):
+                for i in range(len(mean_X)):
+                    indices = np.where(sub_epochs==i)[0]
+                    self.X[indices,:] = self.X[indices,:] - self.mean_X[i]
+                    self.X[indices,:] = self.X[indices,:] / self.std_X[i]
+            else:
+                self.X = self.X - self.mean_X
+                self.X = self.X / self.std_X
         else:
             if args.normalize_meg:
                 print('MEG is normalized by self stats')

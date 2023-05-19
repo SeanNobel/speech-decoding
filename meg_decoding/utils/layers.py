@@ -8,6 +8,7 @@ class ReadoutNorm2D(nn.Module):
     def __init__(self, n_subs):
         super(ReadoutNorm2D, self).__init__()
         self.n_subs = n_subs
+        self.epsilon = 1e-5
 
     def forward(self, x:torch.Tensor, sub:torch.Tensor)->torch.Tensor:
         """_summary_
@@ -20,18 +21,18 @@ class ReadoutNorm2D(nn.Module):
             torch.Tensor: normalized inputs. batch_size x n_ch x height x width
         """
         for s in range(self.n_subs):
-            s_inds = (sub==s).to(torch.long)
+            s_inds = torch.where(sub==s)[0]
             if s_inds.sum() == 0:
                 continue
             # across trial normalization
             with torch.no_grad():
                 s_mean = x[s_inds].mean(dim=0, keepdims=True)
-                s_std = x[s_inds].std(dim=0, keepdims=True)
+                s_std = x[s_inds].std(dim=0, keepdims=True) + self.epsilon
             x[s_inds] = (x[s_inds] - s_mean) / s_std
             # across temporal normalization
             with torch.no_grad():
                 s_mean = x[s_inds].mean(dim=-1, keepdims=True)
-                s_std = x[s_inds].std(dim=-1, keepdims=True)
+                s_std = x[s_inds].std(dim=-1, keepdims=True) + self.epsilon
             x[s_inds] = (x[s_inds] - s_mean) / s_std
         return x
 
@@ -96,11 +97,15 @@ class CogitatDeepSetNorm(nn.Module):
         self.n_subs = n_subs
         # self.fc1 = nn.Linear(input_dims, middle_dims, bias=False)
         # self.fc2 = nn.Linear(input_dims+middle_dims, output_dims, bias=False)
-        Gamma = Parameter(torch.ones(1))
-        Lambda = Parameter(torch.ones(1))
-        self.weight1 = Gamma.repeat(input_dims, middle_dims)
-        self.weight2 = Lambda.repeat(input_dims+middle_dims, output_dims)
+        # これが被験者ごとなのか共通なのか不明
+        self.Gamma = Parameter(torch.ones(1) / (middle_dims * input_dims), requires_grad=True)
+        self.Lambda = Parameter(torch.ones(1)/ (output_dims * (input_dims+middle_dims)), requires_grad=True)
+        # self.weight1 = 
+        # self.weight2 = 
         self.act = nn.ReLU()
+        self.input_dims = input_dims
+        self.middle_dims = middle_dims
+        self.output_dims = output_dims
 
 
     def forward(self, x:torch.Tensor, sub:torch.Tensor)->torch.Tensor:
@@ -115,8 +120,7 @@ class CogitatDeepSetNorm(nn.Module):
             m = torch.index_select(x, 0, indices)
             mean_list.append(m.mean(dim=0, keepdims=True))
         stats = torch.cat(mean_list, dim=0) # 1 x input_dims
-        # stats = self.fc1(stats) # 1 x middle_dims
-        stats = F.linear(stats, self.weight1, None)
+        stats = F.linear(stats, self.Gamma.repeat(self.middle_dims,  self.input_dims) , None)
         stats = self.act(stats)
 
         # aligned_stats = torch.zeros_like(stats)
@@ -128,12 +132,75 @@ class CogitatDeepSetNorm(nn.Module):
 
         x = torch.cat([x, batch_stats], dim=1) # batch x (input_dims + middle_dims)
         # x = self.fc2(x) # batch x output_dims
-        x = F.linear(x, self.weight2, None)
+        x = F.linear(x, self.Lambda.repeat(self.output_dims, self.input_dims+self.middle_dims) , None)
         x = self.act(x)
         return x
 
 
 
+if __name__ == '__main__':
+    subs = torch.Tensor([0,1,2,0,1,2,0,1,2]).to(torch.long)
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    # CogitatDeepSetNorm test
+    print('==================CogitatDeepSetNorm===================')
+    ## build module
+    cogitat_deepset_norm = CogitatDeepSetNorm(input_dims=96, middle_dims=8, output_dims=96, n_subs=3)
+    cogitat_deepset_norm.to(device)
+    ## prepare dummy input
+    dummy_input = torch.ones([9,96], requires_grad=True).to(device)
+    dummy_input[torch.where(subs==0)] *= 1
+    dummy_input[torch.where(subs==1)] *= 2
+    dummy_input[torch.where(subs==2)] *= 3
+    print('dummy_input: ', dummy_input.shape)
+    print(dummy_input.mean(dim=1))
+
+    output = cogitat_deepset_norm(dummy_input, subs)
+    print('output', output.shape)
+    print(output.mean(dim=1))
+    loss = output.mean()
+    loss.backward()
+    print('loss', loss)
+    print('grad: ', dummy_input.grad)
+    print('grad: ', cogitat_deepset_norm.Gamma.grad)
+
+    # SubBatchNorm2D
+    print('================SubBatchNorm2D===============')
+    ## build module
+    sub_bn2d = SubBatchNorm2D(16, 3).to(device)
+    ## prepare dummy input
+    dummy_input = torch.ones([9,16, 2, 2], requires_grad=True).to(device)
+    dummy_input[torch.where(subs==0)] *= 1
+    dummy_input[torch.where(subs==1)] *= 2
+    dummy_input[torch.where(subs==2)] *= 3
+    print('dummy_input: ', dummy_input.shape)
+    print(dummy_input.mean(dim=1).mean(dim=1).mean(dim=1))
+
+    output = sub_bn2d(dummy_input, subs)
+    print('output', output.shape)
+    print(output.mean(dim=1).mean(dim=1).mean(dim=1))
+    loss = output.mean()
+    loss.backward()
+    print('loss', loss)
+    print('grad: ', dummy_input.grad)
 
 
 
+    # ReadoutNorm2D
+    print('==================ReadoutNotm2D==================')
+    ## build module
+    readoutnorm = ReadoutNorm2D(3).to(device)
+    ## prepare dummy input
+    dummy_input = torch.ones([9,16,2,2], requires_grad=True).to(device)
+    dummy_input[torch.where(subs==0)] *= 1
+    dummy_input[torch.where(subs==1)] *= 2
+    dummy_input[torch.where(subs==2)] *= 3
+    print('dummy_input: ', dummy_input.shape)
+    print(dummy_input.mean(dim=1).mean(dim=1).mean(dim=1))
+
+    output = readoutnorm(dummy_input, subs)
+    print('output', output.shape)
+    print(output.mean(dim=1).mean(dim=1).mean(dim=1))
+    loss = output.mean()
+    loss.backward()
+    print('loss', loss)
+    print('grad: ', dummy_input.grad)
