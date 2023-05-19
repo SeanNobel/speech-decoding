@@ -146,14 +146,15 @@ class GODDatasetBase(Dataset):
                     label_path = label_path_pattern.format(sub=sub, name=label_name)
                     trigger_path = trigger_meg_path_pattern.format(sub=sub, name=trigger_name)
                     processed_rest_meg_path = processed_rest_meg_path_pattern.format(sub=sub, name=rest_name)
-                    subject_kernel_path = processed_kernel_path_pattern.format(sub=str(sub).zfill(2), name=kernel_name)
+                    subject_kernel_path = processed_kernel_path_pattern.format(sub=sub, name=kernel_name)
                     target_region_kernel = get_common_kernel(target_roi_indices, subject_kernel_path, common_kernel_path)
                     if args.z_scoring:
                         rest_mean, rest_std = get_baseline(processed_rest_meg_path, fs, args.rest_duration)
                     MEG_Data, image_features, labels, triggers = get_meg_data(processed_meg_path, label_path, trigger_path, rest_mean=rest_mean, rest_std=rest_std, split=split)
-                    ROI_MEG_Data = MEG_Data# [roi_channels, :] #  num_roi_channels x time_samples
-                    assert len(ROI_MEG_Data) == 160 # len(target_region_kernel)
+                    ROI_MEG_Data = MEG_Data[roi_channels, :] #  num_roi_channels x time_samples
+                    assert len(ROI_MEG_Data) == 160, 'get {}'.format(len(ROI_MEG_Data)) # len(target_region_kernel)
                     ROI_MEG_Data = np.matmul(target_region_kernel, ROI_MEG_Data) # source reconstruction of target region
+                    print('apply kernel for source reconstruction')
                     if args.preprocs.brain_filter is not None:
                         brain_filter_low = args.preprocs.brain_filter[0]
                         brain_filter_high = args.preprocs.brain_filter[1]
@@ -233,7 +234,7 @@ def same_image2neighbor(X, Y, label):
 def get_kernel_block_ids(args):
     target_roi_indices = []
     for i in args.roi_block_ids:
-        filepath = args.bdata_path.format(block_id=i)
+        filepath = args.bdata_path.format(block_id=str(i).zfill(2))
         # print('roi block path: ', filepath)
         roi = scipy.io.loadmat(filepath)
         target_roi_indices.append(roi['vertex_ds'][:,0])

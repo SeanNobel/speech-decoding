@@ -258,7 +258,7 @@ def run(args: DictConfig) -> None:
 
             X, Y = X.to(device), Y.to(device)
             subject_idxs = subject_idxs.to(device)
-
+            import pdb; pdb.set_trace()
             Z = brain_encoder(X, subject_idxs)
             loss = loss_func(Y, Z)
             with torch.no_grad():
@@ -365,7 +365,7 @@ def run(args: DictConfig) -> None:
 if __name__ == "__main__":
     from hydra import initialize, compose
     with initialize(version_base=None, config_path="../configs/"):
-        args = compose(config_name='20230518_all_eegnet_regression')
+        args = compose(config_name='20230519_all_eegnet_regression_src_reconst')
     if not os.path.exists(os.path.join(args.save_root, 'weights')):
         os.makedirs(os.path.join(args.save_root, 'weights'))
     run(args)
