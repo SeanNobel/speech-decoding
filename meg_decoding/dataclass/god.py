@@ -13,7 +13,7 @@ from meg_decoding.utils.preproc_utils import (
     scaleAndClamp_single,
     baseline_correction_single,
 )
-
+import scipy.io
 mne.set_log_level(verbose="WARNING")
 
 
@@ -109,6 +109,7 @@ class GODDatasetBase(Dataset):
         label_path_pattern = os.path.join(DATAROOT, '{sub}/labels/{name}')
         trigger_meg_path_pattern = os.path.join(DATAROOT, '{sub}/trigger/{name}')
         processed_rest_meg_path_pattern = os.path.join(DATAROOT, '{sub}/mat/{name}')
+        processed_kernel_path_pattern = os.path.join(DATAROOT, '{sub}/kernel/{name}')
 
         sub_list = list(args.subjects.keys())
 
@@ -131,35 +132,72 @@ class GODDatasetBase(Dataset):
         image_feature_epochs = []
         rest_mean, rest_std = None, None
         pbar = tqdm.tqdm(sub_list)
+        if args.src_reconstruction:
+            print('src reconstruction')
+            target_roi_indices = get_kernel_block_ids(args)
         for sub in pbar:
             pbar.set_description("load subject data -- current: {}".format(sub))
             fs = args.subjects[sub]['fs']
-            for meg_name, label_name, trigger_name, rest_name in zip(args.subjects[sub][split]['mat'], args.subjects[sub][split]['labels'], args.subjects[sub][split]['trigger'], args.subjects[sub][split]['rest']):
-                processed_meg_path = processed_meg_path_pattern.format(sub=sub, name=meg_name)
-                label_path = label_path_pattern.format(sub=sub, name=label_name)
-                trigger_path = trigger_meg_path_pattern.format(sub=sub, name=trigger_name)
-                processed_rest_meg_path = processed_rest_meg_path_pattern.format(sub=sub, name=rest_name)
-                if args.z_scoring:
-                    rest_mean, rest_std = get_baseline(processed_rest_meg_path, fs, args.rest_duration)
-                MEG_Data, image_features, labels, triggers = get_meg_data(processed_meg_path, label_path, trigger_path, rest_mean=rest_mean, rest_std=rest_std, split=split)
-                ROI_MEG_Data = MEG_Data[roi_channels, :] #  num_roi_channels x time_samples
-                if args.preprocs.brain_filter is not None:
-                    brain_filter_low = args.preprocs.brain_filter[0]
-                    brain_filter_high = args.preprocs.brain_filter[1]
-                    ROI_MEG_Data = mne.filter.filter_data(ROI_MEG_Data, sfreq=fs, l_freq=brain_filter_low, h_freq=brain_filter_high,)
-                    print(f'band path filter: {brain_filter_low}-{brain_filter_high}')
-                if args.preprocs.brain_resample_rate is not None:
-                    ROI_MEG_Data = mne.filter.resample(ROI_MEG_Data, down=fs / args.preprocs.brain_resample_rate)
-                    print('resample {} to {} Hz'.format(fs,args.preprocs.brain_resample_rate))
-                    window = time_window(args, triggers, args.preprocs.brain_resample_rate)
-                else:
-                    window = time_window(args, triggers, fs)
-                ROI_MEG_epochs = epoching(ROI_MEG_Data, window)
 
-                meg_epochs.append(ROI_MEG_epochs) # array [epoch x ch x time_stamp]
-                sub_epochs+=[self.sub_id_map[sub]] * len(ROI_MEG_epochs) # list [epoch]
-                label_epochs.append(labels) # array [epoch]
-                image_feature_epochs.append(image_features) # array [epoch x dim]
+            if args.src_reconstruction:
+                common_kernel_path = os.path.join(DATAROOT, f'{sub}/kernel/tess_cortex_pial_low.mat')
+                for meg_name, label_name, trigger_name, rest_name, kernel_name in zip(args.subjects[sub][split]['mat'], args.subjects[sub][split]['labels'], args.subjects[sub][split]['trigger'], args.subjects[sub][split]['rest'], args.subjects[sub][split]['kernel']):
+                    processed_meg_path = processed_meg_path_pattern.format(sub=sub, name=meg_name)
+                    label_path = label_path_pattern.format(sub=sub, name=label_name)
+                    trigger_path = trigger_meg_path_pattern.format(sub=sub, name=trigger_name)
+                    processed_rest_meg_path = processed_rest_meg_path_pattern.format(sub=sub, name=rest_name)
+                    subject_kernel_path = processed_kernel_path_pattern.format(sub=sub, name=kernel_name)
+                    target_region_kernel = get_common_kernel(target_roi_indices, subject_kernel_path, common_kernel_path)
+                    if args.z_scoring:
+                        rest_mean, rest_std = get_baseline(processed_rest_meg_path, fs, args.rest_duration)
+                    MEG_Data, image_features, labels, triggers = get_meg_data(processed_meg_path, label_path, trigger_path, rest_mean=rest_mean, rest_std=rest_std, split=split)
+                    ROI_MEG_Data = MEG_Data[roi_channels, :] #  num_roi_channels x time_samples
+                    if args.preprocs.brain_filter is not None:
+                        brain_filter_low = args.preprocs.brain_filter[0]
+                        brain_filter_high = args.preprocs.brain_filter[1]
+                        ROI_MEG_Data = mne.filter.filter_data(ROI_MEG_Data, sfreq=fs, l_freq=brain_filter_low, h_freq=brain_filter_high,)
+                        print(f'band path filter: {brain_filter_low}-{brain_filter_high}')
+                    if args.preprocs.brain_resample_rate is not None:
+                        ROI_MEG_Data = mne.filter.resample(ROI_MEG_Data, down=fs / args.preprocs.brain_resample_rate)
+                        print('resample {} to {} Hz'.format(fs,args.preprocs.brain_resample_rate))
+                        window = time_window(args, triggers, args.preprocs.brain_resample_rate)
+                    else:
+                        window = time_window(args, triggers, fs)
+                    assert len(ROI_MEG_Data) == 160 # len(target_region_kernel)
+                    ROI_MEG_Data = np.matmul(target_region_kernel, ROI_MEG_Data) # source reconstruction of target region
+                    ROI_MEG_epochs = epoching(ROI_MEG_Data, window)
+
+                    meg_epochs.append(ROI_MEG_epochs) # array [epoch x ch x time_stamp]
+                    sub_epochs+=[self.sub_id_map[sub]] * len(ROI_MEG_epochs) # list [epoch]
+                    label_epochs.append(labels) # array [epoch]
+                    image_feature_epochs.append(image_features) # array [epoch x dim]
+            else:
+                for meg_name, label_name, trigger_name, rest_name in zip(args.subjects[sub][split]['mat'], args.subjects[sub][split]['labels'], args.subjects[sub][split]['trigger'], args.subjects[sub][split]['rest']):
+                    processed_meg_path = processed_meg_path_pattern.format(sub=sub, name=meg_name)
+                    label_path = label_path_pattern.format(sub=sub, name=label_name)
+                    trigger_path = trigger_meg_path_pattern.format(sub=sub, name=trigger_name)
+                    processed_rest_meg_path = processed_rest_meg_path_pattern.format(sub=sub, name=rest_name)
+                    if args.z_scoring:
+                        rest_mean, rest_std = get_baseline(processed_rest_meg_path, fs, args.rest_duration)
+                    MEG_Data, image_features, labels, triggers = get_meg_data(processed_meg_path, label_path, trigger_path, rest_mean=rest_mean, rest_std=rest_std, split=split)
+                    ROI_MEG_Data = MEG_Data[roi_channels, :] #  num_roi_channels x time_samples
+                    if args.preprocs.brain_filter is not None:
+                        brain_filter_low = args.preprocs.brain_filter[0]
+                        brain_filter_high = args.preprocs.brain_filter[1]
+                        ROI_MEG_Data = mne.filter.filter_data(ROI_MEG_Data, sfreq=fs, l_freq=brain_filter_low, h_freq=brain_filter_high,)
+                        print(f'band path filter: {brain_filter_low}-{brain_filter_high}')
+                    if args.preprocs.brain_resample_rate is not None:
+                        ROI_MEG_Data = mne.filter.resample(ROI_MEG_Data, down=fs / args.preprocs.brain_resample_rate)
+                        print('resample {} to {} Hz'.format(fs,args.preprocs.brain_resample_rate))
+                        window = time_window(args, triggers, args.preprocs.brain_resample_rate)
+                    else:
+                        window = time_window(args, triggers, fs)
+                    ROI_MEG_epochs = epoching(ROI_MEG_Data, window)
+
+                    meg_epochs.append(ROI_MEG_epochs) # array [epoch x ch x time_stamp]
+                    sub_epochs+=[self.sub_id_map[sub]] * len(ROI_MEG_epochs) # list [epoch]
+                    label_epochs.append(labels) # array [epoch]
+                    image_feature_epochs.append(image_features) # array [epoch x dim]
         meg_epochs = np.concatenate(meg_epochs, axis=0)
         label_epochs = np.concatenate(label_epochs, axis=0)
         image_feature_epochs = np.concatenate(image_feature_epochs, axis=0)
@@ -191,7 +229,26 @@ def same_image2neighbor(X, Y, label):
         assert len(list(np.where(label==i)[0])) > 0
     return X[same_image_indices], Y[same_image_indices]
 
+def get_kernel_block_ids(args):
+    target_roi_indices = []
+    for i in args.roi_block_ids:
+        filepath = args.bdata_path.format(block_id=i)
+        # print('roi block path: ', filepath)
+        roi = scipy.io.loadmat(filepath)
+        target_roi_indices.append(roi['vertex_ds'][:,0])
+    target_roi_indices = np.concatenate(target_roi_indices, axis=0) - 1 # 0始まりなので
+    print('target_roi_indices', target_roi_indices.shape)
+    return target_roi_indices
 
+def get_common_kernel(target_roi_indices, sub_kernel_path, common_kernel_path):
+
+    sub_kernel = scipy.io.loadmat(sub_kernel_path)
+    common_kernel = scipy.io.loadmat(common_kernel_path)
+    sub_mat = sub_kernel['ImagingKernel']
+    common_mat = common_kernel['tess2tess_interp']['Wmat'][0,0].toarray()
+
+    target_region_kernel = common_mat[target_roi_indices] @ sub_mat
+    return target_region_kernel
 
 class GODCollator(torch.nn.Module):
     """
