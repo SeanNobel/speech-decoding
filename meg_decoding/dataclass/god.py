@@ -146,7 +146,7 @@ class GODDatasetBase(Dataset):
                     label_path = label_path_pattern.format(sub=sub, name=label_name)
                     trigger_path = trigger_meg_path_pattern.format(sub=sub, name=trigger_name)
                     processed_rest_meg_path = processed_rest_meg_path_pattern.format(sub=sub, name=rest_name)
-                    subject_kernel_path = processed_kernel_path_pattern.format(sub=sub, name=kernel_name)
+                    subject_kernel_path = processed_kernel_path_pattern.format(sub=str(sub).zfill(2), name=kernel_name)
                     target_region_kernel = get_common_kernel(target_roi_indices, subject_kernel_path, common_kernel_path)
                     if args.z_scoring:
                         rest_mean, rest_std = get_baseline(processed_rest_meg_path, fs, args.rest_duration)
