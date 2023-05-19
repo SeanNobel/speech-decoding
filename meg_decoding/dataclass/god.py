@@ -132,14 +132,14 @@ class GODDatasetBase(Dataset):
         image_feature_epochs = []
         rest_mean, rest_std = None, None
         pbar = tqdm.tqdm(sub_list)
-        if args.src_reconstruction:
+        if "src_reconstruction" in args.keys() and args.src_reconstruction:
             print('src reconstruction')
             target_roi_indices = get_kernel_block_ids(args)
         for sub in pbar:
             pbar.set_description("load subject data -- current: {}".format(sub))
             fs = args.subjects[sub]['fs']
 
-            if args.src_reconstruction:
+            if "src_reconstruction" in args.keys() and args.src_reconstruction:
                 common_kernel_path = os.path.join(DATAROOT, f'{sub}/kernel/tess_cortex_pial_low.mat')
                 for meg_name, label_name, trigger_name, rest_name, kernel_name in zip(args.subjects[sub][split]['mat'], args.subjects[sub][split]['labels'], args.subjects[sub][split]['trigger'], args.subjects[sub][split]['rest'], args.subjects[sub][split]['kernel']):
                     processed_meg_path = processed_meg_path_pattern.format(sub=sub, name=meg_name)
