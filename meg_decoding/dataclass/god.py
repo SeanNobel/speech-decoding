@@ -151,7 +151,9 @@ class GODDatasetBase(Dataset):
                     if args.z_scoring:
                         rest_mean, rest_std = get_baseline(processed_rest_meg_path, fs, args.rest_duration)
                     MEG_Data, image_features, labels, triggers = get_meg_data(processed_meg_path, label_path, trigger_path, rest_mean=rest_mean, rest_std=rest_std, split=split)
-                    ROI_MEG_Data = MEG_Data[roi_channels, :] #  num_roi_channels x time_samples
+                    ROI_MEG_Data = MEG_Data# [roi_channels, :] #  num_roi_channels x time_samples
+                    assert len(ROI_MEG_Data) == 160 # len(target_region_kernel)
+                    ROI_MEG_Data = np.matmul(target_region_kernel, ROI_MEG_Data) # source reconstruction of target region
                     if args.preprocs.brain_filter is not None:
                         brain_filter_low = args.preprocs.brain_filter[0]
                         brain_filter_high = args.preprocs.brain_filter[1]
@@ -163,8 +165,7 @@ class GODDatasetBase(Dataset):
                         window = time_window(args, triggers, args.preprocs.brain_resample_rate)
                     else:
                         window = time_window(args, triggers, fs)
-                    assert len(ROI_MEG_Data) == 160 # len(target_region_kernel)
-                    ROI_MEG_Data = np.matmul(target_region_kernel, ROI_MEG_Data) # source reconstruction of target region
+
                     ROI_MEG_epochs = epoching(ROI_MEG_Data, window)
 
                     meg_epochs.append(ROI_MEG_epochs) # array [epoch x ch x time_stamp]
