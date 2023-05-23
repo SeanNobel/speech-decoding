@@ -180,8 +180,8 @@ def run(args: DictConfig) -> None:
                 generator=g,
             )
             test_loader = DataLoader(
-                # val_dataset, # 
-                outlier_dataset,  # val_dataset
+                val_dataset, # 
+                # outlier_dataset,  # val_dataset
                 batch_size=50, # args.batch_size,
                 drop_last=True,
                 shuffle=False,
@@ -421,7 +421,8 @@ if __name__ == "__main__":
         # args = compose(config_name='20230429_sbj01_eegnet_regression')
         # args = compose(config_name='20230501_all_eegnet_regression')
         # args = compose(config_name='20230425_sbj01_seq2stat')
-        args = compose(config_name='20230516_sbj03_eegnet_regression')
+        args = compose(config_name='20230519_all_eegnet_regression_src_reconst')
+        # args = compose(config_name='20230518_all_eegnet_regression')
     if not os.path.exists(os.path.join(args.save_root, 'weights')):
         os.makedirs(os.path.join(args.save_root, 'weights'))
     run(args)

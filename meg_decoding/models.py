@@ -134,7 +134,10 @@ class EEGNet(nn.Module):
             nn.Conv2d(1, args.F1, (1, args.k1), padding="same", bias=False), nn.BatchNorm2d(args.F1)
         )
         roi_channels = roi(args)
-        num_channels = len(roi_channels)
+        if "src_reconstruction" in args.keys() and args.src_reconstruction:
+            num_channels = args.src_ch #449 # hard coding
+        else:
+            num_channels = len(roi_channels)
         self.conv2 = nn.Sequential(
             nn.Conv2d(
                 args.F1, args.D * args.F1, (num_channels, 1), groups=args.F1, bias=False
@@ -197,7 +200,10 @@ class EEGNetSub(nn.Module):
 
 
         roi_channels = roi(args)
-        num_channels = len(roi_channels)
+        if "src_reconstruction" in args.keys() and args.src_reconstruction:
+            num_channels = args.src_ch #449 # hard coding
+        else:
+            num_channels = len(roi_channels)
 
         self.conv1_sub =  nn.ModuleList(
             nn.Sequential(

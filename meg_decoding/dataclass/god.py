@@ -249,7 +249,8 @@ def get_common_kernel(target_roi_indices, sub_kernel_path, common_kernel_path):
     sub_mat = sub_kernel['ImagingKernel']
     common_mat = common_kernel['tess2tess_interp']['Wmat'][0,0].toarray()
 
-    target_region_kernel = common_mat[target_roi_indices] @ sub_mat
+    # target_region_kernel = common_mat[target_roi_indices] @ sub_mat 
+    target_region_kernel = (common_mat.T)[target_roi_indices] @ sub_mat # modified @2023.05.23
     return target_region_kernel
 
 class GODCollator(torch.nn.Module):

@@ -81,5 +81,6 @@ if __name__ == '__main__':
     filepath = '/home/yainoue/meg2image/results/20230501_all_eegnet_cv_norm_regression/runs/2023-05-01 17:01:17.163323'
     # filepath = '/home/yainoue/meg2image/results/20230515_sbj02_eegnet_cv_norm_regression/runs/2023-05-15 01:08:45.283225'
     # filepath = '/home/yainoue/meg2image/results/20230517_all_eegnet_cv_norm_regression_cogitat/runs/2023-05-17 05:57:53.604625'
-    filepath = '/home/yainoue/meg2image/results/20230518_all_eegnet_cv_norm_regression/runs/2023-05-17 18:50:02.743497'
+    # filepath = '/home/yainoue/meg2image/results/20230518_all_eegnet_cv_norm_regression/runs/2023-05-17 18:50:02.743497'
+    filepath = '/home/yainoue/meg2image/results/20230519_all_eegnet_cv_norm_regression_src_reconst/runs/2023-05-19 23:13:54.848307'
     parse_data(filepath)

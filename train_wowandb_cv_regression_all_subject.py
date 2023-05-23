@@ -258,8 +258,8 @@ def run(args: DictConfig) -> None:
 
             X, Y = X.to(device), Y.to(device)
             subject_idxs = subject_idxs.to(device)
-            import pdb; pdb.set_trace()g
             Z = brain_encoder(X, subject_idxs)
+            # import pdb; pdb.set_trace()
             loss = loss_func(Y, Z)
             with torch.no_grad():
                 trainTop1acc, trainTop10acc = classifier(Z, Y)
