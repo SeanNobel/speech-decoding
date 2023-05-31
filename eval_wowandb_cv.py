@@ -421,8 +421,10 @@ if __name__ == "__main__":
         # args = compose(config_name='20230429_sbj01_eegnet_regression')
         # args = compose(config_name='20230501_all_eegnet_regression')
         # args = compose(config_name='20230425_sbj01_seq2stat')
-        args = compose(config_name='20230519_all_eegnet_regression_src_reconst')
+        # args = compose(config_name='20230519_all_eegnet_regression_src_reconst')
         # args = compose(config_name='20230518_all_eegnet_regression')
+        # args = compose(config_name='20230523_sbj01_eegnet_regression_src_reconst')
+        args = compose(config_name='20230524_all_eegnet_regression_src_reconst')
     if not os.path.exists(os.path.join(args.save_root, 'weights')):
         os.makedirs(os.path.join(args.save_root, 'weights'))
     run(args)
