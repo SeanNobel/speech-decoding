@@ -40,3 +40,4 @@ nohup.out
 logs/*
 data/GOD/*.npy
 data/ImageNet/*
+data/prompts/*

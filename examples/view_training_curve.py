@@ -85,4 +85,7 @@ if __name__ == '__main__':
     filepath = '/home/yainoue/meg2image/results/20230519_all_eegnet_cv_norm_regression_src_reconst/runs/2023-05-19 23:13:54.848307'
     filepath = '/home/yainoue/meg2image/results/20230522_sbj01_eegnet_cv_norm_regression_src_reconst/runs/2023-05-23 19:29:43.093427'
     filepath = '/home/yainoue/meg2image/results/20230524_all_eegnet_cv_norm_regression_src_reconst/runs/2023-05-24 18:33:34.519060'
+    filepath = '/home/yainoue/meg2image/results/20230531_sbj02_eegnet_cv_norm_regression_src_reconst/runs/2023-06-01 00:20:53.904804'
+    filepath = '/home/yainoue/meg2image/results/20230601_sbj03_eegnet_cv_norm_regression_src_reconst/runs/2023-06-01 21:04:03.763788'
+    filepath = '/home/yainoue/meg2image/results/20230606_sbj02_eegnet_cv_norm/runs/2023-06-06 23:58:40.026704'
     parse_data(filepath)

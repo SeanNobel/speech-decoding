@@ -32,7 +32,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 
-def run(args: DictConfig) -> None:
+def run(args: DictConfig, eval_sbj:str='1') -> None:
 
     from meg_decoding.utils.reproducibility import seed_worker
     # NOTE: We do need it (IMHO).
@@ -149,10 +149,26 @@ def run(args: DictConfig) -> None:
         # val_size = len(source_dataset) - train_size
 
         # train_dataset, val_dataset = torch.utils.data.random_split(source_dataset, [train_size, val_size])
-        ind_tr = list(range(0, 3000)) + list(range(3600, 6600)) #+ list(range(7200, 21600)) # + list(range(7200, 13200)) + list(range(14400, 20400))
-        ind_te = list(range(3000,3600)) + list(range(6600, 7200)) # + list(range(13200, 14400)) + list(range(20400, 21600))
+        if eval_sbj == '1':
+            ind_tr = list(range(100))# list(range(0, 3000)) + list(range(3600, 6600)) #+ list(range(7200, 21600)) # + list(range(7200, 13200)) + list(range(14400, 20400))
+            ind_te = list(range(3000,3600)) + list(range(6600, 7200)) # + list(range(13200, 14400)) + list(range(20400, 21600))
+            ind_out = list(range(0,50))
+        elif eval_sbj == '2':
+            ind_tr = list(range(100))# list(range(7200, 7200+3000)) + list(range(10800, 10800+3000)) 
+            ind_te = list(range(7200+3000, 7200+3600)) + list(range(10800+3000, 10800+3600))
+            ind_out = list(range(50,100))
+        elif eval_sbj == '3':
+            ind_tr = list(range(100))# list(range(14400, 14400+3000)) + list(range(14400+3600, 14400+6600)) 
+            ind_te = list(range(14400+3000,14400+3600)) + list(range(14400+6600, 14400+7200)) 
+            ind_out = list(range(100,150))
+        else:
+            ind_tr = list(range(0, 3000)) + list(range(3600, 6600))  + list(range(7200, 7200+3000))  + list(range(10800, 10800+3000)) + list(range(14400, 14400+3000)) + list(range(14400+3600, 14400+6600))
+            ind_te = list(range(3000,3600)) + list(range(6600, 7200))  + list(range(7200+3000, 7200+3600)) + list(range(10800+3000, 10800+3600)) + list(range(14400+3000,14400+3600)) + list(range(14400+6600, 14400+7200)) 
+            ind_out = list(range(0,150))
+        outlier_dataset = Subset(outlier_dataset, ind_out)
         train_dataset = Subset(source_dataset, ind_tr)
         val_dataset   = Subset(source_dataset, ind_te)
+
 
         with open_dict(args):
             args.num_subjects = source_dataset.num_subjects
@@ -418,13 +434,24 @@ def vis_confusion_mat(mat, acc, savefile=None):
 if __name__ == "__main__":
     from hydra import initialize, compose
     with initialize(version_base=None, config_path="../configs/"):
+        args = compose(config_name='20230427_sbj01_eegnet')
         # args = compose(config_name='20230429_sbj01_eegnet_regression')
         # args = compose(config_name='20230501_all_eegnet_regression')
         # args = compose(config_name='20230425_sbj01_seq2stat')
+        # args = compose(config_name='20230515_sbj02_eegnet_regression')
+        # args = compose(config_name='20230516_sbj03_eegnet_regression')
         # args = compose(config_name='20230519_all_eegnet_regression_src_reconst')
         # args = compose(config_name='20230518_all_eegnet_regression')
         # args = compose(config_name='20230523_sbj01_eegnet_regression_src_reconst')
-        args = compose(config_name='20230524_all_eegnet_regression_src_reconst')
+        # args = compose(config_name='20230524_all_eegnet_regression_src_reconst')
+        # args = compose(config_name='20230531_sbj02_eegnet_regression_src_reconst')
+        # args = compose(config_name='20230601_sbj03_eegnet_regression_src_reconst')
+        # args = compose(config_name='20230606_sbj02_eegnet')
+        args = compose(config_name='20230607_sbj03_eegnet')
+    # for subset of 20230501
+    # with initialize(version_base=None, config_path="../configs/subjects"):
+    #     args.subjects = compose(config_name='pattern_sbj01')
+    eval_sbj = '1'
     if not os.path.exists(os.path.join(args.save_root, 'weights')):
         os.makedirs(os.path.join(args.save_root, 'weights'))
-    run(args)
+    run(args, eval_sbj)
