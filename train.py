@@ -180,7 +180,7 @@ def run(args: DictConfig) -> None:
             config=wandb.config,
             save_code=True,
         )
-        wandb.run.name = args.wandb.run_name + "_" + args.split_mode
+        wandb.run.name = args.wandb.run_name
         wandb.run.save()
 
     # ---------------------
@@ -188,7 +188,7 @@ def run(args: DictConfig) -> None:
     # ---------------------
     brain_encoder = BrainEncoder(args).to(device)
 
-    classifier = Classifier(args)
+    classifier = Classifier()
 
     # ---------------
     #      Loss
@@ -216,7 +216,7 @@ def run(args: DictConfig) -> None:
         testTop10accs = []
 
         brain_encoder.train()
-        for i, batch in enumerate(tqdm(train_loader)):
+        for batch in tqdm(train_loader):
             if len(batch) == 3:
                 X, Y, subject_idxs = batch
             elif len(batch) == 4:
@@ -228,13 +228,13 @@ def run(args: DictConfig) -> None:
                 raise ValueError("Unexpected number of items from dataloader.")
 
             X, Y = X.to(device), Y.to(device)
-            # print([(s.item(), chid.item()) for s, chid in zip(subject_idxs, chunkIDs)])
+
             Z = brain_encoder(X, subject_idxs)
 
             loss = loss_func(Y, Z)
 
             with torch.no_grad():
-                trainTop1acc, trainTop10acc = classifier(Z, Y)
+                trainTop1acc, trainTop10acc, _ = classifier(Z, Y)
 
             train_losses.append(loss.item())
             trainTop1accs.append(trainTop1acc)
@@ -252,6 +252,8 @@ def run(args: DictConfig) -> None:
         #     loss.backward()
         #     optimizer.step()
 
+        torch.cuda.empty_cache()
+
         brain_encoder.eval()
         for batch in test_loader:
             with torch.no_grad():
@@ -264,11 +266,21 @@ def run(args: DictConfig) -> None:
 
                 X, Y = X.to(device), Y.to(device)
 
-                Z = brain_encoder(X, subject_idxs)
+                # NOTE: Avoid CUDA out of memory
+                Z = torch.cat(
+                    [
+                        brain_encoder(_X, _subject_idxs)
+                        for _X, _subject_idxs in zip(
+                            torch.split(X, args.batch_size),
+                            torch.split(subject_idxs, args.batch_size),
+                        )
+                    ]
+                )
 
                 loss = loss_func(Y, Z)
 
-                testTop1acc, testTop10acc = classifier(Z, Y, test=True)  # ( 250, 1024, 360 )
+                testTop1acc, testTop10acc, _ = classifier(Z, Y, sequential=True)
+                # ( 250, 1024, 360 )
 
             test_losses.append(loss.item())
             testTop1accs.append(testTop1acc)
@@ -299,6 +311,8 @@ def run(args: DictConfig) -> None:
             wandb.log(performance_now)
 
         torch.save(brain_encoder.state_dict(), "model_last.pt")
+
+        torch.cuda.empty_cache()
 
 
 if __name__ == "__main__":
