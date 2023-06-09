@@ -79,26 +79,6 @@ def baseline_correction(X: torch.Tensor, baseline_num_samples: int) -> torch.Ten
 
 
 @torch.no_grad()
-def scale_and_clamp(X: torch.Tensor, clamp_lim: Union[int, float]) -> torch.Tensor:
-    """subject-wise scaling and clamping of EEG
-    args:
-        X: ( chunks, channel, time@120Hz//segment ) or ( segment, subject, channel, time@120Hz//segment )
-        clamp_lim: float, abs limit (will be applied for min and max)
-    returns:
-        X: scaled and clampted segment, channel, subject -wise | same shape as input
-    """
-    orig_shape = X.shape
-
-    X = X.flatten(end_dim=-2)  # ( segment * subject * channel, time//segment )
-
-    X = RobustScaler().fit_transform(X)
-
-    X = torch.from_numpy(X).clamp(min=-clamp_lim, max=clamp_lim)
-
-    return X.reshape(orig_shape)
-
-
-@torch.no_grad()
 def scale_and_clamp(X: torch.Tensor, clamp_lim: Union[int, float], channel_wise=True):
     """subject-wise scaling and clamping of M/EEG
     args:
