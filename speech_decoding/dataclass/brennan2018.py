@@ -53,12 +53,14 @@ class Brennan2018Dataset(Dataset):
         super().__init__()
 
         # Both
+        chance = args.chance
         force_recompute = args.rebuild_dataset
         self.split_mode = args.split_mode
         self.root_dir = args.root_dir
         self.channel_wise = args.preprocs.channel_wise
         self.seq_len_sec = args.preprocs.seq_len_sec
         # EEG
+        self.filter_brain = args.preprocs.filter
         self.brain_filter_low = args.preprocs.brain_filter_low
         self.brain_filter_high = args.preprocs.brain_filter_high
         self.baseline_len_sec = args.preprocs.baseline_len_sec
@@ -115,6 +117,9 @@ class Brennan2018Dataset(Dataset):
         else:
             raise ValueError(f"Unknown upsampling strategy: {args.preprocs.y_upsample}")
 
+        if chance:
+            self.Y = self.Y[torch.randperm(len(self.Y))]
+
     def __len__(self):
         return len(self.X)
 
@@ -143,7 +148,7 @@ class Brennan2018Dataset(Dataset):
 
         waveform = torch.cat([w[0] for w in waveform], dim=1)  # ( 1, time@44.1kHz )
 
-        audio = self.resample_audio(waveform, audio_rate)
+        audio = self.resample_audio(waveform, audio_rate, AUDIO_RESAMPLE_RATE)
 
         cprint(
             f">>> Resampled audio {audio_rate}Hz -> {AUDIO_RESAMPLE_RATE}Hz | shape: {waveform.shape} -> {audio.shape}",
@@ -164,7 +169,7 @@ class Brennan2018Dataset(Dataset):
         # ----------------------
         #     Preprocessing
         # ----------------------
-        X = self.brain_preproc(eeg_raws, eeg_rate)
+        X = self.resample_brain(eeg_raws, eeg_rate, self.filter_brain)
         cprint(f">>> Preprocessed X (EEG): {X.shape}", color="cyan")
 
         X, audio = shift_brain_signal(
@@ -219,17 +224,19 @@ class Brennan2018Dataset(Dataset):
 
         return X[drop_bools], audio[drop_bools], sentence_idxs[drop_bools]
 
-    def resample_audio(self, waveform: torch.Tensor, sample_rate: int) -> torch.Tensor:
+    def resample_audio(
+        self, waveform: torch.Tensor, sample_rate: int, resample_rate: int = 16000
+    ) -> torch.Tensor:
         """Resamples audio to 16kHz. (16kHz is required by wav2vec2.0)"""
 
         waveform = F.resample(
             waveform,
             sample_rate,
-            AUDIO_RESAMPLE_RATE,
+            resample_rate,
             lowpass_filter_width=self.lowpass_filter_width,
         )
 
-        len_audio_s = waveform.shape[1] / AUDIO_RESAMPLE_RATE
+        len_audio_s = waveform.shape[1] / resample_rate
         cprint(f">>> Audio length: {len_audio_s} s.", color="cyan")
 
         return waveform
@@ -281,7 +288,9 @@ class Brennan2018Dataset(Dataset):
 
         return X, audio
 
-    def brain_preproc(self, eeg_raws: List[np.ndarray], fsample: int) -> torch.Tensor:
+    def resample_brain(
+        self, eeg_raws: List[np.ndarray], fsample: int, filter: bool = False
+    ) -> torch.Tensor:
         """
         Returns: ( subject, channel, time@120Hz )
         """
@@ -297,18 +306,19 @@ class Brennan2018Dataset(Dataset):
             eeg_raw = eeg_raw[:60, :trim_eeg_to]
 
             # NOTE: in the paper they don't mention anything about filtering
-            eeg_filtered = mne.filter.filter_data(
-                eeg_raw,
-                sfreq=fsample,
-                l_freq=self.brain_filter_low,
-                h_freq=self.brain_filter_high,
-            )
+            if filter:
+                eeg_raw = mne.filter.filter_data(
+                    eeg_raw,
+                    sfreq=fsample,
+                    l_freq=self.brain_filter_low,
+                    h_freq=self.brain_filter_high,
+                )
 
-            eeg_filtered = torch.from_numpy(eeg_filtered.astype(np.float32))
+            eeg_raw = torch.from_numpy(eeg_raw.astype(np.float32))
 
             # NOTE: in the paper they say they downsampled to exactly 120Hz with Torchaudio, so I'll stick to that
             eeg_resampled = F.resample(
-                waveform=eeg_filtered,
+                waveform=eeg_raw,
                 orig_freq=fsample,
                 new_freq=BRAIN_RESAMPLE_RATE,
                 lowpass_filter_width=self.lowpass_filter_width,  # TODO: check
