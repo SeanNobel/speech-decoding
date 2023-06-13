@@ -146,7 +146,7 @@ def interpolate_y_time(Y: torch.Tensor, num_samples: int) -> torch.Tensor:
     return F.interpolate(Y, size=num_samples, mode="linear")
 
 
-# NOTE currently only works for gwilliams2022.yml
+# NOTE: Works only for Gwilliams2022 dataset
 def check_preprocs(args, data_dir):
     is_processed = False
     preproc_dirs = glob.glob(data_dir + "*/")

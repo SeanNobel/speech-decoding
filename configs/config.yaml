@@ -43,7 +43,7 @@ preprocs:
   shift_brain: True         # whether to shift M/EEG into the future relative to audio
   shift_len: 150            # if True, by how many ms
   last4layers: True         # if True, the brain_encoder's emsize will be 1024, not 512
-  channel_wise: True        # whether to scale each channel's EEG dataset individually (only for Brennan2018)
+  channel_wise: True        # Whether to scale each channel of MEG/EEG datasets individually
   clamp: True
   clamp_lim: 20
   y_upsample: interpolate # interpolate / pad

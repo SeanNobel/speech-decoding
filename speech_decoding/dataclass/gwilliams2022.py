@@ -29,6 +29,7 @@ from speech_decoding.utils.preproc_utils import (
     continuous,
     scale_and_clamp,
 )
+from speech_decoding.constants import BRAIN_RESAMPLE_RATE, AUDIO_RESAMPLE_RATE
 
 mne.set_log_level(verbose="WARNING")
 
@@ -42,8 +43,10 @@ class Gwilliams2022DatasetBase(Dataset):
     def __init__(self, args):
         super().__init__()
 
+        # Both
+        self.root_dir = args.root_dir  #  + "/data/Gwilliams2022/"
+        # MEG
         self.wav2vec_model = args.wav2vec_model
-        self.root_dir = args.root_dir + "/data/Gwilliams2022/"
         self.brain_orig_rate = 1000
         self.brain_resample_rate = args.preprocs["brain_resample_rate"]
         self.brain_filter_low = args.preprocs["brain_filter_low"]
@@ -74,7 +77,7 @@ class Gwilliams2022DatasetBase(Dataset):
         #     Preprocess X (MEG)
         # ---------------------------
         if args.rebuild_dataset or not args.preprocs["x_done"]:
-            _out = self.brain_preproc_handler()
+            _out = self.brain_preproc()
             self.X, self.meg_onsets, self.speech_onsets, self.sentence_idxs = _out
 
             np.save(self.x_path, self.X)
@@ -89,8 +92,12 @@ class Gwilliams2022DatasetBase(Dataset):
         else:
             self.X = np.load(self.x_path, allow_pickle=True).item()
             self.meg_onsets = np.load(self.meg_onsets_path, allow_pickle=True).item()
-            self.speech_onsets = np.load(self.speech_onsets_path, allow_pickle=True).item()
-            self.sentence_idxs = np.load(self.sentence_idxs_path, allow_pickle=True).item()
+            self.speech_onsets = np.load(
+                self.speech_onsets_path, allow_pickle=True
+            ).item()
+            self.sentence_idxs = np.load(
+                self.sentence_idxs_path, allow_pickle=True
+            ).item()
 
         # ----------------------------------------
         #      Preprocess Y (embedded speech)
@@ -117,19 +124,23 @@ class Gwilliams2022DatasetBase(Dataset):
 
         assert len(self.X) == len(self.meg_onsets)
 
-        self.valid_subjects = np.array(list(set([k.split("_")[0] for k in self.X.keys()])))
+        self.valid_subjects = np.array(
+            list(set([k.split("_")[0] for k in self.X.keys()]))
+        )
         self.num_subjects = len(self.valid_subjects)
 
         cprint(f"X keys: {self.X.keys()}", color="cyan")
         cprint(f"Y: {self.Y.shape}", color="cyan")
-        cprint(f"num_subjects: {self.num_subjects} (each has 2 or 1 sessions)", color="cyan")
+        cprint(
+            f"num_subjects: {self.num_subjects} (each has 2 or 1 sessions)", color="cyan"
+        )
         print(self.valid_subjects)
 
     def __len__(self):
         return len(self.Y)
 
     def __getitem__(self, i):  # NOTE: i is id of a speech segment
-        i_in_task, task = self.segment_to_task(i)
+        i_in_task, task = self._segment_to_task(i)
 
         key_no_task = np.random.choice(list(self.X.keys()))
         X = self.X[key_no_task][task]  # ( 208, ~100000 )
@@ -142,7 +153,7 @@ class Gwilliams2022DatasetBase(Dataset):
 
         return X, self.Y[i], subject_idx
 
-    def segment_to_task(self, i) -> Tuple[int, str]:
+    def _segment_to_task(self, i) -> Tuple[int, str]:
         nseg_task_accum = np.cumsum(self.num_segments_foreach_task)
         task = np.searchsorted(nseg_task_accum, i + 1)
 
@@ -162,7 +173,9 @@ class Gwilliams2022DatasetBase(Dataset):
     def sentence_to_word_idxs(self, _sentence_idxs, key):
         return [
             i
-            for si, i in zip(self.sentence_idxs[key], np.arange(len(self.sentence_idxs[key])))
+            for si, i in zip(
+                self.sentence_idxs[key], np.arange(len(self.sentence_idxs[key]))
+            )
             if si in _sentence_idxs
         ]
 
@@ -189,18 +202,21 @@ class Gwilliams2022DatasetBase(Dataset):
                         self.meg_onsets.pop(key)
 
     @staticmethod
-    def brain_preproc(dat):
-        subject_idx, d, speech_onsets, meg_onsets, sentence_idxs, session_idx, task_idx = dat
-
-        num_channels = d["num_channels"]
-        brain_orig_rate = d["brain_orig_rate"]
-        brain_filter_low = d["brain_filter_low"]
-        brain_filter_high = d["brain_filter_high"]
-        brain_resample_rate = d["brain_resample_rate"]
-        root_dir = d["root_dir"]
-        preproc_dir = d["preproc_dir"]
-
-        description = f"subject{str(subject_idx+1).zfill(2)}_sess{session_idx}_task{task_idx}"
+    def _brain_preproc(
+        args: dict,
+        subject_idx: int,
+        speech_onsets: np.ndarray,
+        meg_onsets: np.ndarray,
+        sentence_idxs: np.ndarray,
+        session_idx: int,
+        task_idx: int,
+        num_channels: int,
+        root_dir: str,
+        preproc_dir: str,
+    ) -> None:
+        description = (
+            f"subject{str(subject_idx+1).zfill(2)}_sess{session_idx}_task{task_idx}"
+        )
 
         bids_path = mne_bids.BIDSPath(
             subject=str(subject_idx + 1).zfill(2),
@@ -215,7 +231,7 @@ class Gwilliams2022DatasetBase(Dataset):
             raw = mne_bids.read_raw_bids(bids_path)
         except:
             cprint("No .con data was found", color="yellow")
-            return 1
+            return None
 
         cprint(description, color="cyan")
 
@@ -244,43 +260,48 @@ class Gwilliams2022DatasetBase(Dataset):
         speech_onsets.update({task_str: _speech_onsets})
         sentence_idxs.update({task_str: _sentence_idxs})
 
-        meg_raw = np.stack([df[key] for key in df.keys() if "MEG" in key])  # ( 224, ~396000 )
+        meg_raw = np.stack(
+            [df[key] for key in df.keys() if "MEG" in key]
+        )  # ( 224, ~396000 )
         # NOTE: (kind of) confirmed that last 16 channels are REF
         meg_raw = meg_raw[:num_channels]  # ( 208, ~396000 )
 
-        meg_filtered = mne.filter.filter_data(
-            meg_raw,
-            sfreq=brain_orig_rate,
-            l_freq=brain_filter_low,
-            h_freq=brain_filter_high,
-        )
+        if filter:
+            meg_raw = mne.filter.filter_data(
+                meg_raw,
+                sfreq=args.brain_orig_rate,
+                l_freq=args.brain_filter_low,
+                h_freq=args.brain_filter_high,
+            )
 
         # To 120 Hz
-        meg_resampled = mne.filter.resample(
-            meg_filtered,
-            down=brain_orig_rate / brain_resample_rate,
+        meg_resampled = F.resample(
+            waveform=meg_raw,
+            orig_freq=args.brain_orig_rate,
+            new_freq=args.brain_resample_rate,
+            lowpass_filter_width=args.lowpass_filter_width,
         )  # ( 208, 37853 )
 
         np.save(
             f"{preproc_dir}_parts/{description}",
             meg_resampled,
         )
-        return 0
+        # return 0
 
-    def brain_preproc_handler(self, num_subjects=27, num_channels=208):
+    def brain_preproc(self, args, num_subjects: int, num_channels: int = 208):
         tmp_dir = self.preproc_dir + "_parts/"
         if not os.path.exists(tmp_dir):
             os.mkdir(tmp_dir)
 
-        consts = dict(
-            num_channels=num_channels,
-            brain_orig_rate=self.brain_orig_rate,
-            brain_filter_low=self.brain_filter_low,
-            brain_filter_high=self.brain_filter_high,
-            brain_resample_rate=self.brain_resample_rate,
-            root_dir=self.root_dir,
-            preproc_dir=self.preproc_dir,
-        )
+        # consts = dict(
+        #     num_channels=num_channels,
+        #     brain_orig_rate=self.brain_orig_rate,
+        #     brain_filter_low=self.brain_filter_low,
+        #     brain_filter_high=self.brain_filter_high,
+        #     brain_resample_rate=self.brain_resample_rate,
+        #     root_dir=self.root_dir,
+        #     preproc_dir=self.preproc_dir,
+        # )
 
         subj_list = []
         for subj in range(num_subjects):
@@ -288,8 +309,8 @@ class Gwilliams2022DatasetBase(Dataset):
                 for task_idx in range(4):
                     subj_list.append(
                         (
+                            args.preprocs,
                             subj,
-                            consts,
                             global_speech_onsets,
                             global_meg_onsets,
                             global_sentence_idxs,
@@ -301,7 +322,7 @@ class Gwilliams2022DatasetBase(Dataset):
         with Pool(processes=20) as p:
             res = list(
                 tqdm(
-                    p.imap(self.brain_preproc, subj_list),
+                    p.imap(self._brain_preproc, subj_list),
                     total=len(subj_list),
                     bar_format="{desc:<5.5}{percentage:3.0f}%|{bar:10}{r_bar}",
                 )
@@ -316,16 +337,22 @@ class Gwilliams2022DatasetBase(Dataset):
 
         # NOTE: assemble files into one and clean up
         fnames = natsorted(os.listdir(tmp_dir))
-        # cprint(fnames, color='yellow')
+
+        # NOTE: data MUST be task0, ... taskN, task0, ..., taskN (N=4)
         X = dict()
-        for fname in fnames:  # NOTE: data MUST be task0, ... taskN, task0, ..., taskN (N=4)
+        for fname in fnames:
             key = os.path.splitext(fname)[0]
             X[key] = np.load(tmp_dir + fname, allow_pickle=True)
 
         cprint("removing temp files for EEG data", color="white")
         shutil.rmtree(tmp_dir)
 
-        return X, dict(global_meg_onsets), dict(global_speech_onsets), dict(global_sentence_idxs)
+        return (
+            X,
+            dict(global_meg_onsets),
+            dict(global_speech_onsets),
+            dict(global_sentence_idxs),
+        )
 
     @torch.no_grad()
     def audio_preproc(self):
@@ -341,7 +368,9 @@ class Gwilliams2022DatasetBase(Dataset):
             task_idx_ID = int(task_idx[-1])
 
             audio_paths = natsorted(
-                glob.glob(f"{self.root_dir}stimuli/audio/{self.task_prefixes[task_idx_ID]}*.wav")
+                glob.glob(
+                    f"{self.root_dir}stimuli/audio/{self.task_prefixes[task_idx_ID]}*.wav"
+                )
             )
 
             audio_raw = []
@@ -647,7 +676,9 @@ class Gwilliams2022Collator(nn.Module):
         super(Gwilliams2022Collator, self).__init__()
 
         self.brain_resample_rate = args.preprocs["brain_resample_rate"]
-        self.baseline_len_samp = int(self.brain_resample_rate * args.preprocs["baseline_len_sec"])
+        self.baseline_len_samp = int(
+            self.brain_resample_rate * args.preprocs["baseline_len_sec"]
+        )
         self.clamp = args.preprocs["clamp"]
         self.clamp_lim = args.preprocs["clamp_lim"]
 

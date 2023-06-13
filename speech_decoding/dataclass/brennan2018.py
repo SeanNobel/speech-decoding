@@ -53,13 +53,11 @@ class Brennan2018Dataset(Dataset):
         super().__init__()
 
         # Both
-        chance = args.chance
-        force_recompute = args.rebuild_dataset
         self.split_mode = args.split_mode
         self.root_dir = args.root_dir
-        self.channel_wise = args.preprocs.channel_wise
         self.seq_len_sec = args.preprocs.seq_len_sec
         # EEG
+        self.channel_wise = args.preprocs.channel_wise
         self.filter_brain = args.preprocs.filter
         self.brain_filter_low = args.preprocs.brain_filter_low
         self.brain_filter_high = args.preprocs.brain_filter_high
@@ -72,8 +70,12 @@ class Brennan2018Dataset(Dataset):
         self.lowpass_filter_width = args.preprocs.lowpass_filter_width
         self.wav2vec = Wav2Vec2Model.from_pretrained(args.wav2vec_model)
         # Data Paths
-        self.matfile_paths = natsorted(glob.glob(f"{self.root_dir}/data/Brennan2018/raw/*.mat"))
-        self.audio_paths = natsorted(glob.glob(f"{self.root_dir}/data/Brennan2018/audio/*.wav"))
+        self.matfile_paths = natsorted(
+            glob.glob(f"{self.root_dir}/data/Brennan2018/raw/*.mat")
+        )
+        self.audio_paths = natsorted(
+            glob.glob(f"{self.root_dir}/data/Brennan2018/audio/*.wav")
+        )
         self.onsets_path = f"{self.root_dir}/data/Brennan2018/AliceChapterOne-EEG.csv"
         # Save Paths
         X_path = f"{self.root_dir}/data/Brennan2018/X.pt"
@@ -81,7 +83,9 @@ class Brennan2018Dataset(Dataset):
         sentence_idxs_path = f"{self.root_dir}/data/Brennan2018/sentence_idxs.npy"
 
         # Rebuild dataset
-        if force_recompute or not (os.path.exists(X_path) and os.path.exists(Y_path)):
+        if args.rebuild_dataset or not (
+            os.path.exists(X_path) and os.path.exists(Y_path)
+        ):
             cprint(f"> Preprocessing EEG and audio.", color="cyan")
 
             self.X, self.Y, self.sentence_idxs = self.rebuild_dataset(
@@ -109,7 +113,10 @@ class Brennan2018Dataset(Dataset):
         self.num_subjects = self.X.shape[1]
         cprint(f">>> Number of subjects: {self.num_subjects}", color="cyan")
 
-        cprint(f">> Upsampling audio embedding with: {args.preprocs.y_upsample}", color="cyan")
+        cprint(
+            f">> Upsampling audio embedding with: {args.preprocs.y_upsample}",
+            color="cyan",
+        )
         if args.preprocs.y_upsample == "interpolate":
             self.Y = interpolate_y_time(self.Y, self.brain_num_samples)
         elif args.preprocs.y_upsample == "pad":
@@ -117,7 +124,7 @@ class Brennan2018Dataset(Dataset):
         else:
             raise ValueError(f"Unknown upsampling strategy: {args.preprocs.y_upsample}")
 
-        if chance:
+        if args.chance:
             self.Y = self.Y[torch.randperm(len(self.Y))]
 
     def __len__(self):
@@ -159,7 +166,9 @@ class Brennan2018Dataset(Dataset):
         #      EEG Loading
         # ----------------------
         matfile_paths = [
-            path for path in matfile_paths if not path.split(".")[0][-3:] in EXCLUDED_SUBJECTS
+            path
+            for path in matfile_paths
+            if not path.split(".")[0][-3:] in EXCLUDED_SUBJECTS
         ]
         mat_raws = [scipy.io.loadmat(path)["raw"][0, 0] for path in matfile_paths]
         eeg_raws = [mat_raw["trial"][0, 0] for mat_raw in mat_raws]
@@ -216,7 +225,9 @@ class Brennan2018Dataset(Dataset):
 
         sentence_ends = np.where(np.diff(sentence_idxs) > 0)[0]
 
-        drop_idxs = np.concatenate([np.arange(i - num_drops, i) + 1 for i in sentence_ends])
+        drop_idxs = np.concatenate(
+            [np.arange(i - num_drops, i) + 1 for i in sentence_ends]
+        )
 
         # NOTE: to boolean array
         drop_bools = np.ones(len(X), dtype=bool)
@@ -316,7 +327,6 @@ class Brennan2018Dataset(Dataset):
 
             eeg_raw = torch.from_numpy(eeg_raw.astype(np.float32))
 
-            # NOTE: in the paper they say they downsampled to exactly 120Hz with Torchaudio, so I'll stick to that
             eeg_resampled = F.resample(
                 waveform=eeg_raw,
                 orig_freq=fsample,
@@ -338,6 +348,8 @@ class Brennan2018Dataset(Dataset):
     def get_eeg_rate(self, mat_raws: List) -> int:
         sample_rates = np.array([mat_raw["fsample"][0, 0] for mat_raw in mat_raws])
         # is all 500Hz
-        assert np.all(sample_rates == sample_rates[0]), "Wrong EEG sampling rate detected."
+        assert np.all(
+            sample_rates == sample_rates[0]
+        ), "Wrong EEG sampling rate detected."
 
         return sample_rates[0]
