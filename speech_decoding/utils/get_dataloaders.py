@@ -1,8 +1,8 @@
 from torch.utils.data import DataLoader, RandomSampler, BatchSampler
+from termcolor import cprint
 
 
 def get_dataloaders(train_set, test_set, args, g, seed_worker, test_bsz=None):
-
     if args.reproducible:
         train_loader = DataLoader(
             train_set,
@@ -56,15 +56,15 @@ def get_samplers(
 ):
     train_sampler = RandomSampler(
         data_source=train_set,
-        replacement=True,
+        replacement=False,
         num_samples=args.updates * args.batch_size,
-        generator=g
+        generator=g,
     )
     test_sampler = RandomSampler(
         data_source=test_set,
-        replacement=False, # True,
+        replacement=False,  # True,
         num_samples=args.updates * args.batch_size // 5 if test_bsz is None else test_bsz,
-        generator=g
+        generator=g,
     )
 
     train_loader = DataLoader(
@@ -73,7 +73,7 @@ def get_samplers(
         sampler=train_sampler,
         num_workers=args.num_workers,
         collate_fn=collate_fn,
-        worker_init_fn=seed_worker
+        worker_init_fn=seed_worker,
     )
     test_loader = DataLoader(
         test_set,
@@ -81,7 +81,7 @@ def get_samplers(
         sampler=test_sampler,
         num_workers=args.num_workers,
         collate_fn=collate_fn,
-        worker_init_fn=seed_worker
+        worker_init_fn=seed_worker,
     )
 
     return train_loader, test_loader

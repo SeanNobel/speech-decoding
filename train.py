@@ -12,6 +12,10 @@ from torch import nn
 from tqdm import tqdm, trange
 import wandb
 
+from omegaconf import DictConfig, open_dict
+import hydra
+from hydra.utils import get_original_cwd
+
 from speech_decoding.dataclass.brennan2018 import Brennan2018Dataset
 from speech_decoding.dataclass.gwilliams2022 import (
     Gwilliams2022SentenceSplit,
@@ -27,7 +31,6 @@ from speech_decoding.utils.reproducibility import seed_worker
 
 @hydra.main(version_base=None, config_path="configs", config_name="config")
 def run(args: DictConfig) -> None:
-
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     # NOTE: We do need it (IMHO).
     if args.reproducible:
@@ -52,9 +55,7 @@ def run(args: DictConfig) -> None:
     # -----------------------
     # NOTE: Segmentation should always be by word onsets, not just every 3 seconds
     if args.dataset == "Gwilliams2022":
-
         if args.split_mode == "sentence":
-
             train_set = Gwilliams2022SentenceSplit(args)
             test_set = Gwilliams2022SentenceSplit(args, train_set.test_word_idxs_dict)
 
@@ -65,7 +66,6 @@ def run(args: DictConfig) -> None:
             test_size = test_set.Y.shape[0]
 
         elif args.split_mode == "shallow":
-
             dataset = Gwilliams2022ShallowSplit(args)
 
             with open_dict(args):
@@ -74,11 +74,12 @@ def run(args: DictConfig) -> None:
             train_size = int(dataset.Y.shape[0] * args.split_ratio)
             test_size = dataset.Y.shape[0] - train_size
             train_set, test_set = torch.utils.data.random_split(
-                dataset, lengths=[train_size, test_size], generator=g,
+                dataset,
+                lengths=[train_size, test_size],
+                generator=g,
             )
 
         elif args.split_mode == "deep":
-
             train_set = Gwilliams2022DeepSplit(args, train=True)
             test_set = Gwilliams2022DeepSplit(args, train=False)
             assert train_set.num_subjects == test_set.num_subjects
@@ -113,33 +114,77 @@ def run(args: DictConfig) -> None:
     elif args.dataset == "Brennan2018":
         # NOTE: takes an optional debug param force_recompute to pre-process the EEG even if it exists
         dataset = Brennan2018Dataset(args)
+
         with open_dict(args):
             args.num_subjects = dataset.num_subjects
 
         train_size = int(len(dataset) * args.split_ratio)
         test_size = len(dataset) - train_size
-        train_set, test_set = torch.utils.data.random_split(
-            dataset, lengths=[train_size, test_size], generator=g,
-        )
+
+        if args.split_mode == "shallow":
+            train_set, test_set = torch.utils.data.random_split(
+                dataset,
+                lengths=[train_size, test_size],
+                generator=g,
+            )
+
+        elif args.split_mode == "deep":
+            train_set = torch.utils.data.Subset(dataset, range(train_size))
+            test_set = torch.utils.data.Subset(
+                dataset, range(train_size, train_size + test_size)
+            )
+
+        elif args.split_mode == "sentence":
+            # NOTE: sentence_idxs starts from 1
+            num_sentences = dataset.sentence_idxs.max()  # 84
+            num_train_sentences = int(num_sentences * args.split_ratio)
+
+            train_sentences, test_sentences = torch.utils.data.random_split(
+                torch.arange(num_sentences),
+                lengths=[num_train_sentences, num_sentences - num_train_sentences],
+                generator=g,
+            )
+            train_sentences = np.array(train_sentences.indices) + 1
+            test_sentences = np.array(test_sentences.indices) + 1
+
+            train_set = torch.utils.data.Subset(
+                dataset, np.where(np.isin(dataset.sentence_idxs, train_sentences))[0]
+            )
+            test_set = torch.utils.data.Subset(
+                dataset, np.where(np.isin(dataset.sentence_idxs, test_sentences))[0]
+            )
+
+        else:
+            raise ValueError("Unknown split mode")
+
         cprint(
-            f"Number of samples: {len(train_set)} (train), {len(test_set)} (test)", color="blue",
+            f"Number of samples: {len(train_set)} (train), {len(test_set)} (test)",
+            color="cyan",
         )
-        train_loader, test_loader = get_dataloaders(
-            train_set, test_set, args, g, seed_worker, test_bsz=test_size
-        )
+
+        if args.use_sampler:
+            train_loader, test_loader = get_samplers(
+                train_set, test_set, args, g, test_bsz=test_size
+            )
+        else:
+            train_loader, test_loader = get_dataloaders(
+                train_set, test_set, args, g, seed_worker, test_bsz=test_size
+            )
 
     else:
         raise ValueError("Unknown dataset")
 
     if args.use_wandb:
-        wandb.config = {k: v for k, v in dict(args).items() if k not in ["root_dir", "wandb"]}
+        wandb.config = {
+            k: v for k, v in dict(args).items() if k not in ["root_dir", "wandb"]
+        }
         wandb.init(
             project=args.wandb.project,
             entity=args.wandb.entity,
             config=wandb.config,
             save_code=True,
         )
-        wandb.run.name = args.wandb.run_name + "_" + args.split_mode
+        wandb.run.name = args.wandb.run_name
         wandb.run.save()
 
     # ---------------------
@@ -147,7 +192,7 @@ def run(args: DictConfig) -> None:
     # ---------------------
     brain_encoder = BrainEncoder(args).to(device)
 
-    classifier = Classifier(args)
+    classifier = Classifier()
 
     # ---------------
     #      Loss
@@ -159,10 +204,12 @@ def run(args: DictConfig) -> None:
     #      Optimizer
     # --------------------
     optimizer = torch.optim.Adam(
-        list(brain_encoder.parameters()) + list(loss_func.parameters()), lr=float(args.lr),
+        list(brain_encoder.parameters()) + list(loss_func.parameters()), lr=args.lr
     )
 
-    # ======================================
+    # --------------------
+    #      Training
+    # --------------------
     for epoch in range(args.epochs):
         train_losses = []
         test_losses = []
@@ -172,47 +219,47 @@ def run(args: DictConfig) -> None:
         testTop10accs = []
 
         brain_encoder.train()
-        for i, batch in enumerate(tqdm(train_loader)):
-
+        for batch in tqdm(train_loader):
             if len(batch) == 3:
                 X, Y, subject_idxs = batch
             elif len(batch) == 4:
                 X, Y, subject_idxs, chunkIDs = batch
-                assert (
-                    len(chunkIDs.unique()) == X.shape[0]
-                ), "Duplicate segments in batch are not allowed. Aborting."
+                # assert (
+                #     len(chunkIDs.unique()) == X.shape[0]
+                # ), f"Duplicate segments in batch are not allowed. Aborting. {chunkIDs}"
             else:
                 raise ValueError("Unexpected number of items from dataloader.")
 
             X, Y = X.to(device), Y.to(device)
-            # print([(s.item(), chid.item()) for s, chid in zip(subject_idxs, chunkIDs)])
+
             Z = brain_encoder(X, subject_idxs)
 
             loss = loss_func(Y, Z)
 
             with torch.no_grad():
-                trainTop1acc, trainTop10acc = classifier(Z, Y)
+                trainTop1acc, trainTop10acc, _ = classifier(Z, Y)
 
             train_losses.append(loss.item())
             trainTop1accs.append(trainTop1acc)
             trainTop10accs.append(trainTop10acc)
 
-            if args.dataset == "Gwilliams2022":
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-
-        # Accumulate gradients for Gwilliams for the whole epoch
-        if args.dataset == "Brennan2018":
+            # if args.dataset == "Gwilliams2022":
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
+        # NOTE: It says "One training epoch is defined as 1,200 updates..." in the paper
+        # Accumulate gradients for Gwilliams for the whole epoch
+        # if args.dataset == "Brennan2018":
+        #     optimizer.zero_grad()
+        #     loss.backward()
+        #     optimizer.step()
+
+        torch.cuda.empty_cache()
+
         brain_encoder.eval()
         for batch in test_loader:
-
             with torch.no_grad():
-
                 if len(batch) == 3:
                     X, Y, subject_idxs = batch
                 elif len(batch) == 4:
@@ -222,11 +269,21 @@ def run(args: DictConfig) -> None:
 
                 X, Y = X.to(device), Y.to(device)
 
-                Z = brain_encoder(X, subject_idxs)  # 0.96 GB
+                # NOTE: Avoid CUDA out of memory
+                Z = torch.cat(
+                    [
+                        brain_encoder(_X, _subject_idxs)
+                        for _X, _subject_idxs in zip(
+                            torch.split(X, args.batch_size),
+                            torch.split(subject_idxs, args.batch_size),
+                        )
+                    ]
+                )
 
                 loss = loss_func(Y, Z)
 
-                testTop1acc, testTop10acc = classifier(Z, Y, test=True)  # ( 250, 1024, 360 )
+                testTop1acc, testTop10acc, _ = classifier(Z, Y, sequential=True)
+                # ( 250, 1024, 360 )
 
             test_losses.append(loss.item())
             testTop1accs.append(testTop1acc)
@@ -257,6 +314,8 @@ def run(args: DictConfig) -> None:
             wandb.log(performance_now)
 
         torch.save(brain_encoder.state_dict(), "model_last.pt")
+
+        torch.cuda.empty_cache()
 
 
 if __name__ == "__main__":

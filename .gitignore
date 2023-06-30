@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
+*.egg-info/
 
 # Jupyter
 .ipynb_checkpoints
@@ -10,18 +11,19 @@ tests.ipynb
 sandbox.ipynb
 cosine_similarity.ipynb
 gwilliams2022.ipynb
+notebooks/*
+!notebooks/test_brennan2018.ipynb
 
 # VS Code
 .vscode/
 outputs/
 
 # Data
-data/Brennan2018/audio/
-data/Brennan2018/proc/
-data/Brennan2018/raw/
-data/Brennan2018/Y_embeds/*.pt
-data/Brennan2018/processed_X.pt
+data/Brennan2018/*
+!data/Brennan2018/audio_embeds/.gitkeep
+
 data/Broderick2018/
+
 data/Gwilliams2022/
 !data/Gwilliams2022/.gitkeep
 data/gwilliams2022_proto.py

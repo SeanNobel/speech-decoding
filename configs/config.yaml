@@ -1,21 +1,24 @@
 # ==== Dataset ==== #
-dataset: Gwilliams2022 # for Brennan2018, override with Brennan2018 in CLI
+dataset: Brennan2018 # for Brennan2018, override with Brennan2018 in CLI
 rebuild_dataset: False
 
 # ==== Training ==== #
-use_wandb: False
+use_wandb: True
 wandb:
   project: speech_decoding
   entity: sensho
   run_name: word-onsets
+
+chance: False # Y will be shuffled if True.
+
 use_sampler: True        # applicable to Gwilliams only
 reproducible: False      # NOTE: do we need it at all?
 split_ratio: 0.8 # train. FIXME for valid
-split_mode: shallow # sentence, shallow, deep
+split_mode: sentence # sentence, shallow, deep
 num_workers: 6
 batch_size: 64
 updates: 1200
-lr: 3e-4
+lr: 3.0e-4
 epochs: 300
 reduction: mean
 
@@ -31,19 +34,19 @@ wav2vec_model: facebook/wav2vec2-large-xlsr-53 # (HuggingFace) # xlsr_53_56k (FA
 
 # == Data pre-processing parameters === #
 preprocs:
-  audio_resample_rate: 16000 # before wav2vec
-  lowpass_filter_width: 128
-  brain_resample_rate: 120 # Hz
-  brain_filter_low: 1.0    # Hz
-  brain_filter_high: 60    # Hz
-  seq_len_sec: 3           # segment length in seconds
-  baseline_len_sec: 0.5    # baseline period in seconds
-  shift_brain: True        # whether to shift M/EEG into the future relative to audio
-  shift_len: 150           # if True, by how many ms
-  last4layers: True        # if True, the brain_encoder's emsize will be 1024, not 512
-  subject_wise: True       # whether to scale each subject's EEG dataset individually (only for Brennan2018)
+  filter: False
+  brain_filter_low: 1.0     # Hz
+  brain_filter_high: 60     # Hz
+  lowpass_filter_width: 128 # for resampling
+  seq_len_sec: 3            # segment length in seconds
+  baseline_len_sec: 0.5     # baseline period in seconds
+  shift_brain: True         # whether to shift M/EEG into the future relative to audio
+  shift_len: 150            # if True, by how many ms
+  last4layers: True         # if True, the brain_encoder's emsize will be 1024, not 512
+  channel_wise: True        # Whether to scale each channel of MEG/EEG datasets individually
   clamp: True
   clamp_lim: 20
+  y_upsample: interpolate # interpolate / pad
 
 memory_efficient: True
 

@@ -30,14 +30,14 @@ class SpatialAttention(nn.Module):
         x, y = loc[:, 0], loc[:, 1]
 
         # make a complex-valued parameter, reshape k,l into one dimension
-        self.z = nn.Parameter(torch.rand(size=(args.D1, args.K ** 2), dtype=torch.cfloat))
+        self.z = nn.Parameter(torch.rand(size=(args.D1, args.K**2), dtype=torch.cfloat))
 
         # NOTE: pre-compute the values of cos and sin (they depend on k, l, x and y which repeat)
         phi = (
             2 * torch.pi * (torch.einsum("k,x->kx", k, x) + torch.einsum("l,y->ly", l, y))
         )  # torch.Size([1024, 60]))
-        self.register_buffer('cos', torch.cos(phi))
-        self.register_buffer('sin', torch.sin(phi))
+        self.register_buffer("cos", torch.cos(phi))
+        self.register_buffer("sin", torch.sin(phi))
 
         # self.spatial_dropout = SpatialDropoutX(args)
         self.spatial_dropout = SpatialDropout(loc, args.d_drop)
@@ -48,15 +48,14 @@ class SpatialAttention(nn.Module):
         # NOTE: do hadamard product and and sum over l and m (i.e. m, which is l X m)
         re = torch.einsum("jm, me -> je", self.z.real, self.cos)  # torch.Size([270, 60])
         im = torch.einsum("jm, me -> je", self.z.imag, self.sin)
-        a = (
-            re + im
-        )  # essentially (unnormalized) weights with which to mix input channels into ouput channels
-        # ( D1, num_channels )
+
+        a = re + im  # ( D1, num_channels )
+        # essentially (unnormalized) weights with which to mix input channels into ouput channels
 
         # NOTE: to get the softmax spatial attention weights over input electrodes,
         # we don't compute exp, etc (as in the eq. 5), we take softmax instead:
-        SA_wts = F.softmax(a, dim=-1)  # each row sums to 1
-        # ( D1, num_channels )
+        SA_wts = F.softmax(a, dim=-1)  # ( D1, num_channels )
+        # each row sums to 1
 
         # NOTE: drop some channels within a d_drop of the sampled channel
         dropped_X = self.spatial_dropout(X)
@@ -80,7 +79,8 @@ class SpatialDropout(nn.Module):
         if self.training:
             drop_center = self.loc[np.random.randint(self.num_channels)]  # ( 2, )
             distances = (self.loc - drop_center).norm(dim=-1)  # ( num_channels, )
-            mask = torch.where(distances < self.d_drop, 0.0, 1.0).to(device=X.device)  # ( num_channels, )
+            mask = torch.where(distances < self.d_drop, 0.0, 1.0).to(device=X.device)
+            # ( num_channels, )
             return torch.einsum("c,bct->bct", mask, X)
         else:
             return X
@@ -98,11 +98,7 @@ class SubjectBlock(nn.Module):
         self.subject_layer = nn.ModuleList(
             [
                 nn.Conv1d(
-                    in_channels=self.D1,
-                    out_channels=self.D1,
-                    kernel_size=1,
-                    bias=False,
-                    stride=1
+                    in_channels=self.D1, out_channels=self.D1, kernel_size=1, bias=False, stride=1
                 )
                 for _ in range(self.num_subjects)
             ]
@@ -178,71 +174,79 @@ class BrainEncoder(nn.Module):
         self.dataset_name = args.dataset
 
         self.subject_block = SubjectBlock(args)
-        # self.subject_block = SubjectBlock_proto(args)
-        # cprint("USING THE OLD IMPLEMENTATION OF THE SUBJECT BLOCK", 'red', 'on_blue', attrs=['bold'])
 
         self.conv_blocks = nn.Sequential()
         for k in range(5):
             self.conv_blocks.add_module(f"conv{k}", ConvBlock(k, self.D1, self.D2))
 
-        self.conv_final1 = nn.Conv1d(in_channels=self.D2, out_channels=2 * self.D2, kernel_size=1,)
-        self.conv_final2 = nn.Conv1d(in_channels=2 * self.D2, out_channels=self.F, kernel_size=1,)
+        self.conv_final1 = nn.Conv1d(
+            in_channels=self.D2,
+            out_channels=2 * self.D2,
+            kernel_size=1,
+        )
+        self.conv_final2 = nn.Conv1d(
+            in_channels=2 * self.D2,
+            out_channels=self.F,
+            kernel_size=1,
+        )
+
+    @staticmethod
+    def _standard_normalization(X: torch.Tensor) -> torch.Tensor:
+        """Sample-wise standard normalization
+        Args:
+            X (torch.Tensor): ( batch_size, features, timesteps )
+        Returns:
+            X (torch.Tensor): ( batch_size, features, timesteps )
+        """
+        return (X - torch.mean(X, dim=[1, 2], keepdim=True)) / torch.std(
+            X, dim=[1, 2], keepdim=True
+        )
 
     def forward(self, X, subject_idxs):
         X = self.subject_block(X, subject_idxs)
         X = self.conv_blocks(X)
         X = F.gelu(self.conv_final1(X))
         X = F.gelu(self.conv_final2(X))
-        return X
+
+        return self._standard_normalization(X)
 
 
 class Classifier(nn.Module):
-    # NOTE: experimental
-
-    def __init__(self, args):
+    def __init__(self):
         super(Classifier, self).__init__()
 
         # NOTE: Do we need to adjust the accuracies for the dataset size?
         self.factor = 1  # self.batch_size / 241
 
     @torch.no_grad()
-    def forward(self, Z: torch.Tensor, Y: torch.Tensor, test=False) -> torch.Tensor:
-
+    def forward(self, Z: torch.Tensor, Y: torch.Tensor, sequential=False) -> torch.Tensor:
         batch_size = Z.size(0)
         diags = torch.arange(batch_size).to(device=Z.device)
-        x = Z.view(batch_size, -1)
-        y = Y.view(batch_size, -1)
-
-        # x_ = rearrange(x, 'b f -> 1 b f')
-        # y_ = rearrange(y, 'b f -> b 1 f')
-        # similarity = torch.nn.functional.cosine_similarity(x_, y_, dim=-1)  # ( B, B )
+        Z = Z.view(batch_size, -1)
+        Y = Y.view(batch_size, -1)
 
         # NOTE: avoid CUDA out of memory like this
-        similarity = torch.empty(batch_size, batch_size).to(device=Z.device)
+        if sequential:
+            similarity = torch.empty(batch_size, batch_size).to(device=Z.device)
 
-        if test:
-            pbar = tqdm(total=batch_size, desc="[Similarities]")
+            for i in tqdm(range(batch_size), desc="Similarity matrix of test size"):
+                similarity[i] = (Z[i] @ Y.T) / torch.clamp((Z[i].norm() * Y.norm(dim=1)), min=1e-8)
 
-        for i in range(batch_size):
-            for j in range(batch_size):
-                similarity[i, j] = (x[i] @ y[j]) / max((x[i].norm() * y[j].norm()), 1e-8)
+            similarity = similarity.T
 
-            if test:
-                pbar.update(1)
-
-        similarity = similarity.T
+        else:
+            Z = rearrange(Z, "b f -> 1 b f")
+            Y = rearrange(Y, "b f -> b 1 f")
+            similarity = F.cosine_similarity(Z, Y, dim=-1)  # ( B, B )
 
         # NOTE: max similarity of speech and M/EEG representations is expected for corresponding windows
         top1accuracy = (similarity.argmax(axis=1) == diags).to(torch.float).mean().item()
-        try:
-            top10accuracy = np.mean(
-                [
-                    label in row
-                    for row, label in zip(torch.topk(similarity, 10, dim=1, largest=True)[1], diags)
-                ]
-            )
-        except:
-            print(similarity.size())
-            raise
 
-        return top1accuracy, top10accuracy
+        top10accuracy = np.mean(
+            [
+                label in row
+                for row, label in zip(torch.topk(similarity, 10, dim=1, largest=True)[1], diags)
+            ]
+        )
+
+        return top1accuracy, top10accuracy, similarity
