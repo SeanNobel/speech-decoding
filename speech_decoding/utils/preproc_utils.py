@@ -104,7 +104,8 @@ def scale_and_clamp(X: torch.Tensor, clamp_lim: Union[int, float], channel_wise=
 
         if orig_dim == 4:
             num_segments = X.shape[0]
-            X = X.clone().flatten(end_dim=1)  # ( segment * subject, channel, time//segment )
+            X = X.clone().flatten(end_dim=1)
+            # ( segment * subject, channel, time//segment )
 
         res = []
 
@@ -170,7 +171,11 @@ def check_preprocs(args, data_dir):
             # is_processed = np.all([v == args.preprocs[k] for k, v in settings.items() if not k in excluded_keys])
             excluded_keys = ["preceding_chunk_for_baseline", "mode"]
             is_processed = np.all(
-                [v == args.preprocs[k] for k, v in settings.items() if k not in excluded_keys]
+                [
+                    v == args.preprocs[k]
+                    for k, v in settings.items()
+                    if k not in excluded_keys
+                ]
             )
             if is_processed:
                 cprint(

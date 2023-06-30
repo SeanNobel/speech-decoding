@@ -18,7 +18,7 @@ split_mode: sentence # sentence, shallow, deep
 num_workers: 6
 batch_size: 64
 updates: 1200
-lr: 3e-4
+lr: 3.0e-4
 epochs: 300
 reduction: mean
 
