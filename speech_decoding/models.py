@@ -39,8 +39,14 @@ class SpatialAttention(nn.Module):
         self.register_buffer("cos", torch.cos(phi))
         self.register_buffer("sin", torch.sin(phi))
 
-        # self.spatial_dropout = SpatialDropoutX(args)
-        self.spatial_dropout = SpatialDropout(loc, args.d_drop)
+        self.drop_with = args.drop_with
+
+        if self.drop_with == "x":
+            self.spatial_dropout = SpatialDropoutX(loc, args.d_drop)
+        elif self.drop_with == "sa":
+            self.spatial_dropout = SpatialDropoutSA(loc, args.d_drop)
+        else:
+            raise ValueError(f"SpatialDropout is only with SA or X.")
 
     def forward(self, X):
         """X: (batch_size, num_channels, T)"""
@@ -57,18 +63,22 @@ class SpatialAttention(nn.Module):
         SA_wts = F.softmax(a, dim=-1)  # ( D1, num_channels )
         # each row sums to 1
 
-        # NOTE: drop some channels within a d_drop of the sampled channel
-        dropped_X = self.spatial_dropout(X)
+        if self.drop_with == "SA":
+            SA_wts = self.spatial_dropout(SA_wts)
+
+        elif self.drop_with == "X":
+            # NOTE: drop some channels within a d_drop of the sampled channel
+            X = self.spatial_dropout(X)
 
         # NOTE: each output is a diff weighted sum over each input channel
-        return torch.einsum("oi,bit->bot", SA_wts, dropped_X)
+        return torch.einsum("oi,bit->bot", SA_wts, X)
 
 
-class SpatialDropout(nn.Module):
+class SpatialDropoutX(nn.Module):
     """Using same drop center for all samples in batch"""
 
     def __init__(self, loc, d_drop):
-        super(SpatialDropout, self).__init__()
+        super(SpatialDropoutX, self).__init__()
         self.loc = loc  # ( num_channels, 2 )
         self.d_drop = d_drop
         self.num_channels = loc.shape[0]
@@ -86,6 +96,31 @@ class SpatialDropout(nn.Module):
             return X
 
 
+class SpatialDropoutSA(nn.Module):
+    def __init__(self, loc, d_drop):
+        super(SpatialDropoutSA, self).__init__()
+        self.x = loc[:, 0]
+        self.y = loc[:, 1]
+        self.d_drop = d_drop
+        self.num_channels = len(self.x)
+
+    def forward(self, SA_wts):
+        assert SA_wts.shape[-1] == self.num_channels
+
+        if self.training:
+            drop_center_id = np.random.randint(self.num_channels)
+            distances = np.sqrt(
+                (self.x - self.x[drop_center_id]) ** 2
+                + (self.y - self.y[drop_center_id]) ** 2
+            )
+            is_dropped = torch.where(distances < self.d_drop, 0.0, 1.0).to(SA_wts.device)
+
+            return SA_wts * is_dropped
+
+        else:
+            return SA_wts
+
+
 class SubjectBlock(nn.Module):
     def __init__(self, args):
         super(SubjectBlock, self).__init__()
@@ -94,11 +129,17 @@ class SubjectBlock(nn.Module):
         self.D1 = args.D1
         self.K = args.K
         self.spatial_attention = SpatialAttention(args)
-        self.conv = nn.Conv1d(in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1)
+        self.conv = nn.Conv1d(
+            in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1
+        )
         self.subject_layer = nn.ModuleList(
             [
                 nn.Conv1d(
-                    in_channels=self.D1, out_channels=self.D1, kernel_size=1, bias=False, stride=1
+                    in_channels=self.D1,
+                    out_channels=self.D1,
+                    kernel_size=1,
+                    bias=False,
+                    stride=1,
                 )
                 for _ in range(self.num_subjects)
             ]
@@ -230,7 +271,9 @@ class Classifier(nn.Module):
             similarity = torch.empty(batch_size, batch_size).to(device=Z.device)
 
             for i in tqdm(range(batch_size), desc="Similarity matrix of test size"):
-                similarity[i] = (Z[i] @ Y.T) / torch.clamp((Z[i].norm() * Y.norm(dim=1)), min=1e-8)
+                similarity[i] = (Z[i] @ Y.T) / torch.clamp(
+                    (Z[i].norm() * Y.norm(dim=1)), min=1e-8
+                )
 
             similarity = similarity.T
 
@@ -245,7 +288,9 @@ class Classifier(nn.Module):
         top10accuracy = np.mean(
             [
                 label in row
-                for row, label in zip(torch.topk(similarity, 10, dim=1, largest=True)[1], diags)
+                for row, label in zip(
+                    torch.topk(similarity, 10, dim=1, largest=True)[1], diags
+                )
             ]
         )
 

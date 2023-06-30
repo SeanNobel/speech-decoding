@@ -207,30 +207,6 @@ class SpatialAttentionTest2(nn.Module):
         return spat_attn.permute(0, 2, 1)  # ( 128, 270, 256 )
 
 
-class SpatialDropoutTest(nn.Module):
-    def __init__(self, x, y, d_drop):
-        super(SpatialDropoutTest, self).__init__()
-        self.x = x
-        self.y = y
-        self.d_drop = d_drop
-        self.num_channels = len(x)
-
-    def forward(self, SA_wts):
-        assert SA_wts.shape[-1] == self.num_channels
-
-        drop_center_id = np.random.randint(self.num_channels)
-        distances = np.sqrt(
-            (self.x - self.x[drop_center_id]) ** 2
-            + (self.y - self.y[drop_center_id]) ** 2
-        )
-        is_dropped = torch.where(distances < self.d_drop, 0.0, 1.0).to(device)
-        # cprint(
-        #     f"{self.num_channels - int(is_dropped.sum())} channels were dropped.",
-        #     color="cyan")
-
-        return SA_wts * is_dropped
-
-
 class ConvBlockTest(nn.Module):
     def __init__(self, k, D1, D2):
         super(ConvBlockTest, self).__init__()

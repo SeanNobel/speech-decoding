@@ -29,6 +29,8 @@ F: 512 # NOTE: because if you set last4layers=False, then it's set to 1024 in th
 K: 32
 d_drop: 0.1 # for spatial attention, drop channels within d_drop of a randomly selected channel
 
+drop_with: sa # sa / x
+
 init_temperature: 5.1
 wav2vec_model: facebook/wav2vec2-large-xlsr-53 # (HuggingFace) # xlsr_53_56k (FAIR)
 
