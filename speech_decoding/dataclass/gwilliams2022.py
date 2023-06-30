@@ -14,7 +14,7 @@ import scipy.io
 import mne, mne_bids
 from tqdm import tqdm
 import ast
-from typing import Union, Tuple, List
+from typing import Union, Tuple, List, Dict
 from psutil import virtual_memory as vm
 from termcolor import cprint
 from pprint import pprint
@@ -23,6 +23,7 @@ from multiprocessing import Pool, Manager
 from itertools import repeat
 from omegaconf import open_dict
 
+from speech_decoding.dataclass.base import SpeechDecodingDatasetBase
 from speech_decoding.utils.wav2vec_util import get_last4layers_avg
 from speech_decoding.utils.preproc_utils import (
     check_preprocs,
@@ -39,7 +40,7 @@ global_speech_onsets = manager.dict()
 global_sentence_idxs = manager.dict()
 
 
-class Gwilliams2022DatasetBase(Dataset):
+class Gwilliams2022DatasetBase(SpeechDecodingDatasetBase):
     def __init__(self, args):
         super().__init__()
 
@@ -153,6 +154,12 @@ class Gwilliams2022DatasetBase(Dataset):
 
         return X, self.Y[i], subject_idx
 
+    def rebuild_dataset(self):
+        audio_tasks = self.load_resample_audio()
+
+        _X = self.load_resample_brain()
+        self.X, self.meg_onsets, self.speech_onsets, self.sentence_idxs = _X
+
     def _segment_to_task(self, i) -> Tuple[int, str]:
         nseg_task_accum = np.cumsum(self.num_segments_foreach_task)
         task = np.searchsorted(nseg_task_accum, i + 1)
@@ -202,7 +209,7 @@ class Gwilliams2022DatasetBase(Dataset):
                         self.meg_onsets.pop(key)
 
     @staticmethod
-    def _brain_preproc(
+    def _load_resample_brain(
         args: dict,
         subject_idx: int,
         speech_onsets: np.ndarray,
@@ -219,8 +226,7 @@ class Gwilliams2022DatasetBase(Dataset):
         )
 
         bids_path = mne_bids.BIDSPath(
-            subject=str(subject_idx + 1).zfill(2),
-            # '01', '02', ...
+            subject=str(subject_idx + 1).zfill(2),  # '01', '02', ...
             session=str(session_idx),
             task=str(task_idx),
             datatype="meg",
@@ -288,7 +294,7 @@ class Gwilliams2022DatasetBase(Dataset):
         )
         # return 0
 
-    def brain_preproc(self, args, num_subjects: int, num_channels: int = 208):
+    def load_resample_brain(self, args, num_subjects: int, num_channels: int = 208):
         tmp_dir = self.preproc_dir + "_parts/"
         if not os.path.exists(tmp_dir):
             os.mkdir(tmp_dir)
@@ -322,7 +328,7 @@ class Gwilliams2022DatasetBase(Dataset):
         with Pool(processes=20) as p:
             res = list(
                 tqdm(
-                    p.imap(self._brain_preproc, subj_list),
+                    p.imap(self._load_resample_brain, subj_list),
                     total=len(subj_list),
                     bar_format="{desc:<5.5}{percentage:3.0f}%|{bar:10}{r_bar}",
                 )
@@ -353,6 +359,42 @@ class Gwilliams2022DatasetBase(Dataset):
             dict(global_speech_onsets),
             dict(global_sentence_idxs),
         )
+
+    def load_resample_audio(self) -> Dict[str, torch.Tensor]:
+        audio_tasks = {}
+        assert os.path.exists(
+            f"{self.root_dir}stimuli/audio"
+        ), "Path data/Gwilliams2022/stimuli/audio doesn't exist."
+
+        for task_idx in self.speech_onsets.keys():  # 4 tasks for each subject
+            task_idx_ID = int(task_idx[-1])
+
+            audio_paths = natsorted(
+                glob.glob(
+                    f"{self.root_dir}stimuli/audio/{self.task_prefixes[task_idx_ID]}*.wav"
+                )
+            )
+
+            audio_list = []
+            for path in audio_paths:
+                waveform, sample_rate = torchaudio.load(path)
+
+                # Upsample to 16000Hz
+                # waveform = F.resample(
+                #     waveform,
+                #     orig_freq=sample_rate,
+                #     new_freq=self.audio_resample_rate,
+                #     lowpass_filter_width=self.lowpass_filter_width,
+                # )
+                audio = self._resample_audio(waveform, sample_rate, AUDIO_RESAMPLE_RATE)
+
+                audio_list.append(audio)
+
+            audio = torch.cat(audio_list, dim=-1)
+
+            audio_tasks.update({task_idx: audio})
+
+        return audio_tasks
 
     @torch.no_grad()
     def audio_preproc(self):
