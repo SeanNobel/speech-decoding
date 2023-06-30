@@ -10,9 +10,8 @@ Works for Gwilliams2022 dataset and Brennan2018 dataset.
 
 ## TODOs
 
-- [ ] Full reproducibility support. Will be useful for HP tuning. 
-- [ ] Match accuracy to numbers reported in the paper. 
-- [ ] Work with huge memory consumption issue in Gwilliams multiprocessing
+- [ ] Achieve accuracies in the paper (Brennan -> Gwilliams).
+- [ ] Reorganize Gwilliams dataclass to look more similar to Brennan (using Base class).
 
 # Usage
 

@@ -1,4 +1,5 @@
 from torch.utils.data import DataLoader, RandomSampler, BatchSampler
+from termcolor import cprint
 
 
 def get_dataloaders(train_set, test_set, args, g, seed_worker, test_bsz=None):

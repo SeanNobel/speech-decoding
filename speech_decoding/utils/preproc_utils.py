@@ -104,7 +104,8 @@ def scale_and_clamp(X: torch.Tensor, clamp_lim: Union[int, float], channel_wise=
 
         if orig_dim == 4:
             num_segments = X.shape[0]
-            X = X.clone().flatten(end_dim=1)  # ( segment * subject, channel, time//segment )
+            X = X.clone().flatten(end_dim=1)
+            # ( segment * subject, channel, time//segment )
 
         res = []
 
@@ -146,7 +147,7 @@ def interpolate_y_time(Y: torch.Tensor, num_samples: int) -> torch.Tensor:
     return F.interpolate(Y, size=num_samples, mode="linear")
 
 
-# NOTE currently only works for gwilliams2022.yml
+# NOTE: Works only for Gwilliams2022 dataset
 def check_preprocs(args, data_dir):
     is_processed = False
     preproc_dirs = glob.glob(data_dir + "*/")
@@ -170,7 +171,11 @@ def check_preprocs(args, data_dir):
             # is_processed = np.all([v == args.preprocs[k] for k, v in settings.items() if not k in excluded_keys])
             excluded_keys = ["preceding_chunk_for_baseline", "mode"]
             is_processed = np.all(
-                [v == args.preprocs[k] for k, v in settings.items() if k not in excluded_keys]
+                [
+                    v == args.preprocs[k]
+                    for k, v in settings.items()
+                    if k not in excluded_keys
+                ]
             )
             if is_processed:
                 cprint(

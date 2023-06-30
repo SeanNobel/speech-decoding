@@ -130,11 +130,13 @@ def run(args: DictConfig) -> None:
 
         elif args.split_mode == "deep":
             train_set = torch.utils.data.Subset(dataset, range(train_size))
-            test_set = torch.utils.data.Subset(dataset, range(train_size, train_size + test_size))
+            test_set = torch.utils.data.Subset(
+                dataset, range(train_size, train_size + test_size)
+            )
 
         elif args.split_mode == "sentence":
             # NOTE: sentence_idxs starts from 1
-            num_sentences = dataset.sentence_idxs.max()
+            num_sentences = dataset.sentence_idxs.max()  # 84
             num_train_sentences = int(num_sentences * args.split_ratio)
 
             train_sentences, test_sentences = torch.utils.data.random_split(
@@ -173,7 +175,9 @@ def run(args: DictConfig) -> None:
         raise ValueError("Unknown dataset")
 
     if args.use_wandb:
-        wandb.config = {k: v for k, v in dict(args).items() if k not in ["root_dir", "wandb"]}
+        wandb.config = {
+            k: v for k, v in dict(args).items() if k not in ["root_dir", "wandb"]
+        }
         wandb.init(
             project=args.wandb.project,
             entity=args.wandb.entity,
@@ -200,8 +204,7 @@ def run(args: DictConfig) -> None:
     #      Optimizer
     # --------------------
     optimizer = torch.optim.Adam(
-        list(brain_encoder.parameters()) + list(loss_func.parameters()),
-        lr=float(args.lr),
+        list(brain_encoder.parameters()) + list(loss_func.parameters()), lr=args.lr
     )
 
     # --------------------
