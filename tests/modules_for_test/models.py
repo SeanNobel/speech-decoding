@@ -17,10 +17,14 @@ class SubjectBlockTest1(nn.Module):
         self.D1 = args.D1
         self.K = args.K
         self.spatial_attention = SpatialAttention(args)
-        self.conv = nn.Conv1d(in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1)
+        self.conv = nn.Conv1d(
+            in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1
+        )
 
         # NOTE: The below implementations are equivalent to learning a matrix:
-        self.subject_matrix = nn.Parameter(torch.rand(self.num_subjects, self.D1, self.D1))
+        self.subject_matrix = nn.Parameter(
+            torch.rand(self.num_subjects, self.D1, self.D1)
+        )
         # self.subject_layer = [
         #     nn.Conv1d(in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1, device=device)
         #     for _ in range(self.num_subjects)
@@ -54,11 +58,19 @@ class SubjectBlockTest2(nn.Module):
         # self.spatial_attention = SpatialAttentionX(D1, K, dataset_name)
         self.spatial_attention = SpatialAttention(D1, K, dataset_name, d_drop)
 
-        self.conv = nn.Conv1d(in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1)
-        self.subject_matrix = nn.Parameter(torch.rand(self.num_subjects, self.D1, self.D1))
+        self.conv = nn.Conv1d(
+            in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1
+        )
+        self.subject_matrix = nn.Parameter(
+            torch.rand(self.num_subjects, self.D1, self.D1)
+        )
         self.subject_layer = [
             nn.Conv1d(
-                in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1, device=device
+                in_channels=self.D1,
+                out_channels=self.D1,
+                kernel_size=1,
+                stride=1,
+                device=device,
             )
             for _ in range(self.num_subjects)
         ]
@@ -85,22 +97,20 @@ class SpatialAttentionTest1(nn.Module):
     I reimplemented to SpatialAttentionVer2 (which is not the final version).
     """
 
-    def __init__(self, D1, K, dataset_name, z_re=None, z_im=None):
+    def __init__(self, args, z_re, z_im):
         super(SpatialAttentionTest1, self).__init__()
 
-        self.D1 = D1
-        self.K = K
+        self.D1 = args.D1
+        self.K = args.K
 
-        if z_re is None or z_im is None:
-            self.z_re = nn.Parameter(torch.Tensor(self.D1, self.K, self.K))
-            self.z_im = nn.Parameter(torch.Tensor(self.D1, self.K, self.K))
-            nn.init.kaiming_uniform_(self.z_re, a=np.sqrt(5))
-            nn.init.kaiming_uniform_(self.z_im, a=np.sqrt(5))
-        else:
-            self.z_re = z_re
-            self.z_im = z_im
+        # self.z_re = nn.Parameter(torch.Tensor(self.D1, self.K, self.K))
+        # self.z_im = nn.Parameter(torch.Tensor(self.D1, self.K, self.K))
+        # nn.init.kaiming_uniform_(self.z_re, a=np.sqrt(5))
+        # nn.init.kaiming_uniform_(self.z_im, a=np.sqrt(5))
+        self.z_re = z_re
+        self.z_im = z_im
 
-        self.ch_locations_2d = ch_locations_2d(dataset_name).to(device)
+        self.ch_locations_2d = ch_locations_2d(args).to(device)
 
     def fourier_space(self, j, x: torch.Tensor, y: torch.Tensor):  # x: ( 60, ) y: ( 60, )
         a_j = 0
@@ -130,16 +140,18 @@ class SpatialAttentionTest1(nn.Module):
 class SpatialAttentionTest2(nn.Module):
     """Faster version of SpatialAttentionVer1"""
 
-    def __init__(self, args):
+    def __init__(self, args, z_re, z_im):
         super(SpatialAttentionTest2, self).__init__()
 
         self.D1 = args.D1
         self.K = args.K
 
-        self.z_re = nn.Parameter(torch.Tensor(self.D1, self.K, self.K))
-        self.z_im = nn.Parameter(torch.Tensor(self.D1, self.K, self.K))
-        nn.init.kaiming_uniform_(self.z_re, a=np.sqrt(5))
-        nn.init.kaiming_uniform_(self.z_im, a=np.sqrt(5))
+        # self.z_re = nn.Parameter(torch.Tensor(self.D1, self.K, self.K))
+        # self.z_im = nn.Parameter(torch.Tensor(self.D1, self.K, self.K))
+        # nn.init.kaiming_uniform_(self.z_re, a=np.sqrt(5))
+        # nn.init.kaiming_uniform_(self.z_im, a=np.sqrt(5))
+        self.z_re = z_re
+        self.z_im = z_im
 
         self.K_arange = torch.arange(self.K).to(device)
 
@@ -153,12 +165,16 @@ class SpatialAttentionTest2(nn.Module):
         # ( 32, 1, 60 ) + ( 1, 32, 60 ) -> ( 32, 32, 60 )
         rad = rad1.unsqueeze(1) + rad2.unsqueeze(0)
 
-        real = torch.einsum("dkl,klc->dc", self.z_re, torch.cos(2 * torch.pi * rad))  # ( 270, 60 )
+        real = torch.einsum(
+            "dkl,klc->dc", self.z_re, torch.cos(2 * torch.pi * rad)
+        )  # ( 270, 60 )
         imag = torch.einsum("dkl,klc->dc", self.z_im, torch.sin(2 * torch.pi * rad))
 
         return real + imag  # ( 270, 60 )
 
-    def fourier_space_orig(self, x: torch.Tensor, y: torch.Tensor):  # x: ( 60, ) y: ( 60, )
+    def fourier_space_orig(
+        self, x: torch.Tensor, y: torch.Tensor
+    ):  # x: ( 60, ) y: ( 60, )
         """Slower version of fourier_space"""
 
         a = torch.zeros(self.D1, x.shape[0], device=device)  # ( 270, 60 )
@@ -166,10 +182,14 @@ class SpatialAttentionTest2(nn.Module):
             for l in range(self.K):
                 # This einsum is same as torch.stack([_d * c for _d in d])
                 a += torch.einsum(
-                    "d,c->dc", self.z_re[:, k, l], torch.cos(2 * torch.pi * (k * x + l * y))
+                    "d,c->dc",
+                    self.z_re[:, k, l],
+                    torch.cos(2 * torch.pi * (k * x + l * y)),
                 )  # ( 270, 60 )
                 a += torch.einsum(
-                    "d,c->dc", self.z_im[:, k, l], torch.sin(2 * torch.pi * (k * x + l * y))
+                    "d,c->dc",
+                    self.z_im[:, k, l],
+                    torch.sin(2 * torch.pi * (k * x + l * y)),
                 )
 
         return a  # ( 270, 60 )
@@ -200,7 +220,8 @@ class SpatialDropoutTest(nn.Module):
 
         drop_center_id = np.random.randint(self.num_channels)
         distances = np.sqrt(
-            (self.x - self.x[drop_center_id]) ** 2 + (self.y - self.y[drop_center_id]) ** 2
+            (self.x - self.x[drop_center_id]) ** 2
+            + (self.y - self.y[drop_center_id]) ** 2
         )
         is_dropped = torch.where(distances < self.d_drop, 0.0, 1.0).to(device)
         # cprint(
@@ -208,60 +229,6 @@ class SpatialDropoutTest(nn.Module):
         #     color="cyan")
 
         return SA_wts * is_dropped
-
-
-class SpatialAttentionTest(nn.Module):
-    """
-    Same as SpatialAttentionVer2, but a little more concise.
-    Also SpatialAttention is added.
-    """
-
-    def __init__(self, D1, K, dataset_name, d_drop):
-        super(SpatialAttentionTest, self).__init__()
-
-        # vectorize of k's and l's
-        a = []
-        for k in range(K):
-            for l in range(K):
-                a.append((k, l))
-        a = torch.tensor(a)
-        k, l = a[:, 0], a[:, 1]
-
-        # vectorize x- and y-positions of the sensors
-        loc = ch_locations_2d(dataset_name)
-        x, y = loc[:, 0], loc[:, 1]
-
-        # make a complex-valued parameter, reshape k,l into one dimension
-        self.z = nn.Parameter(torch.rand(size=(D1, K**2), dtype=torch.cfloat)).to(device)
-
-        # NOTE: pre-compute the values of cos and sin (they depend on k, l, x and y which repeat)
-        phi = (
-            2 * torch.pi * (torch.einsum("k,x->kx", k, x) + torch.einsum("l,y->ly", l, y))
-        )  # torch.Size([1024, 60]))
-        self.cos = torch.cos(phi).to(device)
-        self.sin = torch.cos(phi).to(device)
-
-        self.spatial_dropout = SpatialDropout(x, y, d_drop)
-
-    def forward(self, X):
-        # NOTE: do hadamard product and and sum over l and m (i.e. m, which is l X m)
-        re = torch.einsum("jm, me -> je", self.z.real, self.cos)  # torch.Size([270, 60])
-        im = torch.einsum("jm, me -> je", self.z.imag, self.sin)
-        a = (
-            re + im
-        )  # essentially (unnormalized) weights with which to mix input channels into ouput channels
-        # ( D1, num_channels )
-
-        # NOTE: to get the softmax spatial attention weights over input electrodes,
-        # we don't compute exp, etc (as in the eq. 5), we take softmax instead:
-        SA_wts = F.softmax(a, dim=-1)  # each row sums to 1
-        # ( D1, num_channels )
-
-        SA_wts = self.spatial_dropout(SA_wts)
-
-        return torch.einsum(
-            "oi,bit->bot", SA_wts, X
-        )  # each output is a diff weighted sum over each input channel
 
 
 class ConvBlockTest(nn.Module):
