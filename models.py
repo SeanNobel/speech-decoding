@@ -3,11 +3,12 @@ import numpy as np
 import torch
 import torch.nn as nn
 from time import time
-from utils.layout import ch_locations_2d
 import torch.nn.functional as F
-from constants import device
 from termcolor import cprint
 from einops import rearrange
+
+from speech_decoding.utils.layout import ch_locations_2d
+from speech_decoding.constants import device
 
 
 class SpatialAttention(nn.Module):

@@ -5,20 +5,19 @@ import numpy as np
 import torch
 import torch.nn as nn
 from time import time
-from tqdm import tqdm
-from data.brennan2018 import Brennan2018Dataset
-from data.gwilliams2022 import Gwilliams2022Dataset
-from models import BrainEncoder, Classifier
-from utils.get_dataloaders import get_dataloaders, get_samplers
-from utils.loss import *
-from tqdm import trange
+from tqdm import tqdm, trange
 from termcolor import cprint
 import wandb
-from utils.reproducibility import seed_worker
-
 from omegaconf import DictConfig, open_dict
 import hydra
 from hydra.utils import get_original_cwd
+
+from speech_decoding.data.brennan2018 import Brennan2018Dataset
+from speech_decoding.data.gwilliams2022 import Gwilliams2022Dataset
+from speech_decoding.models import BrainEncoder, Classifier
+from speech_decoding.utils.get_dataloaders import get_dataloaders, get_samplers
+from speech_decoding.utils.loss import *
+from speech_decoding.utils.reproducibility import seed_worker
 
 
 @hydra.main(version_base=None, config_path="configs", config_name="config")
