@@ -34,6 +34,25 @@ class SpatialAttention(nn.Module):
             torch.rand(size=(args.D1, args.K**2), dtype=torch.cfloat)
         ).to(device)
 
+        """
+        MEMO: I added x, y, k, l = x.to(device), y.to(device), k.to(device), l.to(device) because I got the following error when I read and used the weights learned with split=deep.
+        After I added it, the error no longer occurs.
+
+        Traceback (most recent call last):
+        File "f2b_contrastive/eval2.py", line 121, in eval_corr
+            brain_encoder = BrainEncoder(
+        File "/home/kmochidaaraya/f2b-contrastive/speech_decoding/models.py", line 233, in __init__
+            self.subject_block = SubjectBlock(args, self.num_subjects, layout_fn)
+        File "/home/kmochidaaraya/f2b-contrastive/speech_decoding/models.py", line 105, in __init__
+            self.spatial_attention = SpatialAttention(args, layout_fn)
+        File "/home/kmochidaaraya/f2b-contrastive/speech_decoding/models.py", line 43, in __init__
+            * (torch.einsum("k,x->kx", k, x) + torch.einsum("l,y->ly", l, y))
+        File "/home/kmochidaaraya/.pyenv/versions/f2b38/lib/python3.8/site-packages/torch/functional.py", line 378, in einsum
+            return _VF.einsum(equation, operands)  # type: ignore[attr-defined]
+        RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cuda:0 and cpu!
+        """
+        x, y, k, l = x.to(device), y.to(device), k.to(device), l.to(device)
+
         # NOTE: pre-compute the values of cos and sin (they depend on k, l, x and y which repeat)
         phi = (
             2
@@ -119,6 +138,7 @@ class SubjectBlock(nn.Module):
         )
 
     def forward(self, X, subject_idxs):
+        # subject_idxs: ( B, ),  i = 0 or 1 or 2 in subject_random_split
         X = self.spatial_attention(X)  # ( B, 270, 256 )
         X = self.conv(X)  # ( B, 270, 256 )
         X = torch.cat(
