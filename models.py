@@ -245,6 +245,7 @@ class BrainEncoder(nn.Module):
         self.F = args.F  # if not args.preprocs["last4layers"] else 1024
         self.K = args.K
         self.dataset_name = args.dataset
+        self.use_fft_train = args.use_fft_train
 
         if layout_fn is None:
             layout_fn = ch_locations_2d
@@ -266,6 +267,7 @@ class BrainEncoder(nn.Module):
             kernel_size=args.final_kernel_size,
             stride=args.final_stride,
         )
+
         self.conv_final2 = nn.Conv1d(
             in_channels=2 * self.D2,
             out_channels=self.F,
@@ -273,12 +275,19 @@ class BrainEncoder(nn.Module):
             stride=args.final_stride,
         )
 
+        self.embed_dim = args.seq_len * args.fps  # 90
+        self.self_attention = nn.MultiheadAttention(embed_dim=self.embed_dim, num_heads=10, batch_first=True)
+
     def forward(self, X, subject_idxs):
         X = self.subject_block(X, subject_idxs)
         X = self.conv_blocks(X)
         X = F.gelu(self.conv_final1(X))
-        X = F.gelu(self.conv_final2(X))
-        return X
+        X = F.gelu(self.conv_final2(X))  # # X_f.shape: torch.Size([64, 128, 90])
+        if self.use_fft_train:
+            X, attention_weights = self.self_attention(X, X, X)
+            return X, attention_weights  # attn torch.Size([64, 128, 128])
+        else:
+            return X, None
 
 
 class Classifier(nn.Module):
