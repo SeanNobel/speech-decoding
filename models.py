@@ -275,19 +275,26 @@ class BrainEncoder(nn.Module):
             stride=args.final_stride,
         )
 
-        self.embed_dim = args.seq_len * args.fps  # 90
-        self.self_attention = nn.MultiheadAttention(embed_dim=self.embed_dim, num_heads=10, batch_first=True)
+        # self.embed_dim = args.seq_len * args.fps  # 90
+        # self.self_attention = nn.MultiheadAttention(embed_dim=self.embed_dim, num_heads=10, batch_first=True)
+        self.fc = nn.Linear(in_features=self.F, out_features=self.F * 2)
+        self.fc2 = nn.Linear(in_features=self.F * 2, out_features=self.F)
+        # self.fc3 = nn.Linear(in_features=self.F, out_features=self.F)
 
     def forward(self, X, subject_idxs):
         X = self.subject_block(X, subject_idxs)
         X = self.conv_blocks(X)
         X = F.gelu(self.conv_final1(X))
         X = F.gelu(self.conv_final2(X))  # # X_f.shape: torch.Size([64, 128, 90])
-        if self.use_fft_train:
-            X, attention_weights = self.self_attention(X, X, X)
-            return X, attention_weights  # attn torch.Size([64, 128, 128])
-        else:
-            return X, None
+        # if self.use_fft_train:
+        #     X, attention_weights = self.self_attention(X, X, X)
+        #     return X, attention_weights  # attn torch.Size([64, 128, 128])
+        # else:
+        #     return X, None
+        X = self.fc(X)
+        X = self.fc2(X)
+        # X = self.fc3(X)
+        return X
 
 
 class Classifier(nn.Module):
