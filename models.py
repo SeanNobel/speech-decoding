@@ -56,7 +56,7 @@ class SpatialAttention(nn.Module):
         # NOTE: pre-compute the values of cos and sin (they depend on k, l, x and y which repeat)
         phi = (
             2
-            * torch.pi.to(device)
+            * torch.pi
             * (torch.einsum("k,x->kx", k, x) + torch.einsum("l,y->ly", l, y))
         )  # torch.Size([1024, 60]))
         self.cos = torch.cos(phi).to(device)
