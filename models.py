@@ -22,11 +22,11 @@ class SpatialAttention(nn.Module):
         for k in range(args.K):
             for l in range(args.K):
                 a.append((k, l))
-        a = torch.tensor(a)
+        a = torch.tensor(a).to(device)
         k, l = a[:, 0], a[:, 1]
 
         # vectorize x- and y-positions of the sensors
-        loc = layout_fn(args)
+        loc = layout_fn(args).to(device)
         x, y = loc[:, 0], loc[:, 1]
 
         # make a complex-valued parameter, reshape k,l into one dimension
@@ -51,12 +51,12 @@ class SpatialAttention(nn.Module):
             return _VF.einsum(equation, operands)  # type: ignore[attr-defined]
         RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cuda:0 and cpu!
         """
-        x, y, k, l = x.to(device), y.to(device), k.to(device), l.to(device)
+        # x, y, k, l = x.to(device), y.to(device), k.to(device), l.to(device)
 
         # NOTE: pre-compute the values of cos and sin (they depend on k, l, x and y which repeat)
         phi = (
             2
-            * torch.pi
+            * torch.pi.to(device)
             * (torch.einsum("k,x->kx", k, x) + torch.einsum("l,y->ly", l, y))
         )  # torch.Size([1024, 60]))
         self.cos = torch.cos(phi).to(device)
@@ -113,7 +113,7 @@ class SpatialDropout(nn.Module):
 
 
 class SubjectBlock(nn.Module):
-    def __init__(self, args, num_subjects, layout_fn):
+    def __init__(self, args, num_subjects, layout_fn, use_subj_layer=False):
         super(SubjectBlock, self).__init__()
 
         self.num_subjects = num_subjects
@@ -136,14 +136,16 @@ class SubjectBlock(nn.Module):
                 for _ in range(self.num_subjects)
             ]
         )
+        self.use_subj_layer = use_subj_layer
 
     def forward(self, X, subject_idxs):
         # subject_idxs: ( B, ),  i = 0 or 1 or 2 in subject_random_split
         X = self.spatial_attention(X)  # ( B, 270, 256 )
         X = self.conv(X)  # ( B, 270, 256 )
-        X = torch.cat(
-            [self.subject_layer[i](x.unsqueeze(dim=0)) for i, x in zip(subject_idxs, X)]
-        )  # ( B, 270, 256 )
+        if self.use_subj_layer:
+            X = torch.cat(
+                [self.subject_layer[i](x.unsqueeze(dim=0)) for i, x in zip(subject_idxs, X)]
+            )  # ( B, 270, 256 )
         return X
 
 
@@ -249,7 +251,7 @@ class BrainEncoder(nn.Module):
 
         if layout_fn is None:
             layout_fn = ch_locations_2d
-        self.subject_block = SubjectBlock(args, self.num_subjects, layout_fn)
+        self.subject_block = SubjectBlock(args, self.num_subjects, layout_fn, use_subj_layer=args.use_subj_layer)
         # cprint(
         #     "USING THE OLD IMPLEMENTATION OF THE SUBJECT BLOCK",
         #     "red",
