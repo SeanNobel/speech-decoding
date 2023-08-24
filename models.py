@@ -9,7 +9,25 @@ from einops import rearrange
 
 from speech_decoding.utils.layout import ch_locations_2d
 from speech_decoding.constants import device
+    
 
+class BrainMultiAttention(nn.Module):
+
+    def __init__(self, args, num_heads=1):
+        super(BrainMultiAttention, self).__init__()
+
+        self.num_heads = num_heads
+        self.eeg_attention = nn.MultiheadAttention(embed_dim=args.F, num_heads=self.num_heads, batch_first=False)
+
+    def forward(self, X, return_attn=False):
+        X = torch.permute(X, (2, 0, 1))  # (T, B, F)
+        X, attn = self.eeg_attention(X, X, X)  # (T, B, F), (B, T, T)
+        X = torch.permute(X, (1, 2, 0))  # (B, F, T)
+        if return_attn:
+            return X, attn
+        else:
+            return X
+        
 
 class SpatialAttention(nn.Module):
     """Same as SpatialAttentionVer2, but a little more concise"""
@@ -35,9 +53,6 @@ class SpatialAttention(nn.Module):
         ).to(device)
 
         """
-        MEMO: I added x, y, k, l = x.to(device), y.to(device), k.to(device), l.to(device) because I got the following error when I read and used the weights learned with split=deep.
-        After I added it, the error no longer occurs.
-
         Traceback (most recent call last):
         File "f2b_contrastive/eval2.py", line 121, in eval_corr
             brain_encoder = BrainEncoder(
@@ -51,8 +66,6 @@ class SpatialAttention(nn.Module):
             return _VF.einsum(equation, operands)  # type: ignore[attr-defined]
         RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cuda:0 and cpu!
         """
-        # x, y, k, l = x.to(device), y.to(device), k.to(device), l.to(device)
-
         # NOTE: pre-compute the values of cos and sin (they depend on k, l, x and y which repeat)
         phi = (
             2
@@ -244,8 +257,8 @@ class BrainEncoder(nn.Module):
         self.num_subjects = args.num_subjects if num_subjects is None else num_subjects
         self.D1 = args.D1
         self.D2 = args.D2
-        self.F = args.F  # if not args.preprocs["last4layers"] else 1024
-        self.K = args.K
+        self.F = args.F  # if not args.preprocs["last4layers"] else 1024 -> 128
+        self.K = args.K  # 32
         self.dataset_name = args.dataset
         self.use_fft_train = args.use_fft_train
 
@@ -279,10 +292,10 @@ class BrainEncoder(nn.Module):
 
         # self.self_attention = nn.MultiheadAttention(embed_dim=self.embed_dim, num_heads=10, batch_first=True)
         if self.use_fft_train:
-            self.embed_dim = args.seq_len * args.fps  # 90
-            self.fc = nn.Linear(in_features=self.embed_dim, out_features=self.embed_dim * 2)
-            self.fc2 = nn.Linear(in_features=self.embed_dim * 2, out_features=self.embed_dim * 4)
-            self.fc3 = nn.Linear(in_features=self.embed_dim * 4, out_features=self.embed_dim)
+            self.T = args.seq_len * args.fps  # 90
+            self.fc1 = nn.Linear(in_features=self.T, out_features=self.T * 2)
+            self.fc2 = nn.Linear(in_features=self.T * 2, out_features=self.T * 4)
+            self.fc3 = nn.Linear(in_features=self.T * 4, out_features=self.T)
 
     def forward(self, X, subject_idxs):
         X = self.subject_block(X, subject_idxs)
@@ -290,13 +303,10 @@ class BrainEncoder(nn.Module):
         X = F.gelu(self.conv_final1(X))
         X = F.gelu(self.conv_final2(X))  # # X_f.shape: torch.Size([64, 128, 90])
         if self.use_fft_train:
-        #     X, attention_weights = self.self_attention(X, X, X)
-        #     return X, attention_weights  # attn torch.Size([64, 128, 128])
-        # else:
-        #     return X, None
-            X = self.fc(X)
+            X = self.fc1(X)
             X = self.fc2(X)
             X = self.fc3(X)
+            cprint(f"X.shape: {X.shape}", "yellow")  # https://discuss.pytorch.org/t/how-to-pass-a-3d-tensor-to-linear-layer/908
         return X
 
 
