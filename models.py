@@ -109,7 +109,7 @@ class SpatialDropout(nn.Module):
 
 
 class SubjectBlock(nn.Module):
-    def __init__(self, args, num_subjects, layout_fn, use_subject_layer=False):
+    def __init__(self, args, num_subjects, layout_fn):
         super(SubjectBlock, self).__init__()
 
         self.num_subjects = num_subjects
@@ -132,16 +132,23 @@ class SubjectBlock(nn.Module):
                 for _ in range(self.num_subjects)
             ]
         )
+
         self.use_subject_layer = args.use_subject_layer
+        self.use_attn_instead_of_sbjly = args.use_attn_instead_of_sbjly
+
+        self.brain_multi_attention = BrainMultiAttention(args, num_heads=1)
 
     def forward(self, X, subject_idxs):
         # subject_idxs: ( B, ),  i = 0 or 1 or 2 in subject_random_split
         X = self.spatial_attention(X)  # ( B, 270, 256 )
-        X = self.conv(X)  # ( B, 270, 256 )
         if self.use_subject_layer:
+            X = self.conv(X)  # ( B, 270, 256 )
             X = torch.cat(
                 [self.subject_layer[i](x.unsqueeze(dim=0)) for i, x in zip(subject_idxs, X)]
             )  # ( B, 270, 256 )
+        elif self.use_attn_instead_of_sbjly:
+            X, attn = self.brain_multi_attention(X)
+            X = self.conv(X)  # ( B, 270, 256 )
         return X
 
 
@@ -243,7 +250,8 @@ class BrainEncoder(nn.Module):
         self.F = args.F  # if not args.preprocs["last4layers"] else 1024 -> 128
         self.K = args.K  # 32
         self.dataset_name = args.dataset
-        self.use_fft_train = args.use_fft_train
+        self.use_fft_train_with_fc = args.use_fft_train_with_fc
+        self.use_fft_train_with_attn = args.use_fft_train_with_attn
 
         if layout_fn is None:
             layout_fn = ch_locations_2d
@@ -273,23 +281,25 @@ class BrainEncoder(nn.Module):
             stride=args.final_stride,
         )
 
-        # self.self_attention = nn.MultiheadAttention(embed_dim=self.embed_dim, num_heads=10, batch_first=True)
-        if self.use_fft_train:
-            self.T = args.seq_len * args.fps  # 90
-            self.fc1 = nn.Linear(in_features=self.T, out_features=self.T * 2)
-            self.fc2 = nn.Linear(in_features=self.T * 2, out_features=self.T * 4)
-            self.fc3 = nn.Linear(in_features=self.T * 4, out_features=self.T)
+        self.T = args.seq_len * args.fps  # 90
+        self.fc1 = nn.Linear(in_features=self.T, out_features=self.T * 2)
+        self.fc2 = nn.Linear(in_features=self.T * 2, out_features=self.T * 4)
+        self.fc3 = nn.Linear(in_features=self.T * 4, out_features=self.T)
+        
+        self.brain_multi_attention = BrainMultiAttention(args, num_heads=1)
 
     def forward(self, X, subject_idxs):
         X = self.subject_block(X, subject_idxs)
         X = self.conv_blocks(X)
         X = F.gelu(self.conv_final1(X))
         X = F.gelu(self.conv_final2(X))  # # X_f.shape: torch.Size([64, 128, 90])
-        if self.use_fft_train:
+        if self.use_fft_train_with_fc:
             X = self.fc1(X)
             X = self.fc2(X)
             X = self.fc3(X)
             # cprint(f"X.shape: {X.shape}", "yellow")  # https://discuss.pytorch.org/t/how-to-pass-a-3d-tensor-to-linear-layer/908
+        elif self.use_fft_train_with_attn:
+            X, attn = self.brain_multi_attention(X)
         return X
 
 
