@@ -23,10 +23,7 @@ class BrainMultiAttention(nn.Module):
         X = torch.permute(X, (2, 0, 1))  # (T, B, F)
         X, attn = self.eeg_attention(X, X, X)  # (T, B, F), (B, T, T)
         X = torch.permute(X, (1, 2, 0))  # (B, F, T)
-        if return_attn:
-            return X, attn
-        else:
-            return X
+        return X, attn
         
 
 class SpatialAttention(nn.Module):
@@ -40,7 +37,7 @@ class SpatialAttention(nn.Module):
         for k in range(args.K):
             for l in range(args.K):
                 a.append((k, l))
-        a = torch.tensor(a).to(device)
+        a = torch.tensor(a).to(device)  # RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cuda:0 and cpu!
         k, l = a[:, 0], a[:, 1]
 
         # vectorize x- and y-positions of the sensors
@@ -52,20 +49,6 @@ class SpatialAttention(nn.Module):
             torch.rand(size=(args.D1, args.K**2), dtype=torch.cfloat)
         ).to(device)
 
-        """
-        Traceback (most recent call last):
-        File "f2b_contrastive/eval2.py", line 121, in eval_corr
-            brain_encoder = BrainEncoder(
-        File "/home/kmochidaaraya/f2b-contrastive/speech_decoding/models.py", line 233, in __init__
-            self.subject_block = SubjectBlock(args, self.num_subjects, layout_fn)
-        File "/home/kmochidaaraya/f2b-contrastive/speech_decoding/models.py", line 105, in __init__
-            self.spatial_attention = SpatialAttention(args, layout_fn)
-        File "/home/kmochidaaraya/f2b-contrastive/speech_decoding/models.py", line 43, in __init__
-            * (torch.einsum("k,x->kx", k, x) + torch.einsum("l,y->ly", l, y))
-        File "/home/kmochidaaraya/.pyenv/versions/f2b38/lib/python3.8/site-packages/torch/functional.py", line 378, in einsum
-            return _VF.einsum(equation, operands)  # type: ignore[attr-defined]
-        RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cuda:0 and cpu!
-        """
         # NOTE: pre-compute the values of cos and sin (they depend on k, l, x and y which repeat)
         phi = (
             2
@@ -126,7 +109,7 @@ class SpatialDropout(nn.Module):
 
 
 class SubjectBlock(nn.Module):
-    def __init__(self, args, num_subjects, layout_fn, use_subj_layer=False):
+    def __init__(self, args, num_subjects, layout_fn, use_subject_layer=False):
         super(SubjectBlock, self).__init__()
 
         self.num_subjects = num_subjects
@@ -149,56 +132,56 @@ class SubjectBlock(nn.Module):
                 for _ in range(self.num_subjects)
             ]
         )
-        self.use_subj_layer = use_subj_layer
+        self.use_subject_layer = args.use_subject_layer
 
     def forward(self, X, subject_idxs):
         # subject_idxs: ( B, ),  i = 0 or 1 or 2 in subject_random_split
         X = self.spatial_attention(X)  # ( B, 270, 256 )
         X = self.conv(X)  # ( B, 270, 256 )
-        if self.use_subj_layer:
+        if self.use_subject_layer:
             X = torch.cat(
                 [self.subject_layer[i](x.unsqueeze(dim=0)) for i, x in zip(subject_idxs, X)]
             )  # ( B, 270, 256 )
         return X
 
 
-class SubjectBlock_proto(nn.Module):
-    def __init__(self, args):
-        super(SubjectBlock_proto, self).__init__()
+# class SubjectBlock_proto(nn.Module):
+#     def __init__(self, args):
+#         super(SubjectBlock_proto, self).__init__()
 
-        self.num_subjects = args.num_subjects
-        self.D1 = args.D1
-        self.K = args.K
-        self.spatial_attention = SpatialAttention(args)
-        self.conv = nn.Conv1d(
-            in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1
-        )
+#         self.num_subjects = args.num_subjects
+#         self.D1 = args.D1
+#         self.K = args.K
+#         self.spatial_attention = SpatialAttention(args)
+#         self.conv = nn.Conv1d(
+#             in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1
+#         )
 
-        # NOTE: The below implementations are equivalent to learning a matrix:
-        self.subject_matrix = nn.Parameter(
-            torch.rand(self.num_subjects, self.D1, self.D1)
-        )
-        # self.subject_layer = [
-        #     nn.Conv1d(in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1, device=device)
-        #     for _ in range(self.num_subjects)
-        # ]
+#         # NOTE: The below implementations are equivalent to learning a matrix:
+#         self.subject_matrix = nn.Parameter(
+#             torch.rand(self.num_subjects, self.D1, self.D1)
+#         )
+#         # self.subject_layer = [
+#         #     nn.Conv1d(in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1, device=device)
+#         #     for _ in range(self.num_subjects)
+#         # ]
 
-    def forward(self, X, subject_idxs):
-        X = self.spatial_attention(X)  # ( B, 270, 256 )
-        X = self.conv(X)  # ( B, 270, 256 )
+#     def forward(self, X, subject_idxs):
+#         X = self.spatial_attention(X)  # ( B, 270, 256 )
+#         X = self.conv(X)  # ( B, 270, 256 )
 
-        # NOTE to Sensho: this has caused problems. I slighly changed it here. Hope it doesn't break anything for you
-        _subject_idxs = subject_idxs.tolist()
-        X = (
-            self.subject_matrix[_subject_idxs] @ X
-        )  # ( 270, 270 ) @ ( B , 270, 256 ) -> ( B, 270, 256 )
-        # _X = []
-        # for i, x in enumerate(X):  # x: ( 270, 256 )
-        #     x = self.subject_layer[subject_idxs[i]](x.unsqueeze(0))  # ( 1, 270, 256 )
-        #     _X.append(x.squeeze())
-        # X = torch.stack(_X)
+#         # NOTE to Sensho: this has caused problems. I slighly changed it here. Hope it doesn't break anything for you
+#         _subject_idxs = subject_idxs.tolist()
+#         X = (
+#             self.subject_matrix[_subject_idxs] @ X
+#         )  # ( 270, 270 ) @ ( B , 270, 256 ) -> ( B, 270, 256 )
+#         # _X = []
+#         # for i, x in enumerate(X):  # x: ( 270, 256 )
+#         #     x = self.subject_layer[subject_idxs[i]](x.unsqueeze(0))  # ( 1, 270, 256 )
+#         #     _X.append(x.squeeze())
+#         # X = torch.stack(_X)
 
-        return X  # ( B, 270, 256 )
+#         return X  # ( B, 270, 256 )
 
 
 class ConvBlock(nn.Module):
@@ -264,7 +247,7 @@ class BrainEncoder(nn.Module):
 
         if layout_fn is None:
             layout_fn = ch_locations_2d
-        self.subject_block = SubjectBlock(args, self.num_subjects, layout_fn, use_subj_layer=args.use_subj_layer)
+        self.subject_block = SubjectBlock(args, self.num_subjects, layout_fn)
         # cprint(
         #     "USING THE OLD IMPLEMENTATION OF THE SUBJECT BLOCK",
         #     "red",
@@ -306,7 +289,7 @@ class BrainEncoder(nn.Module):
             X = self.fc1(X)
             X = self.fc2(X)
             X = self.fc3(X)
-            cprint(f"X.shape: {X.shape}", "yellow")  # https://discuss.pytorch.org/t/how-to-pass-a-3d-tensor-to-linear-layer/908
+            # cprint(f"X.shape: {X.shape}", "yellow")  # https://discuss.pytorch.org/t/how-to-pass-a-3d-tensor-to-linear-layer/908
         return X
 
 
