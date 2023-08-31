@@ -13,15 +13,17 @@ from speech_decoding.constants import device
 
 class BrainMultiAttention(nn.Module):
 
-    def __init__(self, args, num_heads=1):
+    def __init__(self, args, embed_dim=None, num_heads=1):
         super(BrainMultiAttention, self).__init__()
 
         self.num_heads = num_heads
-        self.eeg_attention = nn.MultiheadAttention(embed_dim=args.F, num_heads=self.num_heads, batch_first=False)
+        self.embed_dim = embed_dim 
+        self.eeg_attention = nn.MultiheadAttention(embed_dim=self.embed_dim, num_heads=self.num_heads, batch_first=False)
 
-    def forward(self, X, return_attn=False):
+    def forward(self, X, return_attn=False): # X(B, F, T)=(64, 128, 90)
+        cprint(f"X.shape: {X.shape}", "red")  # ( B, F, T
         X = torch.permute(X, (2, 0, 1))  # (T, B, F)
-        X, attn = self.eeg_attention(X, X, X)  # (T, B, F), (B, T, T)
+        X, attn = self.eeg_attention(X, X, X)  # was expecting embedding dimension of 128, but got 270
         X = torch.permute(X, (1, 2, 0))  # (B, F, T)
         return X, attn
         
@@ -136,7 +138,7 @@ class SubjectBlock(nn.Module):
         self.use_subject_layer = args.use_subject_layer
         self.use_attn_instead_of_sbjly = args.use_attn_instead_of_sbjly
 
-        self.brain_multi_attention = BrainMultiAttention(args, num_heads=1)
+        self.brain_multi_attention = BrainMultiAttention(args, embed_dim=self.D1, num_heads=1)
 
     def forward(self, X, subject_idxs):
         # subject_idxs: ( B, ),  i = 0 or 1 or 2 in subject_random_split
@@ -286,7 +288,7 @@ class BrainEncoder(nn.Module):
         self.fc2 = nn.Linear(in_features=self.T * 2, out_features=self.T * 4)
         self.fc3 = nn.Linear(in_features=self.T * 4, out_features=self.T)
         
-        self.brain_multi_attention = BrainMultiAttention(args, num_heads=1)
+        self.brain_multi_attention = BrainMultiAttention(args, embed_dim=self.F, num_heads=1)
 
     def forward(self, X, subject_idxs):
         X = self.subject_block(X, subject_idxs)
