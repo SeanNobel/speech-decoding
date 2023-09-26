@@ -121,21 +121,23 @@ class SubjectBlock(nn.Module):
         self.conv = nn.Conv1d(
             in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1
         )
-        self.subject_layer = nn.ModuleList(
-            [
-                nn.Conv1d(
-                    in_channels=self.D1,
-                    out_channels=self.D1,
-                    kernel_size=1,
-                    bias=False,
-                    stride=1,
-                    device=device,
-                )
-                for _ in range(self.num_subjects)
-            ]
-        )
-
         self.use_subject_layer = args.use_subject_layer
+        if self.use_subject_layer:
+            self.subject_layer = nn.ModuleList(
+                [
+                    nn.Conv1d(
+                        in_channels=self.D1,
+                        out_channels=self.D1,
+                        kernel_size=1,
+                        bias=False,
+                        stride=1,
+                        device=device,
+                    )
+                    for _ in range(self.num_subjects)
+                ]
+            )
+
+
         # self.use_attn_instead_of_sbjly = args.use_attn_instead_of_sbjly
 
         # self.brain_multi_attention = BrainMultiAttention(args, embed_dim=self.D1, num_heads=1)
@@ -282,11 +284,11 @@ class BrainEncoder(nn.Module):
             kernel_size=args.final_kernel_size,
             stride=args.final_stride,
         )
-
-        self.T = args.seq_len * args.fps  # 90
-        self.fc1 = nn.Linear(in_features=self.T, out_features=self.T * 2)
-        self.fc2 = nn.Linear(in_features=self.T * 2, out_features=self.T * 4)
-        self.fc3 = nn.Linear(in_features=self.T * 4, out_features=self.T)
+        if self.use_fc:
+            self.T = args.seq_len * args.fps  # 90
+            self.fc1 = nn.Linear(in_features=self.T, out_features=self.T * 2)
+            self.fc2 = nn.Linear(in_features=self.T * 2, out_features=self.T * 4)
+            self.fc3 = nn.Linear(in_features=self.T * 4, out_features=self.T)
         
         # self.brain_multi_attention = BrainMultiAttention(args, embed_dim=self.F, num_heads=1)
 
