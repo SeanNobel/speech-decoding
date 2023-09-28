@@ -137,11 +137,6 @@ class SubjectBlock(nn.Module):
                 ]
             )
 
-
-        # self.use_attn_instead_of_sbjly = args.use_attn_instead_of_sbjly
-
-        # self.brain_multi_attention = BrainMultiAttention(args, embed_dim=self.D1, num_heads=1)
-
     def forward(self, X, subject_idxs):
         # subject_idxs: ( B, ),  i = 0 or 1 or 2 in subject_random_split
         X = self.spatial_attention(X)  # ( B, 270, 256 )
@@ -150,9 +145,6 @@ class SubjectBlock(nn.Module):
             X = torch.cat(
                 [self.subject_layer[i](x.unsqueeze(dim=0)) for i, x in zip(subject_idxs, X)]
             )  # ( B, 270, 256 )
-        # elif self.use_attn:
-        #     X, attn = self.brain_multi_attention(X)
-        #     X = self.conv(X)  # ( B, 270, 256 )
         return X
 
 
