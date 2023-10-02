@@ -137,16 +137,24 @@ class SubjectBlock(nn.Module):
                 ]
             )
 
+    # def forward(self, X, subject_idxs):
+    #     # subject_idxs: ( B, ),  i = 0 or 1 or 2 in subject_random_split
+    #     X = self.spatial_attention(X)  # ( B, 270, 256 )
+    #     if self.use_subject_layer:
+    #         X = self.conv(X)  # ( B, 270, 256 )
+    #         X = torch.cat(
+    #             [self.subject_layer[i](x.unsqueeze(dim=0)) for i, x in zip(subject_idxs, X)]
+    #         )  # ( B, 270, 256 )
+    #     return X
     def forward(self, X, subject_idxs):
         # subject_idxs: ( B, ),  i = 0 or 1 or 2 in subject_random_split
         X = self.spatial_attention(X)  # ( B, 270, 256 )
+        X = self.conv(X)  # ( B, 270, 256 )
         if self.use_subject_layer:
-            X = self.conv(X)  # ( B, 270, 256 )
             X = torch.cat(
                 [self.subject_layer[i](x.unsqueeze(dim=0)) for i, x in zip(subject_idxs, X)]
             )  # ( B, 270, 256 )
         return X
-
 
 # class SubjectBlock_proto(nn.Module):
 #     def __init__(self, args):
