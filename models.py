@@ -122,6 +122,7 @@ class SubjectBlock(nn.Module):
             in_channels=self.D1, out_channels=self.D1, kernel_size=1, stride=1
         )
         self.use_subject_layer = args.use_subject_layer
+        
         if self.use_subject_layer:
             self.subject_layer = nn.ModuleList(
                 [
@@ -259,13 +260,8 @@ class BrainEncoder(nn.Module):
 
         if layout_fn is None:
             layout_fn = ch_locations_2d
+            
         self.subject_block = SubjectBlock(args, self.num_subjects, layout_fn)
-        # cprint(
-        #     "USING THE OLD IMPLEMENTATION OF THE SUBJECT BLOCK",
-        #     "red",
-        #     "on_blue",
-        #     attrs=["bold"],
-        # )
 
         self.conv_blocks = nn.Sequential()
         for k in range(5):
