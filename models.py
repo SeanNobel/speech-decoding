@@ -9,24 +9,8 @@ from einops import rearrange
 
 from speech_decoding.utils.layout import ch_locations_2d
 from speech_decoding.constants import device
-    
+from f2b_contrastive.models.face_encoders import Transformer   
 
-# class BrainMultiAttention(nn.Module):
-
-#     def __init__(self, args, embed_dim=None, num_heads=1):
-#         super(BrainMultiAttention, self).__init__()
-
-#         self.num_heads = num_heads
-#         self.embed_dim = embed_dim 
-#         self.eeg_attention = nn.MultiheadAttention(embed_dim=self.embed_dim, num_heads=self.num_heads, batch_first=False)
-
-#     def forward(self, X, return_attn=False): # X(B, F, T)=(64, 128, 90)
-#         cprint(f"X.shape: {X.shape}", "red")  # ( B, F, T
-#         X = torch.permute(X, (2, 0, 1))  # (T, B, F)
-#         X, attn = self.eeg_attention(X, X, X)  # was expecting embedding dimension of 128, but got 270
-#         X = torch.permute(X, (1, 2, 0))  # (B, F, T)
-#         return X, attn
-        
 
 class SpatialAttention(nn.Module):
     """Same as SpatialAttentionVer2, but a little more concise"""
@@ -256,7 +240,7 @@ class BrainEncoder(nn.Module):
         self.K = args.K  # 32
         self.dataset_name = args.dataset
         self.use_fc = args.use_fc
-        # self.use_attn = args.use_attn
+        self.use_tmp_attn = args.use_tmp_attn
 
         if layout_fn is None:
             layout_fn = ch_locations_2d
@@ -286,6 +270,14 @@ class BrainEncoder(nn.Module):
             self.fc2 = nn.Linear(in_features=self.T * 2, out_features=self.T * 4)
             self.fc3 = nn.Linear(in_features=self.T * 4, out_features=self.T)
         
+        elif self.use_tmp_attn:
+            dim = self.F
+            depth = 1
+            heads = 1
+            dim_head = 64
+            scale_dim = 4
+            dropout = 0.
+            self.temporal_transformer = Transformer(dim, depth, heads, dim_head, dim * scale_dim, dropout)
         # self.brain_multi_attention = BrainMultiAttention(args, embed_dim=self.F, num_heads=1)
 
     def forward(self, X, subject_idxs):
@@ -293,15 +285,19 @@ class BrainEncoder(nn.Module):
         X = self.conv_blocks(X)
         X = F.gelu(self.conv_final1(X))
         X = F.gelu(self.conv_final2(X))  # # X_f.shape: torch.Size([64, 128, 90])
+        cprint(f"pre X.shape: {X.shape}", "yellow")
         if self.use_fc:
             X = self.fc1(X)
             X = self.fc2(X)
             X = self.fc3(X)
-        #     # cprint(f"X.shape: {X.shape}", "yellow")  # https://discuss.pytorch.org/t/how-to-pass-a-3d-tensor-to-linear-layer/908
-        # elif self.use_fft_train_with_attn:
-        #     X, attn = self.brain_multi_attention(X)
+            cprint(f"X.shape: {X.shape}", "yellow")  # https://discuss.pytorch.org/t/how-to-pass-a-3d-tensor-to-linear-layer/908
+        elif self.use_tmp_attn:
+            X = self.temporal_transformer(X)
+            cprint(f"post X.shape: {X.shape}", "yellow")
+        else:
+            pass
         return X
-
+        
 
 class Classifier(nn.Module):
     # NOTE: experimental
