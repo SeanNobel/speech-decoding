@@ -281,6 +281,7 @@ class BrainEncoder(nn.Module):
         # self.brain_multi_attention = BrainMultiAttention(args, embed_dim=self.F, num_heads=1)
 
     def forward(self, X, subject_idxs):
+        cprint(f"X.shape: {X.shape}", "yellow")  # https://discuss.pytorch.org/t/how-to-pass-a-3d-tensor-to-linear-layer/908
         X = self.subject_block(X, subject_idxs)
         X = self.conv_blocks(X)
         X = F.gelu(self.conv_final1(X))
