@@ -282,20 +282,20 @@ class BrainEncoder(nn.Module):
         # self.brain_multi_attention = BrainMultiAttention(args, embed_dim=self.F, num_heads=1)
 
     def forward(self, X, subject_idxs):
-        print(f"X.shape: {X.shape}", "yellow") 
+        cprint(f"X.shape: {X.shape}", "yellow") 
         X = self.subject_block(X, subject_idxs)
         X = self.conv_blocks(X)
         X = F.gelu(self.conv_final1(X))
         X = F.gelu(self.conv_final2(X))  # # X_f.shape: torch.Size([64, 128, 90])
-        print(f"pre X.shape: {X.shape}", "yellow")
+        cprint(f"pre X.shape: {X.shape}", "yellow")
         # if self.use_fc:
         #     X = self.fc1(X)
         #     X = self.fc2(X)
         #     X = self.fc3(X)
-        #     print(f"X.shape: {X.shape}", "yellow") 
+        #     cprint(f"X.shape: {X.shape}", "yellow") 
         if self.use_tmp_attn:
             X = self.temporal_transformer(X)
-            print(f"post X.shape: {X.shape}", "yellow")
+            cprint(f"post X.shape: {X.shape}", "yellow")
         return X
         
 
