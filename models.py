@@ -239,7 +239,7 @@ class BrainEncoder(nn.Module):
         self.F = args.F  # if not args.preprocs["last4layers"] else 1024 -> 128
         self.K = args.K  # 32
         self.dataset_name = args.dataset
-        self.use_fc = args.use_fc
+        # self.use_fc = args.use_fc
         self.use_tmp_attn = args.use_tmp_attn
 
         if layout_fn is None:
@@ -264,12 +264,12 @@ class BrainEncoder(nn.Module):
             kernel_size=args.final_kernel_size,
             stride=args.final_stride,
         )
-        
-        if self.use_fc:
-            self.T = args.seq_len * args.fps  # 90
-            self.fc1 = nn.Linear(in_features=self.T, out_features=self.T * 2)
-            self.fc2 = nn.Linear(in_features=self.T * 2, out_features=self.T * 4)
-            self.fc3 = nn.Linear(in_features=self.T * 4, out_features=self.T)
+
+        # if self.use_fc:
+        #     self.T = args.seq_len * args.fps  # 90
+        #     self.fc1 = nn.Linear(in_features=self.T, out_features=self.T * 2)
+        #     self.fc2 = nn.Linear(in_features=self.T * 2, out_features=self.T * 4)
+        #     self.fc3 = nn.Linear(in_features=self.T * 4, out_features=self.T)
         
         if self.use_tmp_attn:
             dim = self.F
@@ -288,11 +288,11 @@ class BrainEncoder(nn.Module):
         X = F.gelu(self.conv_final1(X))
         X = F.gelu(self.conv_final2(X))  # # X_f.shape: torch.Size([64, 128, 90])
         print(f"pre X.shape: {X.shape}", "yellow")
-        if self.use_fc:
-            X = self.fc1(X)
-            X = self.fc2(X)
-            X = self.fc3(X)
-            print(f"X.shape: {X.shape}", "yellow") 
+        # if self.use_fc:
+        #     X = self.fc1(X)
+        #     X = self.fc2(X)
+        #     X = self.fc3(X)
+        #     print(f"X.shape: {X.shape}", "yellow") 
         if self.use_tmp_attn:
             X = self.temporal_transformer(X)
             print(f"post X.shape: {X.shape}", "yellow")
